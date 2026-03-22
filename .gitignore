@@ -1,3 +1,6 @@
+# Version manager
+version_manager/
+
 # Python
 __pycache__/
 *.py[cod]
