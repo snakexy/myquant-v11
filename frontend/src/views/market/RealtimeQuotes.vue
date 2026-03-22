@@ -225,13 +225,14 @@ type SeriesApi = any
 
 // 周期选项（响应语言切换）
 const timeframes = computed(() => [
-  { label: isZh.value ? '分时' : '1m',  value: '1m' },
-  { label: isZh.value ? '5分' : '5m',   value: '5m' },
-  { label: isZh.value ? '15分' : '15m', value: '15m' },
-  { label: isZh.value ? '30分' : '30m', value: '30m' },
-  { label: isZh.value ? '60分' : '1h',  value: '1h' },
-  { label: isZh.value ? '日K' : 'Day',  value: '1d' },
-  { label: isZh.value ? '周K' : 'Week', value: '1w' }
+  { label: isZh.value ? '分时' : '1m',   value: '1m' },
+  { label: isZh.value ? '5分' : '5m',    value: '5m' },
+  { label: isZh.value ? '15分' : '15m',  value: '15m' },
+  { label: isZh.value ? '30分' : '30m',  value: '30m' },
+  { label: isZh.value ? '60分' : '1h',   value: '1h' },
+  { label: isZh.value ? '日K' : 'Day',   value: '1d' },
+  { label: isZh.value ? '周K' : 'Week',  value: '1w' },
+  { label: isZh.value ? '月K' : 'Month', value: '1M' },
 ])
 
 // 状态
