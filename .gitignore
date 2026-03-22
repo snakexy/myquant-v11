@@ -1,10 +1,10 @@
 # Version manager
 version_manager/
 
-# Docs (太大，单独管理)
+# Docs (研究文档太大，单独管理)
 docs/
-README.md
-STRUCTURE.md
+
+# README 和 STRUCTURE 保留在 git 中
 
 # Python
 __pycache__/
