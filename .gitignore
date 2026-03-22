@@ -1,6 +1,11 @@
 # Version manager
 version_manager/
 
+# Docs (太大，单独管理)
+docs/
+README.md
+STRUCTURE.md
+
 # Python
 __pycache__/
 *.py[cod]
