@@ -5,6 +5,7 @@ V5 实时行情服务 API 路由
 """
 
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import JSONResponse
 from typing import List, Optional
 from pydantic import BaseModel
 from loguru import logger
@@ -54,6 +55,49 @@ async def get_realtime_quotes(
 
     except Exception as e:
         logger.error("获取实时行情失败: {}", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/snapshot/")
+async def get_snapshot_batch(
+    symbols: str = Query(..., description="逗号分隔的股票代码，如 000001.SZ,600000.SH")
+):
+    """批量获取股票快照（GET 方式）
+
+    返回格式匹配前端 SnapshotResponse: {data: [...], data_source, count, timestamp}
+    """
+    try:
+        codes = [s.strip() for s in symbols.split(',') if s.strip()]
+        service = get_realtime_market_service()
+        quotes, data_source = service.get_realtime_quotes(
+            codes=codes, use_cache=True
+        )
+        return JSONResponse({
+            'data': [{**q, 'symbol': q.get('code', '')} for q in quotes.values()],
+            'data_source': data_source,
+            'count': len(quotes),
+            'timestamp': 0,
+        })
+    except Exception as e:
+        logger.error("批量获取快照失败: {}", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/snapshot/{symbol}")
+async def get_snapshot_single(symbol: str):
+    """获取单只股票快照（GET 方式）
+
+    返回格式匹配前端 QuoteSnapshot（裸数据，无 code/data/message 包装）
+    """
+    try:
+        service = get_realtime_market_service()
+        quotes, data_source = service.get_realtime_quotes(
+            codes=[symbol], use_cache=True
+        )
+        quote = quotes.get(symbol, {})
+        return JSONResponse({**quote, 'symbol': quote.get('code', ''), 'data_source': data_source})
+    except Exception as e:
+        logger.error("获取快照失败 {}: {}", symbol, e)
         raise HTTPException(status_code=500, detail=str(e))
 
 

@@ -190,9 +190,8 @@ class IntradayKlineService:
         """
         # 优先从 TdxQuant 获取
         try:
-            from myquant.core.market.adapters.v5.tdxquant_adapter import V5TdxQuantAdapter
-            tdxquant = V5TdxQuantAdapter()
-            if tdxquant.is_available() and hasattr(tdxquant._tq, 'get_xdxr_info'):
+            tdxquant = get_adapter('tdxquant')
+            if tdxquant and tdxquant.is_available() and hasattr(tdxquant._tq, 'get_xdxr_info'):
                 xdxr_data = tdxquant._tq.get_xdxr_info([symbol])
                 if xdxr_data and symbol in xdxr_data:
                     return xdxr_data[symbol]
@@ -201,9 +200,8 @@ class IntradayKlineService:
 
         # 备用: 从 PyTdx 获取
         try:
-            from myquant.core.market.adapters.v5.pytdx_adapter import V5PyTdxAdapter
-            pytdx = V5PyTdxAdapter()
-            if pytdx.is_available():
+            pytdx = get_adapter('pytdx')
+            if pytdx and pytdx.is_available():
                 return pytdx.get_xdxr_info(symbol)
         except Exception:
             pass
@@ -342,7 +340,16 @@ class IntradayKlineService:
         }
 
     def _select_adapter(self, symbol: str, level: DataLevel) -> Optional[str]:
-        """选择适配器"""
+        """选择适配器（交易时间感知）
+
+        非交易时间跳过 tdxquant/xtquant，直接用 pytdx（24/7 在线）
+        避免触发 TdxQuant 终端连接尝试，也避免无意义的初始化报错
+        """
+        from myquant.core.market.utils.trading_time import TradingTimeChecker
+        if not TradingTimeChecker.is_trading_time():
+            adapter = get_adapter('pytdx')
+            if adapter and adapter.is_available():
+                return 'pytdx'
         return self._selector.select_by_code(level, symbol)
 
     def _get_from_cache(self, key: tuple) -> Optional[IntradayKlineResult]:

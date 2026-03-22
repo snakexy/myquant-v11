@@ -123,12 +123,13 @@ class SeamlessKlineService:
             # 过滤周末（周六=5, 周日=6）
             historical.df = historical.df[historical.df['datetime'].dt.weekday < 5].copy()
 
-            # 去重：同一日期可能来自多个数据源，保留第一条
+        # 全周期通用去重：同一时间戳可能来自多个数据源，保留最后一条（在线数据）
+        if not historical.df.empty:
             before_dedup = len(historical.df)
-            historical.df = historical.df.drop_duplicates(subset=['datetime'], keep='first')
+            historical.df = historical.df.drop_duplicates(subset=['datetime'], keep='last')
             after_dedup = len(historical.df)
             if before_dedup != after_dedup:
-                logger.info(f"[去重] 移除 {before_dedup - after_dedup} 条重复数据")
+                logger.info(f"[去重] 移除 {before_dedup - after_dedup} 条重复数据（优先保留在线数据）")
 
         # 应用数量限制（必须在周末过滤和去重之后，确保返回的是最新的交易日数据）
         if count:
@@ -190,25 +191,24 @@ class SeamlessKlineService:
         Returns:
             除权除息记录列表
         """
-        # 优先从 TdxQuant 获取（覆盖范围更广）
-        try:
-            from myquant.core.market.adapters.v5.tdxquant_adapter import V5TdxQuantAdapter
-            tdxquant = V5TdxQuantAdapter()
-            if tdxquant.is_available():
-                # TdxQuant SDK 的 get_xdxr_info 方法
-                if hasattr(tdxquant._tq, 'get_xdxr_info'):
-                    xdxr_data = tdxquant._tq.get_xdxr_info([symbol])
-                    if xdxr_data and symbol in xdxr_data:
-                        logger.debug(f"[XDXR] TdxQuant 获取 {symbol} 除权数据: {len(xdxr_data[symbol])} 条")
-                        return xdxr_data[symbol]
-        except Exception as e:
-            logger.debug(f"[XDXR] TdxQuant 获取除权数据失败: {e}")
+        # 优先从 TdxQuant 获取（覆盖范围更广，仅交易时间可用）
+        if TradingTimeChecker.is_trading_time():
+            try:
+                tdxquant = self._get_adapter('tdxquant')
+                if tdxquant and tdxquant.is_available():
+                    # TdxQuant SDK 的 get_xdxr_info 方法
+                    if hasattr(tdxquant._tq, 'get_xdxr_info'):
+                        xdxr_data = tdxquant._tq.get_xdxr_info([symbol])
+                        if xdxr_data and symbol in xdxr_data:
+                            logger.debug(f"[XDXR] TdxQuant 获取 {symbol} 除权数据: {len(xdxr_data[symbol])} 条")
+                            return xdxr_data[symbol]
+            except Exception as e:
+                logger.debug(f"[XDXR] TdxQuant 获取除权数据失败: {e}")
 
         # 备用: 从 PyTdx 获取
         try:
-            from myquant.core.market.adapters.v5.pytdx_adapter import V5PyTdxAdapter
-            pytdx = V5PyTdxAdapter()
-            if pytdx.is_available():
+            pytdx = self._get_adapter('pytdx')
+            if pytdx and pytdx.is_available():
                 xdxr_data = pytdx.get_xdxr_info(symbol)
                 if xdxr_data:
                     logger.debug(f"[XDXR] PyTdx 获取 {symbol} 除权数据: {len(xdxr_data)} 条")
@@ -331,13 +331,22 @@ class SeamlessKlineService:
 
         # 数据源优先级链（补充数据时跳过 localdb，因为它只有历史数据）
         fallback_chain = self._selector.get_fallback_chain_for_code(DataLevel.L3, symbol)
-        # 移除 localdb，因为它只有历史数据，没有实时数据
-        supplement_chain = [s for s in fallback_chain if s != 'localdb']
+        # 移除 localdb；非交易时间也移除 tdxquant（终端未运行）
+        is_trading = TradingTimeChecker.is_trading_time()
+        supplement_chain = [
+            s for s in fallback_chain
+            if s != 'localdb' and (is_trading or s != 'tdxquant')
+        ]
 
         # 对于日线数据，PyTdx 有最新的交易日数据，优先使用
         if period == '1d' and 'pytdx' in supplement_chain:
             supplement_chain = [s for s in supplement_chain if s != 'pytdx']
             supplement_chain.insert(0, 'pytdx')
+
+        # 对于分钟线数据，XtQuant OHLCV 数据质量更好（pytdx 收盘 bar 有已知的 high/low 污染问题）
+        elif period != '1d' and 'xtquant' in supplement_chain:
+            supplement_chain = [s for s in supplement_chain if s != 'xtquant']
+            supplement_chain.insert(0, 'xtquant')
 
         if not supplement_chain:
             logger.debug("[补充数据] 没有可用的在线数据源")

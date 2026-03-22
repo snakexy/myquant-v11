@@ -423,6 +423,11 @@ class V5PyTdxAdapter(V5DataAdapter):
             if data and len(data) > 0:
                 df = pd.DataFrame(data)
 
+                # 分钟线 vol 是股（shares），日线 vol 是手（lots），统一÷100转为手
+                is_daily = period in ('1d', '1D', 'day', 'd')
+                if not is_daily and 'vol' in df.columns:
+                    df['vol'] = df['vol'] / 100
+
                 # 日期过滤
                 if end_date and 'datetime' in df.columns:
                     df['datetime_str'] = df['datetime'].astype(str).str[:10]

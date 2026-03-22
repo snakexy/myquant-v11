@@ -1,7 +1,7 @@
 # MyQuant v11 项目上下文
 > 每次新对话开始必读，保持最新状态
 
-## 当前状态（2026-03-22）
+## 当前状态（2026-03-23）
 - **后端**: ✅ 运行中 http://localhost:8000
 - **前端**: ✅ 运行中 http://localhost:5174（v10 frontend 代理到 v11 backend）
 - **数据源**: ✅ pytdx2 联网行情已通，K线/快照/市场状态均正常
@@ -49,7 +49,15 @@ npm run dev   # 运行在 localhost:5174
 - `fastapi-frontend-alias-routes` — 前后端路径不匹配
 - `windows-pip-encoding` — requirements.txt GBK 报错
 - `_normalize_quote_dict` 需在 pytdx_adapter.py 手动实现
-- `pytz` 未在 requirements.txt，需单独 pip install
+
+### 2026-03-23 修复内容
+- **format_converter.py**: XtQuant datetime +8h 还原 CST 日期（修复日线日期偏移一天）
+- **seamless_service.py**: keep='last' 优先在线数据；非交易时间不触发 TdxQuant 查询
+- **pytdx_adapter.py + pytdx_pool_adapter.py**: 分钟线 vol÷100 股→手；intraday bar high/low 异常值截断（1%阈值）
+- **intraday_service.py**: 非交易时间直接用 pytdx 避免 TdxQuant 初始化报错
+- **RealtimeQuotes.vue**: 日线去重；成交量颜色修复；timeFormatter 日线只显日期
+- **quotes.ts**: _base 修复双重 /api/ 前缀
+- **market.py**: 新增 GET /snapshot/{symbol} 和 GET /snapshot/ 端点
 
 ## 前端导航栏说明
 - **公共导航栏**: `E:/MyQuant_v10.0.0/frontend/src/components/GlobalNavBar.vue`

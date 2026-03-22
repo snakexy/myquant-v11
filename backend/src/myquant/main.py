@@ -16,6 +16,7 @@ from myquant.api.dataget import (
     conversion_router,
     market_router,
 )
+from myquant.api.dataget.kline_ws import router as ws_kline_router
 
 
 @asynccontextmanager
@@ -54,6 +55,9 @@ app.include_router(conversion_router,  prefix="/api/conversion",  tags=["数据�
 # 前端兼容路由别名
 app.include_router(quotes_router,      prefix="/api/v5",          tags=["行情(v5别名)"])
 app.include_router(market_router,      prefix="/api/v1/quotes",   tags=["市场(v1别名)"])
+
+# WebSocket 路由
+app.include_router(ws_kline_router, prefix="/ws")
 
 
 @app.get("/", tags=["根"])

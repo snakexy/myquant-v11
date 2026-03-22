@@ -107,8 +107,11 @@ class FormatConverter:
             # 检查是否是numeric类型（毫秒时间戳）
             first_val = df_normalized['datetime'].iloc[0] if len(df_normalized) > 0 else None
             if isinstance(first_val, (int, float, np.number)) and first_val > 100000000000:
-                # 这是毫秒时间戳（如 1773072000000），转换为datetime对象
+                # 毫秒时间戳 → UTC datetime
                 df_normalized['datetime'] = pd.to_datetime(df_normalized['datetime'], unit='ms', errors='coerce')
+                # XtQuant 存的是 CST 时刻（午夜/开盘/收盘），转出来是 UTC
+                # 加 8 小时还原为 CST，确保日期正确（noon_daily_time 只保留日期部分）
+                df_normalized['datetime'] = df_normalized['datetime'] + pd.Timedelta(hours=8)
 
         # XtQuant K线成交量单位已经是"手"，保持不变
 

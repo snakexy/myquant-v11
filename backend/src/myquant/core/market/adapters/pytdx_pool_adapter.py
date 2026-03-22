@@ -291,7 +291,12 @@ class V5PyTdxPoolAdapter(V5DataAdapter):
     # ============ 数据获取接口 ============
 
     def _get_market(self, symbol: str) -> int:
-        """获取市场代码"""
+        """获取市场代码：优先使用后缀，避免指数代码被误判"""
+        if '.SH' in symbol:
+            return 1
+        if '.SZ' in symbol or '.BJ' in symbol:
+            return 0
+        # 无后缀时按代码前缀推断
         code = symbol.replace('.SH', '').replace('.SZ', '').replace('.BJ', '')
         if code.startswith('88'):
             return 31
@@ -331,6 +336,11 @@ class V5PyTdxPoolAdapter(V5DataAdapter):
 
                 if data and len(data) > 0:
                     df = pd.DataFrame(data)
+
+                    # 分钟线 vol 是股（shares），日线 vol 是手（lots），统一÷100转为手
+                    is_daily = period in ('1d', '1D', 'day', 'd')
+                    if not is_daily and 'vol' in df.columns:
+                        df['vol'] = df['vol'] / 100
 
                     # 日期过滤
                     if end_date and 'datetime' in df.columns:
