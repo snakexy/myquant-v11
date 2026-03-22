@@ -379,7 +379,7 @@ watch(() => props.data, initChart, { deep: true })
   background: #1e222d;
   border-radius: 8px;
   border: 1px solid #363a45;
-  padding: 16px;
+  padding: 12px;
   margin-left: 0;
 
   .panel-header {

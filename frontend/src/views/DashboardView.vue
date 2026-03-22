@@ -1,5 +1,8 @@
 <template>
   <div class="dashboard-view">
+    <GlobalNavBar />
+
+    <!-- 主容器 -->
     <div class="main-container">
       <div class="content-area">
         <!-- 左侧股票列表 -->
@@ -180,8 +183,11 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import { useRouter } from 'vue-router'
 import { useAppStore } from '@/stores/core/AppStore'
+import GlobalNavBar from '@/components/GlobalNavBar.vue'
 
+const router = useRouter()
 const appStore = useAppStore()
 const isZh = computed(() => appStore.language === 'zh')
 
@@ -224,10 +230,14 @@ const bids = ref([
 
 <style scoped>
 /* 使用全局配色 */
-.dashboard-view {
+.dashboard-view {  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1000;
   display: flex;
   flex-direction: column;
-  height: 100%;
   background: var(--bg-primary);
   color: var(--text-primary);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
@@ -235,12 +245,12 @@ const bids = ref([
   overflow: hidden;
 }
 
+
 /* 主容器 */
 .main-container {
   display: grid;
   grid-template-rows: 1fr 28px;
-  flex: 1;
-  min-height: 0;
+  height: calc(100vh - 48px);
 }
 
 .content-area {

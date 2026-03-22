@@ -209,6 +209,23 @@ export const factorApi = {
   getFactorList: () =>
     http.get<ApiResponse<{ factors: string[] }>>('/v1/research/analysis/factors'),
 
+  // 批量因子分析（获取因子列表的IC/IR指标）
+  batchAnalyzeFactors: (factors: string[], startDate: string, endDate: string, period: string = '5d') =>
+    http.post<ApiResponse<{ factors: Array<{
+      factor_name: string
+      ic: number
+      ir: number
+      t_stat: number
+      p_value: number
+      status: string
+    }> }>>('/v1/research/analysis/factors/batch-analysis', {
+      factors,
+      start_date: startDate,
+      end_date: endDate,
+      instruments: ['cn'],
+      period
+    }),
+
   // 计算因子
   calculateFactors: (request: FactorCalculationRequest) =>
     http.post<ApiResponse<{ task_id: string }>>('/v1/research/factor/calculate', request),

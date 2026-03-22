@@ -3,7 +3,7 @@
 
 ## 当前状态（2026-03-23）
 - **后端**: ✅ 运行中 http://localhost:8000
-- **前端**: ✅ 运行中 http://localhost:5174（v10 frontend 代理到 v11 backend）
+- **前端**: ✅ 已迁移到 v11，运行在 http://localhost:5174
 - **数据源**: ✅ pytdx2 联网行情已通，K线/快照/市场状态均正常
 
 ## 项目结构
@@ -12,13 +12,7 @@
 **v11 特殊说明（STRUCTURE.md 未覆盖的）：**
 - `backend/.venv/` — Python 3.11.8 虚拟环境（勿提交）
 - `backend/external/pytdx2/` — pytdx2 本地包（非 pip 安装）
-- `frontend/src/` — 前端源码，无构建配置，用 v10 的 vite 运行
-
-**当前运行的前端（不在 v11 目录）：**
-- `E:/MyQuant_v10.0.0/frontend/` — vite dev server，代理 /api → localhost:8000
-- `src/components/GlobalNavBar.vue` — 公共导航栏
-- `src/views/market/RealtimeQuotes.vue` — 实时行情主页
-- `src/router/index.ts` — /RealtimeQuotes 路由
+- `frontend/` — 完整前端工程（已从 v10 迁移，有 package.json + node_modules）
 
 ## 启动命令
 ```bash
@@ -26,8 +20,8 @@
 cd E:/MyQuant_v11/backend
 E:/MyQuant_v11/.venv/Scripts/uvicorn.exe myquant.main:app --reload --port 8000
 
-# 前端
-cd E:/MyQuant_v10.0.0/frontend
+# 前端（已迁移到 v11）
+cd E:/MyQuant_v11/frontend
 npm run dev   # 运行在 localhost:5174
 ```
 
@@ -58,6 +52,16 @@ npm run dev   # 运行在 localhost:5174
 - **RealtimeQuotes.vue**: 日线去重；成交量颜色修复；timeFormatter 日线只显日期
 - **quotes.ts**: _base 修复双重 /api/ 前缀
 - **market.py**: 新增 GET /snapshot/{symbol} 和 GET /snapshot/ 端点
+
+**2026-03-23 前端修复（RealtimeQuotes.vue）**：
+- K线图贴底：从chart-area计算高度，排除toolbar，移除空volumeContainer
+- 十字光标OHLCV legend：悬浮在图表左上角，成交量从volumeSeries读取
+- 价格颜色修复：pre_close字段名不一致导致change计算错误，直接用后端change字段
+- 左侧列表：迷你折线图(5分钟线)、所有股票价格正确更新
+- 状态栏：沪深指数(上证/深证/创业板)，市场代码后缀判断修复上证指数
+- 垂直拖动：autoScale:false + 临时开启autoScale自适应初始价格范围
+- App.vue：height:100%+overflow:hidden修复height链
+- quotes.ts：修复双重/api/前缀
 
 ## 前端导航栏说明
 - **公共导航栏**: `E:/MyQuant_v10.0.0/frontend/src/components/GlobalNavBar.vue`

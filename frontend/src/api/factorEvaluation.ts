@@ -36,11 +36,27 @@ export interface FactorMetricResult {
   /** 指标值 */
   value: number
   /** 阈值 */
-  threshold: number
+  threshold?: number
   /** 是否通过阈值 */
-  passed: boolean
+  passed?: boolean
   /** 评分（0-1） */
-  score: number
+  score?: number
+  /** 描述 */
+  description?: string
+}
+
+/**
+ * QLib标准扩展指标
+ */
+export interface QLibMetrics {
+  /** IC标准差 */
+  ic_std: FactorMetricResult
+  /** Rank IC均值 */
+  rank_ic_mean: FactorMetricResult
+  /** t统计量 */
+  t_stat: FactorMetricResult
+  /** p值 */
+  p_value: FactorMetricResult
 }
 
 /**
@@ -61,7 +77,14 @@ export interface ValidityResult {
     ir: FactorMetricResult
     /** IC正数占比评估 */
     ic_positive_ratio: FactorMetricResult
+    /** QLib标准扩展指标 */
+    ic_std?: FactorMetricResult
+    rank_ic_mean?: FactorMetricResult
+    t_stat?: FactorMetricResult
+    p_value?: FactorMetricResult
   }
+  /** IC时间序列（用于稳定性和衰减分析） */
+  ic_series?: number[]
   /** 建议说明 */
   recommendation: string
   /** 评估时间 */

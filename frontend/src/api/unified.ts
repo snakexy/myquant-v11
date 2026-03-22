@@ -238,18 +238,24 @@ export function transformUnifiedKlineData(
   volume?: number
 }> {
   return apiData.map(item => {
-    // 处理time字段：将ISO 8601字符串转换为秒级时间戳
-    let timestamp: number
+    // A股日线用 BusinessDay 格式提取 CST 日期，再转为 UTC 秒级时间戳
+    let time: any
     if (typeof item.time === 'string') {
-      // 字符串格式: "2026-02-05 15:00:00" 或 "2026-02-05"
-      const date = new Date(item.time.replace(/-/g, '/')) // 替换-为/以兼容所有浏览器
-      timestamp = Math.floor(date.getTime() / 1000) // 转换为秒级时间戳
+      const datePart = item.time.slice(0, 10) // "2026-03-13"
+      const [year, month, day] = datePart.split('-').map(Number)
+      time = { year, month, day }
     } else if (typeof item.time === 'number') {
-      // 如果已经是数字，判断是秒还是毫秒
-      timestamp = item.time > 10000000000 ? Math.floor(item.time / 1000) : item.time
+      // 毫秒或秒 → 提取 CST 日期（UTC+8）
+      const ms = item.time > 10000000000 ? item.time : item.time * 1000
+      const cst = new Date(ms + 8 * 3600 * 1000) // 转 CST
+      time = { year: cst.getUTCFullYear(), month: cst.getUTCMonth() + 1, day: cst.getUTCDate() }
     } else {
-      timestamp = Math.floor(Date.now() / 1000) // 兜底：使用当前时间
+      const now = new Date()
+      time = { year: now.getFullYear(), month: now.getMonth() + 1, day: now.getDate() }
     }
+    const timestamp = typeof time === 'object'
+      ? Date.UTC(time.year, time.month - 1, time.day) / 1000
+      : time
 
     const transformed: any = {
       time: timestamp, // lightweight-charts使用秒级时间戳

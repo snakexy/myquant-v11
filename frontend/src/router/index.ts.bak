@@ -1,0 +1,64 @@
+/**
+ * MyQuant v9.0.0 - Router Configuration
+ * 路由配置
+ */
+
+import { createRouter, createWebHistory } from 'vue-router'
+
+const router = createRouter({
+  history: createWebHistory(import.meta.env.BASE_URL),
+  routes: [
+    {
+      path: '/',
+      name: 'home',
+      redirect: '/market'
+    },
+    {
+      path: '/market',
+      name: 'market',
+      component: () => import('@/views/market/MarketViewWithWS.vue'),
+      meta: { title: '市场行情' }
+    },
+    {
+      path: '/stock',
+      name: 'stock',
+      component: () => import('@/views/stock/StockDetailViewWithIndicators.vue'),
+      meta: { title: '个股详情' }
+    },
+    {
+      path: '/multi',
+      name: 'multi',
+      component: () => import('@/views/multi/MultiStockViewWithWS.vue'),
+      meta: { title: '多股同列' }
+    },
+    {
+      path: '/sector',
+      name: 'sector',
+      component: () => import('@/views/sector/SectorRotationView.vue'),
+      meta: { title: '板块轮动' }
+    },
+    {
+      path: '/backtest',
+      name: 'backtest',
+      component: () => import('@/views/backtest/BacktestView.vue'),
+      meta: { title: '策略回测' }
+    },
+    {
+      path: '/search',
+      name: 'search',
+      component: () => import('@/views/SearchView.vue'),
+      meta: { title: '搜索' }
+    }
+  ]
+})
+
+// 路由守卫
+router.beforeEach((to, from, next) => {
+  // 设置页面标题
+  if (to.meta?.title) {
+    document.title = `${to.meta.title} - MyQuant v9.0.0`
+  }
+  next()
+})
+
+export default router
