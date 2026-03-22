@@ -2,8 +2,9 @@
 
 ## 每次对话开始必做
 1. 读取 `.claude/skills/project-context.md` 了解当前项目状态
-2. 如果涉及架构决策，读取 `docs/项目设计/数据架构V5/README.md`
-3. 如果涉及后端代码，读取 `.claude/skills/backend.md`
+2. 如果涉及**新建文件或确定代码位置**，读取 `STRUCTURE.md`
+3. 如果涉及架构决策，读取 `docs/项目设计/数据架构V5/README.md`
+4. 如果涉及后端代码，读取 `.claude/skills/backend.md`
 
 ---
 
