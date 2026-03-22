@@ -79,6 +79,60 @@ class V5DataAdapter(DataAdapter):
     def name(self) -> str:
         return self._name
 
+    def _normalize_quote_dict(
+        self, code: str, quote: dict, source: str
+    ) -> dict:
+        """将原始 quote 标准化为统一格式"""
+        price = (
+            quote.get('price') or quote.get('Now')
+            or quote.get('lastPrice') or 0
+        )
+        pre_close = (
+            quote.get('pre_close') or quote.get('LastClose')
+            or quote.get('lastClose') or 0
+        )
+        try:
+            price = float(price)
+            pre_close = float(pre_close)
+        except (TypeError, ValueError):
+            price, pre_close = 0.0, 0.0
+
+        change = round(price - pre_close, 4)
+        change_pct = round(change / pre_close * 100, 2) if pre_close else 0
+
+        buyp = quote.get('Buyp', [0])
+        sellp = quote.get('Sellp', [0])
+        buyv = quote.get('Buyv', [0])
+        sellv = quote.get('Sellv', [0])
+
+        return {
+            'code': code,
+            'price': price,
+            'open': float(quote.get('open') or quote.get('Open') or 0),
+            'high': float(quote.get('high') or quote.get('Max') or 0),
+            'low': float(quote.get('low') or quote.get('Min') or 0),
+            'close': price,
+            'pre_close': pre_close,
+            'volume': float(
+                quote.get('vol') or quote.get('Volume')
+                or quote.get('volume') or 0
+            ),
+            'amount': float(
+                quote.get('amount') or quote.get('Amount') or 0
+            ),
+            'change': change,
+            'change_pct': change_pct,
+            'bid1': float(quote.get('bid1') or (buyp[0] if buyp else 0)),
+            'ask1': float(quote.get('ask1') or (sellp[0] if sellp else 0)),
+            'bid1_vol': float(
+                quote.get('bid_vol1') or (buyv[0] if buyv else 0)
+            ),
+            'ask1_vol': float(
+                quote.get('ask_vol1') or (sellv[0] if sellv else 0)
+            ),
+            'data_source': source,
+        }
+
     def _normalize_kline_df(self, df: pd.DataFrame, source: str) -> pd.DataFrame:
         """标准化 K线 DataFrame
 

@@ -33,7 +33,7 @@ class V5TdxQuantAdapter(V5DataAdapter):
         self._tq = None
         self._initialized = False
 
-    def _ensure_initialized(self) -> bool:
+    def _ensure_initialized(self, force_retry: bool = False) -> bool:
         """确保 TdxQuant 已初始化
 
         使用全局标志防止重复初始化尝试：
@@ -41,12 +41,20 @@ class V5TdxQuantAdapter(V5DataAdapter):
         - _TDXQUANT_INIT_SUCCESS: 初始化成功标志
 
         TdxQuant SDK 是类级别单例，检查 tq._initialized 后复用连接
+
+        Args:
+            force_retry: 强制重试（即使之前失败过）
         """
         global _TDXQUANT_INIT_ATTEMPTED, _TDXQUANT_INIT_SUCCESS
 
         # 如果已初始化，直接返回
         if self._initialized and self._tq:
             return True
+
+        # 如果强制重试，重置全局标志
+        if force_retry:
+            _TDXQUANT_INIT_ATTEMPTED = False
+            _TDXQUANT_INIT_SUCCESS = False
 
         # 如果已经尝试过初始化但失败了，不再重试（避免日志刷屏）
         if _TDXQUANT_INIT_ATTEMPTED and not _TDXQUANT_INIT_SUCCESS:
@@ -310,6 +318,49 @@ class V5TdxQuantAdapter(V5DataAdapter):
 
         return {}
 
+    def _normalize_kline_df(self, df: pd.DataFrame, source: str) -> pd.DataFrame:
+        """标准化 K线 DataFrame
+
+        TdxQuant 返回：volume 是股，amount 是万元
+        统一转换为：手 / 元（volume÷100, amount×10000）
+        """
+        if df is None or df.empty:
+            return df
+
+        # volume 股→手
+        if 'volume' in df.columns:
+            df['volume'] = df['volume'] / 100
+
+        # amount 万元→元
+        if 'amount' in df.columns:
+            df['amount'] = df['amount'] * 10000
+
+        # 添加数据源标记
+        df['data_source'] = source
+
+        return df
+
+    def _normalize_quote_dict(self, code: str, quote: dict, source: str) -> dict:
+        """标准化行情数据
+
+        TdxQuant 返回：volume 是股，amount 是万元
+        统一转换为：手 / 元
+        """
+        # 先调用基类方法
+        result = super()._normalize_quote_dict(code, quote, source)
+
+        # TdxQuant 的 volume 是股，转换为手
+        if 'volume' in result:
+            result['volume'] = result['volume'] / 100
+
+        # TdxQuant 的 amount 是万元，转换为元
+        if 'Amount' in quote:
+            result['amount'] = quote['Amount'] * 10000
+        elif 'amount' in quote:
+            result['amount'] = quote['amount'] * 10000
+
+        return result
+
     def get_tdxquant_status(self) -> dict:
         """获取 TdxQuant 状态"""
         if self._initialized and self._tq:
@@ -323,7 +374,8 @@ class V5TdxQuantAdapter(V5DataAdapter):
     def is_available(self) -> bool:
         """检查适配器是否可用"""
         if not self._initialized:
-            return self._ensure_initialized()
+            # 使用 force_retry=True，即使之前失败也尝试重新初始化
+            return self._ensure_initialized(force_retry=True)
 
         # 已初始化即认为可用（不依赖 get_tdxquant_status 的模式检查）
         # 因为状态检查可能不稳定，但已初始化的连接通常可以正常使用

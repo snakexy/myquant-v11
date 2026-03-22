@@ -29,14 +29,34 @@ except ImportError:
 
 try:
     from pytdx2.reader.daily_bar_reader import TdxDailyBarReader
+    from pytdx2.reader.min_bar_reader import TdxLCMinBarReader
     LOCAL_READER_AVAILABLE = True
+    MIN_READER_AVAILABLE = True
 except ImportError:
     LOCAL_READER_AVAILABLE = False
+    MIN_READER_AVAILABLE = False
 
 from .base import V5DataAdapter
+from ..utils.data_merger import DataMerger
 
 # 通达信本地数据目录
 TDX_VIPDOC_PATH = Path("E:/new_tdx64/vipdoc")
+
+
+def _get_last_trade_date() -> str:
+    """获取最后一个交易日（简化版，实际应该根据交易日历）"""
+    from datetime import datetime, timedelta
+    now = datetime.now()
+    # 简单处理：如果今天不是周末，今天就是最后交易日
+    # 如果今天是周日，周五是最后交易日；周六，周五是最后交易日
+    weekday = now.weekday()
+    if weekday == 5:  # 周六
+        last_date = now - timedelta(days=1)
+    elif weekday == 6:  # 周日
+        last_date = now - timedelta(days=2)
+    else:
+        last_date = now
+    return last_date.strftime('%Y%m%d')
 
 
 class V5PyTdxAdapter(V5DataAdapter):
@@ -74,6 +94,7 @@ class V5PyTdxAdapter(V5DataAdapter):
         self._api: Optional[TdxHq_API] = None
         self._connected = False
         self._local_reader = TdxDailyBarReader() if LOCAL_READER_AVAILABLE else None
+        self._min_reader = TdxLCMinBarReader() if MIN_READER_AVAILABLE else None
         self._last_used = 0  # 上次使用时间戳
         self._use_local_fallback = use_local_fallback  # 是否使用本地文件回退
 
@@ -143,7 +164,52 @@ class V5PyTdxAdapter(V5DataAdapter):
             logger.debug(f"读取本地文件 {day_file} 失败: {e}")
             return None
 
-    # 连接空闲超过此时间后，下次使用时先断开再重连（避免服务器端已断开）
+    def _get_minline_from_local(
+        self, symbol: str, period: str = '5min',
+        count: Optional[int] = None
+    ) -> Optional[pd.DataFrame]:
+        """从本地分钟线文件读取数据
+
+        文件路径: E:/new_tdx64/vipdoc/{sh|sz}/fzline/{prefix}{code}.lc5
+        支持格式: .lc5 (5分钟), .lc1 (1分钟) - TdxLCMinBarReader
+        """
+        if not self._min_reader:
+            return None
+
+        code = symbol.replace('.SH', '').replace('.SZ', '').replace('.BJ', '')
+        prefix = 'sh' if code[0] in ('6', '5', '9') else 'sz'
+
+        # 确定文件后缀
+        if period in ('1min', '1m'):
+            suffix = '.lc1'
+        else:  # 默认5分钟
+            suffix = '.lc5'
+
+        min_file = TDX_VIPDOC_PATH / prefix / "fzline" / f"{prefix}{code}{suffix}"
+        if not min_file.exists():
+            return None
+
+        try:
+            df = self._min_reader.get_df(str(min_file))
+            if df is None or df.empty:
+                return None
+
+            # 确保 datetime 列存在
+            if 'date' in df.index.name or df.index.name == 'date':
+                df = df.reset_index()
+            if 'datetime' not in df.columns and 'date' in df.columns:
+                df = df.rename(columns={'date': 'datetime'})
+
+            # 限制条数
+            if count and len(df) > count:
+                df = df.tail(count)
+
+            return df
+        except Exception as e:
+            logger.debug(f"读取本地分钟线 {min_file} 失败: {e}")
+            return None
+
+    # 连接空闲超过此时间后，下次使用时先断开再重连
     _IDLE_TIMEOUT = 120  # 2分钟
 
     def _ensure_connected(self) -> bool:
@@ -199,7 +265,8 @@ class V5PyTdxAdapter(V5DataAdapter):
         for host, port in self._server_list:
             try:
                 if not self._api:
-                    self._api = TdxHq_API(heartbeat=False)
+                    # 启用心跳包保持连接，30秒间隔（平衡保活性能和资源）
+                    self._api = TdxHq_API(heartbeat=True, auto_retry=True)
 
                 logger.debug(f"PyTdx 尝试连接: {host}:{port}")
 
@@ -273,6 +340,122 @@ class V5PyTdxAdapter(V5DataAdapter):
             logger.warning(f"[PyTdx] 获取 {symbol} 除权信息失败: {e}")
             return []
 
+    def _get_kline_smart(
+        self,
+        symbol: str,
+        period: str = '1d',
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        count: Optional[int] = None
+    ) -> Optional[pd.DataFrame]:
+        """智能获取K线：本地+在线无缝补齐"""
+        is_daily = period in ('1d', '1D', 'day')
+        is_minute = period in ('1min', '1m', '5min', '5m', '15min', '30min', '60min')
+
+        # 1. 尝试读取本地数据
+        local_df = None
+        if is_daily and self._local_reader:
+            local_df = self._get_kline_from_local(symbol, count)
+        elif is_minute and self._min_reader:
+            local_df = self._get_minline_from_local(symbol, period, count)
+
+        # 1. 尝试读取本地数据
+        local_df = None
+        if self._local_reader:
+            local_df = self._get_kline_from_local(symbol, count)
+
+        if local_df is None or local_df.empty:
+            # 本地没有，直接在线获取
+            return self._get_kline_online(symbol, period, start_date, end_date, count)
+
+        # 2. 检查本地数据新鲜度
+        info = DataMerger.check_data_freshness(local_df)
+
+        # 3. 如果本地数据已经是最新的，直接返回
+        if info.is_fresh:
+            logger.debug(f"{symbol} 本地数据已最新({info.last_date})，直接返回")
+            return DataMerger.limit_count(local_df, count) if count else local_df
+
+        # 4. 本地数据过时，需要在线补齐
+        logger.info(f"{symbol} 本地({info.last_date})需要补齐到最新")
+
+        if not self._ensure_connected():
+            logger.warning(f"无法连接服务器，{symbol} 返回本地数据（可能不完整）")
+            return local_df
+
+        # 在线获取缺失部分
+        online_start = info.last_date if info.last_date else start_date
+        online_df = self._get_kline_online(symbol, period, online_start, end_date, count)
+
+        if online_df is None or online_df.empty:
+            return local_df
+
+        # 5. 使用 DataMerger 合并数据
+        combined = DataMerger.merge_kline_data(local_df, online_df)
+        combined = DataMerger.filter_by_date(combined, start_date, end_date)
+        combined = DataMerger.limit_count(combined, count) if count else combined
+
+        if combined is not None:
+            logger.info(f"{symbol} 合并: 本地{len(local_df)} + 在线{len(online_df)} = {len(combined)}")
+        return combined
+
+    def _get_kline_online(
+        self,
+        symbol: str,
+        period: str = '1d',
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        count: Optional[int] = None
+    ) -> Optional[pd.DataFrame]:
+        """从在线获取K线"""
+        if not self._ensure_connected():
+            return None
+
+        socket.setdefaulttimeout(_SOCKET_TIMEOUT)
+        category = self._to_category(period)
+
+        try:
+            market = self._get_market(symbol)
+            code = symbol.replace('.SH', '').replace('.SZ', '').replace('.BJ', '')
+
+            data = self._api.get_security_bars(category, market, code, 0, count or 800)
+
+            if data and len(data) > 0:
+                df = pd.DataFrame(data)
+
+                # 日期过滤
+                if end_date and 'datetime' in df.columns:
+                    df['datetime_str'] = df['datetime'].astype(str).str[:10]
+                    df = df[df['datetime_str'] <= end_date]
+                    df = df.drop(columns=['datetime_str'])
+
+                if start_date and 'datetime' in df.columns:
+                    df['datetime_str'] = df['datetime'].astype(str).str[:10]
+                    df = df[df['datetime_str'] >= start_date]
+                    df = df.drop(columns=['datetime_str'])
+
+                if count and len(df) > count:
+                    df = df.tail(count)
+
+                return self._normalize_kline_df(df, 'pytdx')
+
+        except Exception as e:
+            logger.warning(f"在线获取 {symbol} K线失败: {e}")
+            # 尝试重连一次
+            self._disconnect()
+            if self._ensure_connected():
+                try:
+                    data = self._api.get_security_bars(category, market, code, 0, count or 800)
+                    if data and len(data) > 0:
+                        df = pd.DataFrame(data)
+                        if count and len(df) > count:
+                            df = df.tail(count)
+                        return self._normalize_kline_df(df, 'pytdx')
+                except Exception as e2:
+                    logger.warning(f"重连后仍失败 {symbol}: {e2}")
+
+        return None
+
     def get_kline(
         self,
         symbols: List[str],
@@ -280,95 +463,42 @@ class V5PyTdxAdapter(V5DataAdapter):
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
         count: Optional[int] = None,
-        adjust_type: str = 'none'  # 参数保留（兼容性），实际强制为不复权
+        adjust_type: str = 'none'
     ) -> Dict[str, pd.DataFrame]:
-        """获取 K线数据
+        """获取 K线数据（智能本地+在线补齐）
 
-        优先在线获取，失败时日线回退本地 .day 文件。
+        日线数据：优先本地 + 在线补齐缺失部分（无缝合并）
+        分钟数据：直接在线获取
 
-        注意：此方法始终返回不复权原始数据，复权由服务层统一处理。
+        注意：此方法始终返回不复权原始数据
         """
         result = {}
+        is_daily = period in ('1d', '1D', 'day')
 
-        # 始终获取不复权原始数据（复权由服务层统一处理）
-        fq_type = 0  # 0=不复权
+        for symbol in symbols:
+            try:
+                if is_daily:
+                    # 日线：使用智能补齐
+                    df = self._get_kline_smart(symbol, period, start_date, end_date, count)
+                else:
+                    # 分钟线：直接在线
+                    df = self._get_kline_online(symbol, period, start_date, end_date, count)
 
-        # 优先在线获取
-        if self._ensure_connected():
-            socket.setdefaulttimeout(_SOCKET_TIMEOUT)  # 每次调用前强制设置
-            category = self._to_category(period)
+                if df is not None and not df.empty:
+                    result[symbol] = df
 
-            for symbol in symbols:
-                try:
-                    market = self._get_market(symbol)
-                    code = symbol.replace('.SH', '').replace('.SZ', '').replace('.BJ', '')
-
-                    # 使用 PyTdx 原生复权（fq_type: 0=不复权, 1=前复权, 2=后复权）
-                    data = self._api.get_security_bars(category, market, code, 0, count or 100)
-
-                    if data and len(data) > 0:
-                        df = pd.DataFrame(data)
-
-                        # 日期过滤
-                        if end_date and 'datetime' in df.columns:
-                            df['datetime_str'] = df['datetime'].astype(str).str[:10]
-                            df = df[df['datetime_str'] <= end_date]
-                            df = df.drop(columns=['datetime_str'])
-
-                        if start_date and 'datetime' in df.columns:
-                            df['datetime_str'] = df['datetime'].astype(str).str[:10]
-                            df = df[df['datetime_str'] >= start_date]
-                            df = df.drop(columns=['datetime_str'])
-
-                        # 限制条数
-                        if count and len(df) > count:
-                            df = df.tail(count)
-
-                        # 标准化后直接返回（PyTdx原生复权，无需再处理）
-                        result[symbol] = self._normalize_kline_df(df, 'pytdx')
-                        logger.debug(f"从在线获取 {symbol} K线: {len(df)} 条 (复权类型={adjust_type})")
-
-                except Exception as e:
-                    logger.warning(f"在线获取 {symbol} K线失败: {e}")
-                    # 连接可能已断开，尝试重连一次
-                    self._disconnect()
-                    if self._ensure_connected():
-                        try:
-                            data = self._api.get_security_bars(category, market, code, 0, count or 100)
-                            if data and len(data) > 0:
-                                df = pd.DataFrame(data)
-                                if count and len(df) > count:
-                                    df = df.tail(count)
-                                # 标准化后直接返回（不复权，由服务层统一处理）
-                                result[symbol] = self._normalize_kline_df(df, 'pytdx')
-                                logger.debug(f"重连后获取 {symbol} K线: {len(df)} 条")
-                        except Exception as e2:
-                            logger.warning(f"重连后仍失败 {symbol}: {e2}")
-                    continue
-
-        # 在线获取失败的股票，日线回退本地文件（仅当配置允许时）
-        if self._use_local_fallback and self._local_reader:
-            is_daily = period in ('1d', '1D', 'day')
-            if is_daily:
-                for symbol in symbols:
-                    if symbol in result:
-                        continue
-                    df = self._get_kline_from_local(symbol, count)
-                    if df is not None and not df.empty:
-                        if end_date and 'datetime' in df.columns:
-                            df['datetime'] = pd.to_datetime(df['datetime'])
-                            df = df[df['datetime'].astype(str).str[:10] <= end_date]
-                        if start_date and 'datetime' in df.columns:
-                            df['datetime'] = pd.to_datetime(df['datetime'])
-                            df = df[df['datetime'].astype(str).str[:10] >= start_date]
-                        # 标准化后直接返回（不复权，由服务层统一处理）
-                        result[symbol] = self._normalize_kline_df(df, 'pytdx_local')
-                        logger.debug(f"从本地文件获取 {symbol} K线: {len(df)} 条")
+            except Exception as e:
+                logger.error(f"获取 {symbol} K线异常: {e}")
+                continue
 
         return result
 
     def _normalize_quote_dict(self, code: str, quote: dict, source: str) -> dict:
-        """将 pytdx 原始 quote 标准化为统一格式"""
+        """将 pytdx 原始 quote 标准化为统一格式
+
+        单位统一：手 / 元（通达信本地格式）
+        PyTdx2 返回的已经是手/元，无需转换
+        """
         return {
             'code': code,
             'price': quote.get('price', 0),
@@ -377,16 +507,16 @@ class V5PyTdxAdapter(V5DataAdapter):
             'low': quote.get('low', 0),
             'close': quote.get('price', 0),
             'pre_close': quote.get('last_close', 0),
-            'volume': quote.get('vol', 0),
-            'amount': quote.get('amount', 0),
+            'volume': quote.get('vol', 0),      # 手（无需转换）
+            'amount': quote.get('amount', 0),   # 元（无需转换）
             'change': quote.get('price', 0) - quote.get('last_close', 0),
             'change_pct': round(
                 (quote.get('price', 0) - quote.get('last_close', 0)) / quote.get('last_close', 1) * 100, 2
             ) if quote.get('last_close') else 0,
             'bid1': quote.get('bid1', 0),
             'ask1': quote.get('ask1', 0),
-            'bid1_vol': quote.get('bid_vol1', 0),
-            'ask1_vol': quote.get('ask_vol1', 0),
+            'bid1_vol': quote.get('bid_vol1', 0),  # 手
+            'ask1_vol': quote.get('ask_vol1', 0),  # 手
             'data_source': source,
         }
 
