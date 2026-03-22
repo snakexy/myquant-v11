@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>V5 API 路由集成 - MyQuant V5 数据源使用指南</title>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@9.4.3/dist/mermaid.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            color: #e2e8f0;
+            font-family: 'Microsoft YaHei', 'Segoe UI', Arial, sans-serif;
+            line-height: 1.8;
+            background: linear-gradient(135deg, #1e1e3f 0%, #2d1b4e 100%);
+            padding: 20px;
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: #1a1a2e;
+            padding: 50px;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+        }
+        h1 {
+            color: #8b5cf6;
+            font-size: 42px;
+            margin-bottom: 20px;
+            text-align: center;
+            text-shadow: 0 0 30px rgba(139, 92, 246, 0.5);
+        }
+        h2 {
+            color: #a78bfa;
+            font-size: 32px;
+            margin: 50px 0 25px 0;
+            padding-bottom: 15px;
+            border-bottom: 3px solid #8b5cf6;
+        }
+        h3 {
+            color: #c4b5fd;
+            font-size: 24px;
+            margin: 35px 0 15px 0;
+        }
+        h4 {
+            color: #ddd6fe;
+            font-size: 20px;
+            margin: 25px 0 10px 0;
+        }
+        p { margin: 15px 0; color: #cbd5e1; }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 25px 0;
+            background: rgba(30, 30, 60, 0.8);
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+        }
+        th, td {
+            padding: 16px 20px;
+            text-align: left;
+            border-bottom: 1px solid rgba(139, 92, 246, 0.2);
+        }
+        th {
+            background: linear-gradient(135deg, rgba(139, 92, 246, 0.4) 0%, rgba(99, 102, 241, 0.4) 100%);
+            font-weight: 600;
+            color: #c4b5fd;
+            font-size: 15px;
+        }
+        tr:hover {
+            background: rgba(139, 92, 246, 0.1);
+        }
+        td { color: #cbd5e1; }
+
+        pre {
+            background: #0f0f1a;
+            border: 1px solid rgba(139, 92, 246, 0.3);
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+            overflow-x: auto;
+            font-size: 14px;
+        }
+        code {
+            color: #67e8f9;
+            font-family: 'Consolas', 'Monaco', monospace;
+        }
+
+        .back-link {
+            display: inline-block;
+            margin: 20px 0;
+            padding: 10px 25px;
+            background: linear-gradient(135deg, #8b5cf6 0%, #3b82f6 100%);
+            color: white;
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: 600;
+        }
+        .back-link:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(139, 92, 246, 0.4);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="V5-数据源使用完整指南-导航.html" class="back-link">← 返回导航页</a>
+
+        <h1>V5 API 路由集成</h1>
+
+        <h2>API 概览</h2>
+        <p>V5 场景化服务提供 <strong>25 个 API 端点</strong>，分为 5 大服务模块：</p>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>服务</th>
+                    <th>端点数</th>
+                    <th>基础路径</th>
+                    <th>说明</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>K线服务</strong></td>
+                    <td>6</td>
+                    <td>/api/v5/kline</td>
+                    <td>实时K线、无缝K线、历史K线</td>
+                </tr>
+                <tr>
+                    <td><strong>监控服务</strong></td>
+                    <td>4</td>
+                    <td>/api/v5/monitoring</td>
+                    <td>热点板块、热点股票、异常检测</td>
+                </tr>
+                <tr>
+                    <td><strong>增量更新服务</strong></td>
+                    <td>5</td>
+                    <td>/api/v5/incremental</td>
+                    <td>数据更新、缺失检测</td>
+                </tr>
+                <tr>
+                    <td><strong>数据转换服务</strong></td>
+                    <td>3</td>
+                    <td>/api/v5/conversion</td>
+                    <td>批量转换TDX数据</td>
+                </tr>
+                <tr>
+                    <td><strong>实时行情服务</strong></td>
+                    <td>7</td>
+                    <td>/api/v5/market</td>
+                    <td>实时行情、热点扫描</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h2>K线服务 API</h2>
+        <h3>1. 获取实时K线（订阅+聚合）</h3>
+        <pre><code>POST /api/v5/kline/intraday
+Content-Type: application/json
+
+{
+  "symbols": ["600000.SH", "000001.SZ"],
+  "period": "1m",
+  "count": 100,
+  "subscribe": true
+}</code></pre>
+
+        <h3>2. 获取无缝K线（历史+实时衔接）</h3>
+        <pre><code>POST /api/v5/kline/seamless
+Content-Type: application/json
+
+{
+  "symbols": ["600000.SH"],
+  "period": "1d",
+  "end_date": "2026-03-20",
+  "days_back": 5
+}</code></pre>
+
+        <h3>3. 获取单只股票实时K线</h3>
+        <pre><code>GET /api/v5/kline/realtime/600000.SH?period=1m&count=100</code></pre>
+
+        <h3>4. 获取历史K线</h3>
+        <pre><code>POST /api/v5/kline/history/600000.SH?period=1d&start_date=2026-03-01&end_date=2026-03-20</code></pre>
+
+        <h3>5. 获取订阅状态</h3>
+        <pre><code>GET /api/v5/kline/subscription/status</code></pre>
+
+        <h3>6. 更新订阅列表</h3>
+        <pre><code>POST /api/v5/kline/subscription/update
+Content-Type: application/json
+
+["600000.SH", "000001.SZ", "300001.SZ"]</code></pre>
+
+        <h2>监控服务 API</h2>
+        <h3>1. 获取热点板块</h3>
+        <pre><code>GET /api/v5/monitoring/hot-sectors?limit=20&min_change_pct=0.5</code></pre>
+
+        <h3>2. 获取热点股票</h3>
+        <pre><code>GET /api/v5/monitoring/hot-stocks?sector_code=880001&limit=50&min_change_pct=3.0</code></pre>
+
+        <h3>3. 异常检测</h3>
+        <pre><code>POST /api/v5/monitoring/anomaly?volume_ratio_threshold=3.0&swing_threshold=5.0
+Content-Type: application/json
+
+["600000.SH", "000001.SZ", "300001.SZ"]</code></pre>
+
+        <h3>4. 获取市场概览</h3>
+        <pre><code>GET /api/v5/monitoring/market-summary</code></pre>
+
+        <h2>增量更新服务 API</h2>
+        <h3>1. 更新股票数据</h3>
+        <pre><code>POST /api/v5/incremental/update
+Content-Type: application/json
+
+{
+  "symbols": ["600000.SH", "000001.SZ"],
+  "period": "1d",
+  "days_back": 7,
+  "save_to_db": false,
+  "parallel": true
+}</code></pre>
+
+        <h3>2. 检测缺失数据</h3>
+        <pre><code>POST /api/v5/incremental/detect
+Content-Type: application/json
+
+{
+  "symbols": ["600000.SH"],
+  "period": "1d",
+  "days_back": 30
+}</code></pre>
+
+        <h3>3. 获取当天收盘快照</h3>
+        <pre><code>POST /api/v5/incremental/snapshot
+Content-Type: application/json
+
+["600000.SH", "000001.SZ"]</code></pre>
+
+        <h2>数据转换服务 API</h2>
+        <h3>1. 批量转换数据</h3>
+        <pre><code>POST /api/v5/conversion/convert
+Content-Type: application/json
+
+{
+  "symbols": ["600000.SH", "000001.SZ"],
+  "period": "1d",
+  "start_date": "2026-01-01",
+  "end_date": "2026-03-20",
+  "save_to_qlib": true,
+  "parallel": true
+}</code></pre>
+
+        <h2>实时行情服务 API</h2>
+        <h3>1. 获取实时行情</h3>
+        <pre><code>POST /api/v5/market/quotes?use_cache=true
+Content-Type: application/json
+
+["600000.SH", "000001.SZ"]</code></pre>
+
+        <h3>2. 扫描热点股票</h3>
+        <pre><code>GET /api/v5/market/hot-stocks/scan?market=all&min_change_pct=3.0&limit=50</code></pre>
+
+        <h3>3. 获取热点股票池</h3>
+        <pre><code>GET /api/v5/market/hot-stocks/pool?limit=20</code></pre>
+
+        <h3>4. 更新订阅列表</h3>
+        <pre><code>POST /api/v5/market/subscriptions/update
+Content-Type: application/json
+
+["600000.SH", "000001.SZ"]</code></pre>
+
+        <h2>统一响应格式</h2>
+        <p>所有 API 响应遵循统一格式：</p>
+        <pre><code>{
+  "code": 0,          // 0 表示成功，非 0 表示错误
+  "data": {...},      // 响应数据
+  "message": "success"  // 响应消息
+}</code></pre>
+
+        <h2>代码结构</h2>
+        <pre><code>backend/
+├── data_providers/          # 数据提供者层
+│   ├── models/              # 数据模型
+│   ├── routing/             # 路由逻辑
+│   ├── adapters/            # 数据源适配器
+│   └── services/            # 场景化服务
+│       ├── kline/           # K线服务
+│       ├── monitoring/      # 监控服务
+│       ├── incremental/     # 增量更新服务
+│       ├── conversion/      # 数据转换服务
+│       └── realtime_market/ # 实时行情服务
+│
+└── api/
+    └── v5/                  # V5 API 路由
+        ├── __init__.py
+        ├── kline.py         # K线服务路由
+        ├── monitoring.py    # 监控服务路由
+        ├── incremental.py   # 增量更新路由
+        ├── conversion.py    # 数据转换路由
+        └── market.py        # 实时行情路由</code></pre>
+
+        <h2>快速开始</h2>
+        <h3>1. 启动服务器</h3>
+        <pre><code>cd backend
+python -m api.main</code></pre>
+
+        <h3>2. 访问 API 文档</h3>
+        <p>服务器将在 <code>http://localhost:8000</code> 启动。</p>
+        <ul>
+            <li>Swagger UI: http://localhost:8000/docs</li>
+            <li>ReDoc: http://localhost:8000/redoc</li>
+        </ul>
+
+        <h3>3. 测试 API</h3>
+        <pre><code># 获取热点板块
+curl http://localhost:8000/api/v5/monitoring/hot-sectors?limit=10
+
+# 获取实时K线
+curl -X POST http://localhost:8000/api/v5/kline/intraday \
+  -H "Content-Type: application/json" \
+  -d '{"symbols": ["600000.SH"], "period": "1m", "count": 100}'</code></pre>
+    </div>
+</body>
+</html>

@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FAQ - MyQuant V5 数据源使用指南</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            color: #e2e8f0;
+            font-family: 'Microsoft YaHei', 'Segoe UI', Arial, sans-serif;
+            line-height: 1.8;
+            background: linear-gradient(135deg, #1e1e3f 0%, #2d1b4e 100%);
+            padding: 20px;
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: #1a1a2e;
+            padding: 50px;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+        }
+        .back-nav {
+            margin-bottom: 30px;
+        }
+        .back-nav a {
+            color: #a78bfa;
+            text-decoration: none;
+            font-size: 16px;
+            transition: color 0.3s;
+        }
+        .back-nav a:hover {
+            color: #c4b5fd;
+        }
+        h1 {
+            color: #8b5cf6;
+            font-size: 42px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        h2 {
+            color: #a78bfa;
+            font-size: 32px;
+            margin: 50px 0 25px 0;
+            padding-bottom: 15px;
+            border-bottom: 3px solid #8b5cf6;
+        }
+        h3 {
+            color: #c4b5fd;
+            font-size: 22px;
+            margin: 30px 0 15px 0;
+        }
+        p { margin: 15px 0; color: #cbd5e1; }
+        ul, ol { margin: 15px 0 15px 30px; }
+        li { margin: 8px 0; color: #cbd5e1; }
+
+        .warning-box {
+            background: rgba(239, 68, 68, 0.1);
+            border: 2px solid rgba(239, 68, 68, 0.3);
+            border-radius: 12px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        .warning-box h4 {
+            color: #fca5a5;
+            margin-bottom: 10px;
+        }
+        .info-box {
+            background: rgba(59, 130, 246, 0.1);
+            border: 2px solid rgba(59, 130, 246, 0.3);
+            border-radius: 12px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        .info-box h4 {
+            color: #93c5fd;
+            margin-bottom: 10px;
+        }
+
+        .comparison-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            background: rgba(30, 30, 60, 0.5);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+        .comparison-table th {
+            background: rgba(139, 92, 246, 0.2);
+            color: #c4b5fd;
+            padding: 15px;
+            text-align: left;
+            font-weight: 600;
+        }
+        .comparison-table td {
+            padding: 12px 15px;
+            border-bottom: 1px solid rgba(139, 92, 246, 0.1);
+        }
+        .comparison-table tr:hover {
+            background: rgba(139, 92, 246, 0.05);
+        }
+
+        .tag {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 13px;
+            font-weight: 600;
+            margin: 2px;
+        }
+        .tag-fast {
+            background: rgba(34, 197, 94, 0.2);
+            color: #86efac;
+            border: 1px solid rgba(34, 197, 94, 0.3);
+        }
+        .tag-medium {
+            background: rgba(59, 130, 246, 0.2);
+            color: #93c5fd;
+            border: 1px solid rgba(59, 130, 246, 0.3);
+        }
+        .tag-warning {
+            background: rgba(251, 191, 36, 0.2);
+            color: #fcd34d;
+            border: 1px solid rgba(251, 191, 36, 0.3);
+        }
+
+        code {
+            background: rgba(139, 92, 246, 0.2);
+            color: #e2e8f0;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 14px;
+        }
+
+        .highlight {
+            background: rgba(139, 92, 246, 0.1);
+            border-left: 4px solid #8b5cf6;
+            padding: 15px;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="back-nav">
+            <a href="../V5-数据源使用完整指南-导航.html">← 返回导航页</a>
+        </div>
+
+        <h1>常见问题 FAQ</h1>
+
+        <h2>Q1: 为什么不能用TdxQuant获取当天分钟线？</h2>
+        <div class="warning-box">
+            <h4>A:</h4>
+            <p>TdxQuant API的限制。`get_kline()`只支持历史K线，不支持当天分钟级别的实时数据。</p>
+            <p><strong>正确做法:</strong></p>
+            <ul>
+                <li>交易时间: <code>XtQuant.get_market_kline()</code> (0.90ms)</li>
+                <li>非交易时间: <code>PyTdx2.get_kline()</code> (10-19ms)</li>
+            </ul>
+        </div>
+
+        <h2>Q2: 为什么不能用XtQuant获取板块数据？</h2>
+        <div class="warning-box">
+            <h4>A:</h4>
+            <p>XtQuant完全不支持板块数据，这是功能限制，不是配置问题。</p>
+            <p><strong>正确做法:</strong></p>
+            <ul>
+                <li>交易时间: <code>TdxQuant.get_sectors()</code> (6.99ms, 586板块)</li>
+                <li>非交易时间: <code>PyTdx2.get_sectors()</code> (~15ms)</li>
+            </ul>
+        </div>
+
+        <h2>Q3: 非交易时间应该用什么数据源？</h2>
+        <div class="info-box">
+            <h4>A:</h4>
+            <p>只能用PyTdx2（24/7在线数据源）或QLib（本地数据库）</p>
+            <table class="comparison-table">
+                <tr>
+                    <th>数据源</th>
+                    <th>状态</th>
+                </tr>
+                <tr>
+                    <td>TdxQuant</td>
+                    <td>❌ 需要通达信终端运行</td>
+                </tr>
+                <tr>
+                    <td>XtQuant</td>
+                    <td>❌ 需要QMT运行</td>
+                </tr>
+                <tr>
+                    <td>PyTdx2</td>
+                    <td>✅ 24/7在线</td>
+                </tr>
+                <tr>
+                    <td>QLib</td>
+                    <td>✅ 本地数据库</td>
+                </tr>
+            </table>
+        </div>
+
+        <h2>Q4: 追求极致性能应该怎么配置？</h2>
+        <div class="info-box">
+            <h4>A:</h4>
+            <table class="comparison-table">
+                <tr>
+                    <th>业务</th>
+                    <th>最优配置</th>
+                    <th>性能</th>
+                </tr>
+                <tr>
+                    <td>L1快照</td>
+                    <td>TdxQuant</td>
+                    <td><span class="tag tag-fast">0.60ms</span></td>
+                </tr>
+                <tr>
+                    <td>当天分钟线</td>
+                    <td>XtQuant</td>
+                    <td><span class="tag tag-fast">0.90ms</span></td>
+                </tr>
+                <tr>
+                    <td>板块数据</td>
+                    <td>TdxQuant</td>
+                    <td><span class="tag tag-fast">6.99ms</span></td>
+                </tr>
+                <tr>
+                    <td>历史K线</td>
+                    <td>QLib</td>
+                    <td><span class="tag tag-fast">7-10ms</span></td>
+                </tr>
+            </table>
+        </div>
+
+        <h2>Q5: 如何判断当前是否为交易时间？</h2>
+        <div class="info-box">
+            <h4>A:</h4>
+            <pre style="background: rgba(0,0,0,0.3); padding: 15px; border-radius: 8px; overflow-x: auto;"><code style="background: none; padding: 0;">from datetime import datetime, time
+
+def is_trading_time():
+    now = datetime.now()
+    current_time = now.time()
+    weekday = now.weekday()
+
+    # 周末
+    if weekday >= 5:
+        return False
+
+    # 交易时间
+    morning_start = time(9, 30)
+    morning_end = time(11, 30)
+    afternoon_start = time(13, 0)
+    afternoon_end = time(15, 0)
+
+    return ((morning_start <= current_time <= morning_end) or
+            (afternoon_start <= current_time <= afternoon_end))</code></pre>
+        </div>
+
+        <h2>Q6: 批量获取大量股票应该用什么？</h2>
+        <div class="info-box">
+            <h4>A:</h4>
+            <table class="comparison-table">
+                <tr>
+                    <th>股票数量</th>
+                    <th>数据源</th>
+                    <th>原因</th>
+                </tr>
+                <tr>
+                    <td>&lt;100</td>
+                    <td>TdxQuant</td>
+                    <td><span class="tag tag-fast">0.60ms</span>最快</td>
+                </tr>
+                <tr>
+                    <td>100-300</td>
+                    <td>XtQuant</td>
+                    <td><span class="tag tag-medium">6ms</span>缓存</td>
+                </tr>
+                <tr>
+                    <td>300-800</td>
+                    <td>PyTdx2</td>
+                    <td>分批获取</td>
+                </tr>
+                <tr>
+                    <td>&gt;800</td>
+                    <td>PyTdx2</td>
+                    <td>分批获取</td>
+                </tr>
+            </table>
+        </div>
+
+        <h2>Q7: XtQuant的`get_market_data_ex`能否获取当天数据？</h2>
+        <div class="warning-box">
+            <h4>A:</h4>
+            <p><strong>取决于QMT本地数据库状态</strong></p>
+            <p><strong>实际情况：</strong></p>
+            <ul>
+                <li><code>get_market_data_ex</code> <strong>读取QMT本地缓存</strong>，并非真正"在线获取"</li>
+                <li>非交易时间：数据截止到最近一次收盘</li>
+                <li>交易时间：取决于QMT是否自动更新当天数据</li>
+            </ul>
+            <p><strong>验证测试：</strong>测试时间 2026-03-20 04:52（凌晨），最新数据：2026-03-19 15:00（昨天收盘）</p>
+            <p><strong>获取当天数据的正确方式：</strong></p>
+            <ul>
+                <li>交易时间：让QMT自动更新，或手动下载</li>
+                <li>非交易时间：使用PyTdx2（24/7在线数据源）</li>
+            </ul>
+        </div>
+
+        <h2>Q8: 并行分工策略是什么？</h2>
+        <div class="info-box">
+            <h4>A:</h4>
+            <div class="highlight">
+                <p><strong>触发条件：</strong>盘后/非交易时间 + 需要当天分钟线 + QMT已连接 + 股票数>50只</p>
+                <p><strong>分工方式：</strong>XtQuant处理一半 + PyTdx2处理另一半，并行执行</p>
+                <p><strong>性能提升：</strong>整体吞吐量约2x</p>
+            </div>
+        </div>
+
+        <h2>Q9: 为什么板块数据特别重要？</h2>
+        <div class="info-box">
+            <h4>A:</h4>
+            <p>板块数据在后期的<strong>风险预测</strong>中有关键作用：</p>
+            <ul>
+                <li><strong>板块轮动分析</strong> - 识别热点板块，预测板块切换时机</li>
+                <li><strong>系统性风险监控</strong> - 板块整体涨跌，市场情绪指标</li>
+                <li><strong>投资组合优化</strong> - 板块配置权重，行业分散度</li>
+            </ul>
+            <p style="color: #fca5a5; font-weight: 600;">没有板块数据的风险预测是不完整的！</p>
+        </div>
+
+        <div style="text-align: center; color: #64748b; margin-top: 50px;">
+            <p>文档版本: v3.2 | 更新日期: 2026-03-20</p>
+        </div>
+    </div>
+</body>
+</html>

@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>路由策略 - MyQuant V5 数据源使用指南</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { color: #e2e8f0; font-family: 'Microsoft YaHei', sans-serif; line-height: 1.8; background: linear-gradient(135deg, #1e1e3f 0%, #2d1b4e 100%); padding: 20px; }
+        .container { max-width: 1400px; margin: 0 auto; background: #1a1a2e; padding: 50px; border-radius: 20px; }
+        .back-nav a { color: #a78bfa; text-decoration: none; }
+        h1 { color: #8b5cf6; text-align: center; }
+        h2 { color: #a78bfa; margin: 40px 0 20px; }
+        .comparison-table { width: 100%; border-collapse: collapse; margin: 20px 0; background: rgba(30, 30, 60, 0.5); }
+        .comparison-table th { background: rgba(139, 92, 246, 0.2); color: #c4b5fd; padding: 15px; text-align: left; }
+        .comparison-table td { padding: 12px 15px; border-bottom: 1px solid rgba(139, 92, 246, 0.1); }
+        .info-box { background: rgba(59, 130, 246, 0.1); border: 2px solid rgba(59, 130, 246, 0.3); padding: 20px; border-radius: 12px; margin: 20px 0; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="back-nav"><a href="../V5-数据源使用完整指南-导航.html">← 返回导航页</a></div>
+        <h1>🔀 V5 双层路由架构</h1>
+        <div class="info-box">
+            <p><strong>第一层</strong>: 板块 vs 非板块 数据类型路由</p>
+            <p><strong>第二层</strong>: 交易时间 + 数据类型 组合路由</p>
+        </div>
+        <h2>板块数据路由</h2>
+        <table class="comparison-table">
+            <tr><th>时间段</th><th>数据源</th><th>性能</th></tr>
+            <tr><td>交易时间</td><td><strong>TdxQuant</strong></td><td>6.99ms, 586板块</td></tr>
+            <tr><td>非交易时间</td><td><strong>PyTdx2</strong></td><td>~15ms, 真在线获取</td></tr>
+        </table>
+        <h2>通用数据路由</h2>
+        <table class="comparison-table">
+            <tr><th>数据类型</th><th>交易时间</th><th>非交易时间</th></tr>
+            <tr><td>L1快照</td><td>TdxQuant(0.60ms)</td><td>PyTdx2(10-19ms)</td></tr>
+            <tr><td>当天分钟线</td><td>XtQuant(0.90ms)</td><td>PyTdx2(10-19ms)</td></tr>
+        </table>
+        <p style="text-align: center; color: #64748b; margin-top: 50px;">文档版本: v3.2 | 更新日期: 2026-03-20</p>
+    </div>
+</body>
+</html>

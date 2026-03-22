@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>TdxQuant - MyQuant V5 数据源使用指南</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { color: #e2e8f0; font-family: 'Microsoft YaHei', sans-serif; line-height: 1.8; background: linear-gradient(135deg, #1e1e3f 0%, #2d1b4e 100%); padding: 20px; }
+        .container { max-width: 1400px; margin: 0 auto; background: #1a1a2e; padding: 50px; border-radius: 20px; }
+        .back-nav a { color: #a78bfa; text-decoration: none; }
+        h1 { color: #8b5cf6; text-align: center; margin-bottom: 30px; }
+        h2 { color: #a78bfa; margin: 40px 0 20px; border-bottom: 3px solid #8b5cf6; padding-bottom: 10px; }
+        .warning-box { background: rgba(239, 68, 68, 0.1); border: 2px solid rgba(239, 68, 68, 0.3); padding: 20px; border-radius: 12px; margin: 20px 0; }
+        .info-box { background: rgba(59, 130, 246, 0.1); border: 2px solid rgba(59, 130, 246, 0.3); padding: 20px; border-radius: 12px; margin: 20px 0; }
+        .comparison-table { width: 100%; border-collapse: collapse; margin: 20px 0; background: rgba(30, 30, 60, 0.5); }
+        .comparison-table th { background: rgba(139, 92, 246, 0.2); color: #c4b5fd; padding: 15px; text-align: left; }
+        .comparison-table td { padding: 12px 15px; border-bottom: 1px solid rgba(139, 92, 246, 0.1); }
+        .tag { background: rgba(34, 197, 94, 0.2); color: #86efac; padding: 4px 12px; border-radius: 12px; font-size: 13px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="back-nav"><a href="../V5-数据源使用完整指南-导航.html">← 返回导航页</a></div>
+        <h1>⚡ TdxQuant - 交易时间王者</h1>
+        <div class="info-box">
+            <h3>核心优势</h3>
+            <ul>
+                <li><strong>L1 实时快照</strong>: <span class="tag">0.60ms</span> 交易时间最快</li>
+                <li><strong>板块数据</strong>: <span class="tag">6.99ms</span> 586个板块</li>
+                <li><strong>订阅功能</strong>: 100股上限</li>
+            </ul>
+        </div>
+        <div class="warning-box">
+            <h2>❌ 关键限制</h2>
+            <ul>
+                <li><strong>不支持当天分钟线</strong> - 当天分钟必须用XtQuant/PyTdx2</li>
+                <li><strong>仅交易时间可用</strong> - 非交易时间无法使用</li>
+            </ul>
+        </div>
+        <p style="text-align: center; color: #64748b; margin-top: 50px;">文档版本: v3.2 | 更新日期: 2026-03-20</p>
+    </div>
+</body>
+</html>
