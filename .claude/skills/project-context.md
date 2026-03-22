@@ -42,14 +42,14 @@ npm run dev   # 运行在 localhost:5174
 | `GET /api/v1/quotes/status` | 市场状态（前端别名） |
 | `GET /docs` | Swagger UI |
 
-## 已解决的关键问题（避免重复踩坑）
-1. **pytdx2 参数错误**: `get_security_bars` 只有5个参数，不能传 `fq_type`
-2. **缺少方法**: `_normalize_quote_dict` 需在 `pytdx_adapter.py` 手动实现
-3. **路由重复前缀**: router 自带 prefix，main.py 挂载时不要重复加
-4. **requirements.txt 编码**: 原文件含中文注释导致 GBK 报错，已清理为纯 ASCII
-5. **pytz 未安装**: quotes.py 用到 pytz，需单独 pip install
-6. **uvicorn reload 不可靠**: 改代码后建议手动重启，不要依赖热重载
-7. **API 返回元组**: `get_realtime_quotes` 返回 `(dict, source)` 元组，API层需解包
+## 已解决的关键问题
+→ 详见 `.claude/skills/` 下的 skill 文件，遇到相关问题直接查阅：
+- `pytdx2-api-differences` — get_security_bars 参数、返回 None
+- `uvicorn-windows-reload` — 热重载不可靠，需手动重启
+- `fastapi-frontend-alias-routes` — 前后端路径不匹配
+- `windows-pip-encoding` — requirements.txt GBK 报错
+- `_normalize_quote_dict` 需在 pytdx_adapter.py 手动实现
+- `pytz` 未在 requirements.txt，需单独 pip install
 
 ## 前端导航栏说明
 - **公共导航栏**: `E:/MyQuant_v10.0.0/frontend/src/components/GlobalNavBar.vue`

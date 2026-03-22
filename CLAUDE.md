@@ -64,13 +64,3 @@
 ## 提交规则
 - 不主动提交，由用户决定何时提交
 - 提交前确认没有 __pycache__、.env、.venv 等文件混入
-
----
-
-## 项目关键路径
-- 后端入口: `backend/src/myquant/main.py`
-- 路由层: `backend/src/myquant/api/dataget/`
-- 业务逻辑: `backend/src/myquant/core/market/`
-- 数据适配器: `backend/src/myquant/core/market/adapters/`
-- 前端公共导航: `E:/MyQuant_v10.0.0/frontend/src/components/GlobalNavBar.vue`
-- 前端实时行情: `E:/MyQuant_v10.0.0/frontend/src/views/market/RealtimeQuotes.vue`
