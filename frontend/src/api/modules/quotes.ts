@@ -4,7 +4,7 @@ import axios from 'axios'
 // V5 路由 (/api/v5) 和 quotes 路由 (/api/v1/quotes) 均直接返回 Pydantic 模型（无 {code, data} 包装）
 // 使用原始 axios 实例（避免拦截器检查 code 字段）
 
-const _base = (import.meta.env.VITE_API_BASE_URL || '/api/v1').replace(/\/v1$/, '')
+const _base = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/api\/v1$/, '').replace(/\/$/, '')
 
 // V5 专用实例（/api/v5）
 const v5Api = axios.create({
