@@ -7,26 +7,18 @@
 - **数据源**: ✅ pytdx2 联网行情已通，K线/快照/市场状态均正常
 
 ## 项目结构
-```
-E:/MyQuant_v11/          ← 主项目根目录（有git）
-├── backend/             ← Python FastAPI 后端
-│   ├── .venv/           ← Python 3.11.8 虚拟环境（勿提交）
-│   ├── src/myquant/     ← 主包
-│   │   ├── main.py      ← FastAPI 入口
-│   │   ├── api/data/    ← 路由层
-│   │   └── core/market/ ← 业务逻辑层
-│   ├── external/pytdx2/ ← pytdx2 本地包（非pip安装）
-│   └── pyproject.toml   ← 包配置（where=["src","external"]）
-├── frontend/src/        ← 前端源码（无构建配置，用v10跑）
-└── version_manager/     ← 本地备份工具（已在.gitignore）
+→ 详见 `E:/MyQuant_v11/STRUCTURE.md`（代码放哪里、各层职责、命名规范）
 
-E:/MyQuant_v10.0.0/frontend/  ← 当前运行的前端（vite dev server）
-├── vite.config.ts       ← 代理 /api → localhost:8000
-└── src/
-    ├── components/GlobalNavBar.vue  ← 公共导航栏（今天新建）
-    ├── views/market/RealtimeQuotes.vue ← 实时行情主页
-    └── router/index.ts  ← /RealtimeQuotes 路由已配置
-```
+**v11 特殊说明（STRUCTURE.md 未覆盖的）：**
+- `backend/.venv/` — Python 3.11.8 虚拟环境（勿提交）
+- `backend/external/pytdx2/` — pytdx2 本地包（非 pip 安装）
+- `frontend/src/` — 前端源码，无构建配置，用 v10 的 vite 运行
+
+**当前运行的前端（不在 v11 目录）：**
+- `E:/MyQuant_v10.0.0/frontend/` — vite dev server，代理 /api → localhost:8000
+- `src/components/GlobalNavBar.vue` — 公共导航栏
+- `src/views/market/RealtimeQuotes.vue` — 实时行情主页
+- `src/router/index.ts` — /RealtimeQuotes 路由
 
 ## 启动命令
 ```bash
