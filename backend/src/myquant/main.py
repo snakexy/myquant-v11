@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
-from myquant.api.data import (
+from myquant.api.dataget import (
     quotes_router,
     monitoring_router,
     incremental_router,

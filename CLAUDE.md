@@ -69,7 +69,7 @@
 
 ## 项目关键路径
 - 后端入口: `backend/src/myquant/main.py`
-- 路由层: `backend/src/myquant/api/data/`
+- 路由层: `backend/src/myquant/api/dataget/`
 - 业务逻辑: `backend/src/myquant/core/market/`
 - 数据适配器: `backend/src/myquant/core/market/adapters/`
 - 前端公共导航: `E:/MyQuant_v10.0.0/frontend/src/components/GlobalNavBar.vue`

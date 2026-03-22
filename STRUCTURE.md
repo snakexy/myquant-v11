@@ -15,14 +15,13 @@ MyQuant_v11/
 │       │   │   ├── validation.py     ← 验证 API
 │       │   │   └── production.py     ← 生产 API
 │       │   │
-│       │   └── data/                 ← 数据服务 API
+│       │   └── dataget/              ← 数据获取 API（行情/监控/增量/转换）
 │       │       ├── __init__.py
 │       │       ├── quotes.py         ← 行情 K线/快照
 │       │       ├── market.py         ← 市场数据
 │       │       ├── monitoring.py     ← 实时监控
 │       │       ├── incremental.py    ← 增量更新
 │       │       └── conversion.py     ← 数据转换
-│       │
 │       ├── core/                     ← 核心业务层
 │       │   ├── __init__.py
 │       │   ├── market/               ← 行情核心
@@ -161,7 +160,7 @@ api/ → core/ → infrastructure/
 
 ## 文件命名规范
 
-- **适配器**: `v5_{source}_adapter.py` (如 `v5_pytdx_adapter.py`)
-- **服务**: `{scene}_service.py` (如 `seamless_kline_service.py`)
-- **路由**: `{name}.py` (如 `quotes.py`)
+- **适配器**: `{source}_adapter.py` (如 `pytdx_adapter.py`, `xtquant_adapter.py`)
+- **服务**: `{scene}_service.py` (如 `seamless_service.py`, `realtime_service.py`)
+- **路由**: `{name}.py` (如 `quotes.py`, `market.py`)
 - **模型**: `{entity}.py` (如 `kline.py`)
