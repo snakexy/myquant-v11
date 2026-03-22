@@ -293,12 +293,15 @@ class V5PyTdxAdapter(V5DataAdapter):
         return False
 
     def _get_market(self, symbol: str) -> int:
-        """获取市场代码
+        """获取市场代码：优先使用后缀，避免指数代码被误判
 
-        6/5/9 开头 -> 上海 (1)
-        0/2/3 开头 -> 深圳 (0)
-        88 开头 -> 通达信特有指数 (31, 用于 get_instrument_detail)
+        .SH -> 上海 (1)，.SZ/.BJ -> 深圳 (0)
+        无后缀时按代码前缀推断：6/5/9 -> 上海，88 -> 通达信特有指数 (31)
         """
+        if '.SH' in symbol:
+            return 1
+        if '.SZ' in symbol or '.BJ' in symbol:
+            return 0
         code = symbol.replace('.SH', '').replace('.SZ', '').replace('.BJ', '')
         if code.startswith('88'):
             return 31  # 通达信特有指数 (如 880005)
