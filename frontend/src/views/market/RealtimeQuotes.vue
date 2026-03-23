@@ -131,17 +131,23 @@
             <div class="section-title">{{ isZh ? '五档盘口' : 'Order Book' }}</div>
             <div class="order-book">
               <div class="order-column">
-                <div v-for="(ask, i) in asks" :key="'ask'+i" class="order-row sell">
-                  <span>{{ isZh ? '卖' : 'Sell' }} {{ 5 - i }}</span>
+                <div v-for="(ask, i) in asks.slice().reverse()" :key="'ask'+i" class="order-row sell">
+                  <span>{{ isZh ? '卖' : 'Sell' }} {{ i + 1 }}</span>
                   <span class="order-price">{{ ask.price }}</span>
-                  <span class="order-size">{{ ask.size }}</span>
+                  <span class="order-size">
+                    <span class="size-bar" :style="{ width: getSizePercent(ask.size) + '%' }"></span>
+                    {{ formatOrderSize(ask.size) }}
+                  </span>
                 </div>
               </div>
               <div class="order-column">
                 <div v-for="(bid, i) in bids" :key="'bid'+i" class="order-row buy">
                   <span>{{ isZh ? '买' : 'Buy' }} {{ i + 1 }}</span>
                   <span class="order-price">{{ bid.price }}</span>
-                  <span class="order-size">{{ bid.size }}</span>
+                  <span class="order-size">
+                    <span class="size-bar" :style="{ width: getSizePercent(bid.size) + '%' }"></span>
+                    {{ formatOrderSize(bid.size) }}
+                  </span>
                 </div>
               </div>
             </div>
@@ -173,6 +179,64 @@
               <div class="info-item">
                 <div class="info-label">{{ isZh ? '成交额' : 'Amount' }}</div>
                 <div class="info-value">{{ formatAmount(currentQuote.amount) }}</div>
+              </div>
+              <div class="info-item">
+                <div class="info-label">{{ isZh ? '换手率' : 'Turnover' }}</div>
+                <div class="info-value">{{ currentQuote.turnover_rate ? currentQuote.turnover_rate + '%' : '--' }}</div>
+              </div>
+              <div class="info-item">
+                <div class="info-label">{{ isZh ? '总量' : 'Volume' }}</div>
+                <div class="info-value">{{ formatVolume(currentQuote.volume) }}</div>
+              </div>
+              <div class="info-item">
+                <div class="info-label">{{ isZh ? '振幅' : 'Amplitude' }}</div>
+                <div class="info-value">{{ currentQuote.amplitude ? currentQuote.amplitude + '%' : '--' }}</div>
+              </div>
+              <div class="info-item">
+                <div class="info-label">{{ isZh ? '量比' : 'Vol Ratio' }}</div>
+                <div class="info-value" :class="currentQuote.volume_ratio > 1 ? 'positive' : currentQuote.volume_ratio < 1 ? 'negative' : ''">{{ currentQuote.volume_ratio || '--' }}</div>
+              </div>
+              <div class="info-item">
+                <div class="info-label">{{ isZh ? '外盘' : 'Outer' }}</div>
+                <div class="info-value positive">{{ formatVol(currentQuote.outer_vol) }}</div>
+              </div>
+              <div class="info-item">
+                <div class="info-label">{{ isZh ? '内盘' : 'Inner' }}</div>
+                <div class="info-value negative">{{ formatVol(currentQuote.inner_vol) }}</div>
+              </div>
+              <div class="info-item">
+                <div class="info-label">{{ isZh ? '市盈率' : 'P/E' }}</div>
+                <div class="info-value">{{ currentQuote.pe_ratio || '--' }}</div>
+              </div>
+              <div class="info-item">
+                <div class="info-label">{{ isZh ? '市净率' : 'P/B' }}</div>
+                <div class="info-value">{{ currentQuote.pb_ratio || '--' }}</div>
+              </div>
+              <div class="info-item">
+                <div class="info-label">{{ isZh ? '股息率' : 'Div Yield' }}</div>
+                <div class="info-value">{{ currentQuote.dy_ratio ? currentQuote.dy_ratio + '%' : '--' }}</div>
+              </div>
+              <div class="info-item">
+                <div class="info-label">{{ isZh ? '涨停价' : 'Limit Up' }}</div>
+                <div class="info-value positive">{{ currentQuote.zt_price || '--' }}</div>
+              </div>
+              <div class="info-item">
+                <div class="info-label">{{ isZh ? '跌停价' : 'Limit Down' }}</div>
+                <div class="info-value negative">{{ currentQuote.dt_price || '--' }}</div>
+              </div>
+              <div class="info-item">
+                <div class="info-label">{{ isZh ? '贝塔系数' : 'Beta' }}</div>
+                <div class="info-value">{{ currentQuote.beta || '--' }}</div>
+              </div>
+              <div class="info-item">
+                <div class="info-label">{{ isZh ? '总股本' : 'Shares' }}</div>
+                <div class="info-value">{{ formatShares(currentQuote.total_shares) }}</div>
+              </div>
+              <div class="info-item" style="grid-column: 1 / -1;">
+                <div class="data-source-info">
+                  <span class="data-source-label">{{ isZh ? '数据源' : 'Source' }}</span>
+                  <span class="data-source-value">{{ currentQuote.data_source }}</span>
+                </div>
               </div>
             </div>
           </div>
@@ -223,6 +287,31 @@ import {
 type ChartApi = any
 type SeriesApi = any
 
+interface QuoteData {
+  price: string | number
+  change: number
+  change_percent: number
+  open: string | number
+  high: string | number
+  low: string | number
+  prev_close: string | number
+  volume: number
+  amount: number
+  turnover_rate: number
+  amplitude: number
+  volume_ratio: number
+  outer_vol: number
+  inner_vol: number
+  pe_ratio: number
+  pb_ratio: number
+  dy_ratio: number
+  zt_price: string | number
+  dt_price: string | number
+  beta: number
+  total_shares: number
+  data_source: string
+}
+
 // 周期选项（响应语言切换）
 const timeframes = computed(() => [
   { label: isZh.value ? '分时' : '1m',   value: '1m' },
@@ -260,7 +349,7 @@ const indices = ref([
 ])
 
 // 当前行情数据
-const currentQuote = ref({
+const currentQuote = ref<QuoteData>({
   price: '--',
   change: 0,
   change_percent: 0,
@@ -269,7 +358,20 @@ const currentQuote = ref({
   low: '--',
   prev_close: '--',
   volume: 0,
-  amount: 0
+  amount: 0,
+  turnover_rate: 0,
+  amplitude: 0,
+  volume_ratio: 0,
+  outer_vol: 0,
+  inner_vol: 0,
+  pe_ratio: 0,
+  pb_ratio: 0,
+  dy_ratio: 0,
+  zt_price: '--',
+  dt_price: '--',
+  beta: 0,
+  total_shares: 0,
+  data_source: 'unknown'
 })
 
 // 自选股列表
@@ -360,6 +462,21 @@ const formatAmount = (amt: number): string => {
   if (amt >= 100000000) return (amt / 100000000).toFixed(2) + '亿'
   if (amt >= 10000) return (amt / 10000).toFixed(2) + '万'
   return amt.toString()
+}
+
+// 格式化股本（总股本）
+const formatShares = (shares: number): string => {
+  if (!shares) return '--'
+  if (shares >= 100000000) return (shares / 100000000).toFixed(2) + '亿'
+  if (shares >= 10000) return (shares / 10000).toFixed(2) + '万'
+  return shares.toLocaleString()
+}
+
+// 格式化内外盘（股）
+const formatVol = (vol: number): string => {
+  if (!vol) return '--'
+  if (vol >= 10000) return (vol / 10000).toFixed(2) + '万'
+  return vol.toLocaleString()
 }
 
 // 初始化图表
@@ -488,7 +605,7 @@ const initChart = () => {
   chartResizeObserver.observe(chartContainer.value)
 
   // 十字光标移动 → 更新 hoverBar
-  chart.subscribeCrosshairMove((param) => {
+  chart.subscribeCrosshairMove((param: any) => {
     if (!param.time || !candleSeries) {
       hoverBar.value = null
       return
@@ -640,7 +757,21 @@ const updateQuoteFromSnapshot = (quote: any) => {
     low: quote.low ? Number(quote.low).toFixed(2) : '--',
     prev_close: prevClose ? prevClose.toFixed(2) : '--',
     volume: quote.volume || 0,
-    amount: quote.amount || 0
+    amount: quote.amount || 0,
+    // 新增扩展指标
+    turnover_rate: quote.turnover_rate || quote.turnover || 0,
+    volume_ratio: quote.volume_ratio || quote.LB || 0,
+    amplitude: quote.amplitude || quote.ZAF || 0,
+    pe_ratio: quote.pe_ratio || quote.dyna_pe || 0,
+    pb_ratio: quote.pb_ratio || quote.pb_mrq || 0,
+    dy_ratio: quote.dy_ratio || quote.dyr || 0,
+    zt_price: quote.zt_price ? Number(quote.zt_price).toFixed(2) : '--',
+    dt_price: quote.dt_price ? Number(quote.dt_price).toFixed(2) : '--',
+    beta: quote.beta || quote.BetaValue || 0,
+    total_shares: quote.total_shares || quote.J_zgb || 0,
+    inner_vol: quote.inner_vol || 0,
+    outer_vol: quote.outer_vol || 0,
+    data_source: quote.data_source || 'unknown'
   }
   updateOrderBookFromSnapshot(quote)
 }
@@ -665,6 +796,31 @@ const updateOrderBookFromSnapshot = (quote: QuoteSnapshot) => {
     { price: quote.bid4 != null ? Number(quote.bid4).toFixed(2) : '--', size: quote.bid_vol4 ?? 0 },
     { price: quote.bid5 != null ? Number(quote.bid5).toFixed(2) : '--', size: quote.bid_vol5 ?? 0 }
   ]
+}
+
+// 计算最大订单数量（用于进度条基准）
+const maxOrderSize = computed(() => {
+  const allSizes = [...asks.value, ...bids.value].map(item => item.size)
+  return Math.max(...allSizes, 1) // 至少为1，避免除以0
+})
+
+// 获取数量百分比（用于进度条宽度）
+const getSizePercent = (size: number) => {
+  if (!size || maxOrderSize.value === 0) return 0
+  // 最小保留15%宽度，确保小数字也能看到进度条
+  const percent = (size / maxOrderSize.value) * 100
+  return Math.max(percent, 15)
+}
+
+// 格式化盘口数量（转为"手"）
+const formatOrderSize = (size: number): string => {
+  if (!size) return '0'
+  // 转为手（1手 = 100股）
+  const hands = size / 100
+  if (hands >= 10000) {
+    return (hands / 10000).toFixed(1) + '万'
+  }
+  return Math.floor(hands).toLocaleString()
 }
 
 // 选择股票
@@ -1100,19 +1256,22 @@ onBeforeUnmount(() => {
 .info-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 10px;
+  gap: 8px;
 }
 
 .info-item {
   background: #1e222d;
-  padding: 10px 12px;
+  padding: 8px 10px;
   border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .info-label {
   font-size: 10px;
   color: #787b86;
-  margin-bottom: 4px;
 }
 
 .info-value {
@@ -1120,17 +1279,26 @@ onBeforeUnmount(() => {
   font-weight: 600;
   color: #d1d4dc;
 }
+.info-value.positive { color: #ef5350; }
+.info-value.negative { color: #26a69a; }
 
 .data-source-info {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  width: 100%;
 }
 
 .data-source-label {
-  color: #ef5350;  /* 红色标签 */
+  color: #787b86;
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.data-source-value {
+  color: #4caf50;
   font-weight: 600;
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .update-time {
@@ -1158,6 +1326,9 @@ onBeforeUnmount(() => {
   padding: 6px 8px;
   font-size: 11px;
   border-bottom: 1px solid #2a2e39;
+  min-height: 24px;
+  align-items: center;
+  white-space: nowrap;
 }
 
 .order-row:last-child {
@@ -1174,6 +1345,28 @@ onBeforeUnmount(() => {
 
 .order-size {
   text-align: right;
+  position: relative;
+  z-index: 1;
+}
+
+/* 盘口数量进度条 */
+.size-bar {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  z-index: 0;
+  transition: width 0.3s ease;
+}
+
+/* 买盘红色背景条 */
+.order-row.buy .size-bar {
+  background: rgba(239, 83, 80, 0.45);
+}
+
+/* 卖盘绿色背景条 */
+.order-row.sell .size-bar {
+  background: rgba(38, 166, 154, 0.45);
 }
 
 /* 底部状态栏 */

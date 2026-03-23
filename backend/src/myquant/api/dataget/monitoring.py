@@ -33,7 +33,10 @@ async def get_hot_sectors(
     返回按涨跌幅排序的热点板块列表
     """
     try:
-        logger.info("获取热点板块: limit={}, min_change_pct={}", limit, min_change_pct)
+        logger.info(
+            "获取热点板块: limit={}, min_change_pct={}",
+            limit, min_change_pct
+        )
 
         service = get_monitor_service()
 
@@ -55,6 +58,11 @@ async def get_hot_sectors(
                     'down_count': s.down_count,
                     'component_count': s.component_count,
                     'amount': s.amount,
+                    'volume_ratio': s.volume_ratio,
+                    'turnover_rate': s.turnover_rate,
+                    'amplitude': s.amplitude,
+                    'pe_ratio': s.pe_ratio,
+                    'pb_ratio': s.pb_ratio,
                     'timestamp': s.timestamp,
                 }
                 for s in hot_sectors

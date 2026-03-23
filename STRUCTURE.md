@@ -4,6 +4,7 @@
 MyQuant_v11/
 │
 ├── backend/                          ← 后端代码
+│   ├── external/pytdx2/              ← pytdx2 本地包（非 pip，直接引用）
 │   └── src/myquant/
 │       │
 │       ├── api/                      ← API 网关层
@@ -29,18 +30,23 @@ MyQuant_v11/
 │       │   │   ├── adapters/         ← 数据源适配器
 │       │   │   │   ├── __init__.py
 │       │   │   │   ├── base.py
-│       │   │   │   ├── pytdx_adapter.py
+│       │   │   │   ├── pytdx_pool_adapter.py  ← 默认(M+H+P连接池，高可用)
+│       │   │   │   ├── pytdx_adapter.py       ← 简单版(pytdx_simple，兼容降级)
 │       │   │   │   ├── xtquant_adapter.py
 │       │   │   │   ├── tdxquant_adapter.py
 │       │   │   │   ├── localdb_adapter.py
 │       │   │   │   └── tdxlocal_adapter.py
 │       │   │   │
-│       │   │   ├── services/         ← 场景服务
-│       │   │   │   ├── kline/
-│       │   │   │   ├── monitoring/
-│       │   │   │   ├── incremental/
-│       │   │   │   ├── conversion/
-│       │   │   │   └── realtime_market/
+│       │   │   ├── services/         ← 场景服务（平铺文件）
+│       │   │   │   ├── kline.py          ← K线服务
+│       │   │   │   ├── monitoring_service.py ← 监控服务
+│       │   │   │   ├── incremental_service.py ← 增量更新
+│       │   │   │   ├── conversion_service.py  ← 数据转换
+│       │   │   │   ├── intraday_service.py    ← 日内数据
+│       │   │   │   ├── realtime_service.py    ← 实时行情
+│       │   │   │   ├── seamless_service.py    ← 无缝K线
+│       │   │   │   ├── service.py             ← 通用服务基类
+│       │   │   │   └── cache.py               ← 缓存
 │       │   │   │
 │       │   │   ├── models/           ← 数据模型
 │       │   │   ├── routing/          ← 路由逻辑
@@ -96,9 +102,11 @@ MyQuant_v11/
 │
 ├── scripts/                          ← 运维脚本
 ├── .claude/skills/                   ← AI 开发规范
-│   ├── architecture.md
-│   ├── backend.md
-│   └── project-context.md
+│   ├── architecture/SKILL.md         ← 架构规范
+│   ├── backend/SKILL.md              ← 后端规范
+│   ├── frontend/SKILL.md             ← 前端规范
+│   ├── project-context.md            ← 项目状态（每次对话必读）
+│   └── {skill-name}/SKILL.md        ← 各专项技能（问题解决方案）
 │
 ├── README.md                         ← 项目说明
 └── STRUCTURE.md                      ← 本文件

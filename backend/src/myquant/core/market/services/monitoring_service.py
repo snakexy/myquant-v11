@@ -66,6 +66,11 @@ class RealtimeMonitorService:
                         down_count=quote.get('down_count', 0),
                         component_count=quote.get('component_count', 0),
                         amount=quote.get('amount', 0),
+                        volume_ratio=quote.get('volume_ratio', 0.0),
+                        turnover_rate=quote.get('turnover_rate', 0.0),
+                        amplitude=quote.get('amplitude', 0.0),
+                        pe_ratio=quote.get('pe_ratio', 0.0),
+                        pb_ratio=quote.get('pb_ratio', 0.0),
                         timestamp=datetime.now().isoformat()
                     ))
 

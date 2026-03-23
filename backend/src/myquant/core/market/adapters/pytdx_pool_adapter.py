@@ -381,11 +381,13 @@ class V5PyTdxPoolAdapter(V5DataAdapter):
         # 构建批量查询
         batch = []
         code_to_symbol = {}
+        code_to_market = {}
         for symbol in symbols:
             market = self._get_market(symbol)
             code = symbol.replace('.SH', '').replace('.SZ', '').replace('.BJ', '')
             batch.append((market, code))
             code_to_symbol[code] = symbol
+            code_to_market[code] = market
 
         try:
             quotes = conn.api.get_security_quotes(batch)
@@ -394,15 +396,111 @@ class V5PyTdxPoolAdapter(V5DataAdapter):
                     code = quote.get('code')
                     if code:
                         key = code_to_symbol.get(code, code)
-                        result[key] = self._normalize_quote(key, quote)
+                        # 获取市场代码
+                        market = code_to_market.get(code, 0)
+                        # 获取财务信息（用于计算换手率）
+                        finance_info = self._get_finance_info(conn, market, code)
+                        # 计算量比（需要连接查询历史K线）
+                        current_vol = quote.get('vol', 0)
+                        volume_ratio = self._get_volume_ratio(
+                            conn, market, code, current_vol
+                        )
+                        # 计算振幅
+                        high = quote.get('high', 0)
+                        low = quote.get('low', 0)
+                        pre_close = quote.get('last_close', 0)
+                        if pre_close > 0:
+                            amplitude = ((high - low) / pre_close) * 100
+                        else:
+                            amplitude = 0
+                        result[key] = self._normalize_quote(
+                            key, quote, finance_info, volume_ratio, amplitude
+                        )
         except Exception as e:
             logger.error(f"[Pool] 获取行情失败: {e}")
             conn.is_connected = False
 
         return result
 
-    def _normalize_quote(self, code: str, quote: dict) -> dict:
+    def _get_finance_info(self, conn, market: int, code: str) -> dict:
+        """获取财务信息（流通股本等）"""
+        try:
+            finance = conn.api.get_finance_info(market, code)
+            if finance:
+                return {
+                    'liutongguben': finance.get('liutongguben', 0),  # 流通股本（万股）
+                    'zongguben': finance.get('zongguben', 0),        # 总股本（万股）
+                }
+        except Exception as e:
+            logger.warning(f"[Pool] 获取财务信息失败 {code}: {e}")
+        return {'liutongguben': 0, 'zongguben': 0}
+
+    def _get_volume_ratio(self, conn, market: int, code: str, current_vol: int) -> float:
+        """计算量比
+
+        量比 = 当日累计成交量 / (过去5日平均成交总手数/240 × 当前已交易分钟数)
+        """
+        try:
+            import datetime
+
+            # 获取过去5日日线数据 (4=日线)
+            kline = conn.api.get_security_bars(4, market, code, 0, 5)
+            if not kline or len(kline) < 5:
+                return 0.0
+
+            # 计算前5日平均成交量
+            avg_vol = sum([bar['vol'] for bar in kline]) / len(kline)
+            if avg_vol <= 0:
+                return 0.0
+
+            # 计算当前已交易分钟数
+            now = datetime.datetime.now()
+            # 交易时间：9:30-11:30, 13:00-15:00，共240分钟
+            if now.hour < 9 or (now.hour == 9 and now.minute < 30):
+                minutes_passed = 0
+            elif now.hour < 11 or (now.hour == 11 and now.minute <= 30):
+                minutes_passed = (now.hour - 9) * 60 + now.minute - 30
+            elif now.hour < 13:
+                minutes_passed = 120  # 上午结束
+            elif now.hour < 15:
+                minutes_passed = 120 + (now.hour - 13) * 60 + now.minute
+            else:
+                minutes_passed = 240  # 全天结束
+
+            if minutes_passed <= 0:
+                minutes_passed = 1
+
+            # 计算量比
+            volume_ratio = current_vol / (avg_vol / 240 * minutes_passed)
+            return round(volume_ratio, 2)
+
+        except Exception as e:
+            logger.warning(f"[Pool] 计算量比失败 {code}: {e}")
+            return 0.0
+
+    def _normalize_quote(
+        self,
+        code: str,
+        quote: dict,
+        finance_info: dict = None,
+        volume_ratio: float = 0,
+        amplitude: float = 0
+    ) -> dict:
         """标准化行情数据"""
+        finance_info = finance_info or {}
+
+        # 调试：打印买卖盘字段
+        logger.debug(f"[Normalize] {code} bid fields: bid1={quote.get('bid1')}, bid2={quote.get('bid2')}, bid_vol1={quote.get('bid_vol1')}")
+
+        # 计算换手率
+        volume = quote.get('vol', 0)  # 成交量（手）
+        liutongguben = finance_info.get('liutongguben', 0)  # 流通股本（股）
+        turnover_rate = 0.0
+        if liutongguben > 0:
+            # 换手率 = 成交量(股) / 流通股本(股) * 100%
+            # volume(手) * 100 = volume(股)
+            turnover_rate = (volume * 100) / liutongguben * 100
+
         return {
             'code': code,
             'price': quote.get('price', 0),
@@ -411,7 +509,7 @@ class V5PyTdxPoolAdapter(V5DataAdapter):
             'low': quote.get('low', 0),
             'close': quote.get('price', 0),
             'pre_close': quote.get('last_close', 0),
-            'volume': quote.get('vol', 0),
+            'volume': volume,
             'amount': quote.get('amount', 0),
             'change': quote.get('price', 0) - quote.get('last_close', 0),
             'change_pct': round(
@@ -419,8 +517,30 @@ class V5PyTdxPoolAdapter(V5DataAdapter):
             ) if quote.get('last_close') else 0,
             'bid1': quote.get('bid1', 0),
             'ask1': quote.get('ask1', 0),
-            'bid1_vol': quote.get('bid_vol1', 0),
-            'ask1_vol': quote.get('ask_vol1', 0),
+            'bid_vol1': quote.get('bid_vol1', 0),
+            'ask_vol1': quote.get('ask_vol1', 0),
+            'bid2': quote.get('bid2', 0),
+            'ask2': quote.get('ask2', 0),
+            'bid_vol2': quote.get('bid_vol2', 0),
+            'ask_vol2': quote.get('ask_vol2', 0),
+            'bid3': quote.get('bid3', 0),
+            'ask3': quote.get('ask3', 0),
+            'bid_vol3': quote.get('bid_vol3', 0),
+            'ask_vol3': quote.get('ask_vol3', 0),
+            'bid4': quote.get('bid4', 0),
+            'ask4': quote.get('ask4', 0),
+            'bid_vol4': quote.get('bid_vol4', 0),
+            'ask_vol4': quote.get('ask_vol4', 0),
+            'bid5': quote.get('bid5', 0),
+            'ask5': quote.get('ask5', 0),
+            'bid_vol5': quote.get('bid_vol5', 0),
+            'ask_vol5': quote.get('ask_vol5', 0),
+            'inner_vol': quote.get('s_vol', 0),  # 内盘（主动卖出）
+            'outer_vol': quote.get('b_vol', 0),  # 外盘（主动买入）
+            'cur_vol': quote.get('cur_vol', 0),  # 现手（当前成交量）
+            'turnover_rate': round(turnover_rate, 2),  # 换手率（%）
+            'volume_ratio': volume_ratio,  # 量比
+            'amplitude': round(amplitude, 2),  # 振幅（%）
             'data_source': 'pytdx_pool',
         }
 

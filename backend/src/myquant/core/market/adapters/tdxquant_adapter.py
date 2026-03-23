@@ -63,7 +63,9 @@ class V5TdxQuantAdapter(V5DataAdapter):
 
         try:
             # 添加 SDK 路径
-            sdk_path = r'E:\MyQuant_v10.0.0v2\backend\data\adapters\tdxquant_sdk'
+            sdk_path = (
+                r'E:\MyQuant_v10.0.0v2\backend\data\adapters\tdxquant_sdk'
+            )
             if sdk_path not in sys.path:
                 sys.path.insert(0, sdk_path)
 
@@ -90,8 +92,8 @@ class V5TdxQuantAdapter(V5DataAdapter):
             # 设置 DLL 路径（必须在 initialize 之前设置）
             tq.dll_path = r'E:\new_tdx64\PYPlugins\TPythClient.dll'
 
-            # 使用目录路径（TdxQuant SDK 要求目录，非文件）
-            init_path = r'E:\new_tdx64\PYPlugins\user'
+            # TdxQuant SDK 的 InitConnect 要求传入 .py 文件路径（非目录）
+            init_path = r'E:\new_tdx64\PYPlugins\user\myquant_init.py'
 
             # 执行初始化（仅在未初始化时）
             tq.initialize(path=init_path)
@@ -163,7 +165,8 @@ class V5TdxQuantAdapter(V5DataAdapter):
                     # 转置数据: dict[field]=DataFrame -> per-symbol DataFrame
                     df_dict = {}
                     for field, field_df in data.items():
-                        if isinstance(field_df, pd.DataFrame) and not field_df.empty:
+                        if (isinstance(field_df, pd.DataFrame) and
+                                not field_df.empty):
                             # 从每个字段 DataFrame 提取第一列（该股票的数据）
                             for idx, value in field_df.iloc[:, 0].items():
                                 if idx not in df_dict:
@@ -177,7 +180,9 @@ class V5TdxQuantAdapter(V5DataAdapter):
 
                         # 确保索引是 datetime 类型
                         if not isinstance(df.index, pd.DatetimeIndex):
-                            df.index = pd.to_datetime(df.index)
+                            df.index = pd.to_datetime(
+                                df.index
+                            )
 
                         result[symbol] = self._normalize_kline_df(df, 'tdxquant')
 
@@ -188,7 +193,13 @@ class V5TdxQuantAdapter(V5DataAdapter):
         return result
 
     def get_quote(self, symbols: List[str]) -> Dict[str, dict]:
-        """获取实时行情"""
+        """获取实时行情（包含完整86个字段）
+
+        通过组合三个API获取最完整的字段：
+        1. get_market_snapshot: 基础行情 + 五档盘口 + 内外盘
+        2. get_more_info: 86个扩展字段（换手率、市盈率、涨停价等）
+        3. get_stock_info: 63个财务指标（总股本、ROE等）
+        """
         if not self._ensure_initialized():
             return {}
 
@@ -196,15 +207,162 @@ class V5TdxQuantAdapter(V5DataAdapter):
 
         for symbol in symbols:
             try:
-                # get_market_snapshot 期望字符串参数，返回单个股票的快照字典
-                quote = self._tq.get_market_snapshot(symbol)
-                if quote and len(quote) > 0:
-                    result[symbol] = self._normalize_quote_dict(symbol, quote, 'tdxquant')
+                # 1. 获取基础行情（get_market_snapshot）
+                tick_data = self._tq.get_market_snapshot(
+                    stock_code=symbol
+                )
+
+                # 2. 获取86个扩展字段（get_more_info）
+                more_info = self._tq.get_more_info(stock_code=symbol)
+
+                # 3. 获取财务指标（get_stock_info，单只股票）
+                stock_info = {}
+                try:
+                    stock_info = self._tq.get_stock_info(symbol)
+                except Exception:
+                    pass
+
+                # 合并所有数据
+                if tick_data and tick_data.get('ErrorId') in (0, '0'):
+                    result[symbol] = self._normalize_quote(
+                        symbol, tick_data, more_info, stock_info
+                    )
+
             except Exception as e:
                 logger.warning(f"获取 {symbol} 行情失败: {e}")
                 continue
 
         return result
+
+    def _normalize_quote(
+        self,
+        code: str,
+        tick: dict,
+        more: dict = None,
+        stock: dict = None
+    ) -> dict:
+        """标准化行情数据（TdxQuant完整版）
+
+        整合三个数据源：
+        - tick: 基础行情（get_market_snapshot）
+        - more: 扩展指标（get_more_info，86个字段）
+        - stock: 财务数据（get_stock_info，63个字段）
+        """
+        more = more or {}
+        stock = stock or {}
+
+        # 基础字段（from get_market_snapshot）
+        price = float(tick.get('Now') or tick.get('Price') or 0)
+        pre_close = float(tick.get('LastClose') or 0)
+        volume = float(tick.get('Volume') or 0)  # 股
+
+        # 计算涨跌
+        change = round(price - pre_close, 4)
+        change_pct = round(change / pre_close * 100, 2) if pre_close else 0
+
+        # 五档盘口（get_market_snapshot 用 Buyp/Buyv/Sellp/Sellv）
+        buy_prices = tick.get('Buyp') or tick.get('BuyPrice') or []
+        buy_volumes = tick.get('Buyv') or tick.get('BuyVolume') or []
+        sell_prices = tick.get('Sellp') or tick.get('SellPrice') or []
+        sell_volumes = tick.get('Sellv') or tick.get('SellVolume') or []
+
+        # 内外盘（get_market_snapshot 独有）
+        inner_vol = int(tick.get('Inside') or 0)
+        outer_vol = int(tick.get('Outside') or 0)
+        cur_vol = int(tick.get('NowVol') or 0)
+
+        # 从more_info获取扩展字段（86个字段中的核心指标）
+        turnover_rate = more.get('fHSL') or more.get('Zjl') or 0
+        volume_ratio = more.get('fLianB') or more.get('LB') or 0
+        amplitude = more.get('ZAF') or 0
+        pe_ratio = more.get('DynaPE') or 0
+        pb_ratio = more.get('PB_MRQ') or 0
+        dy_ratio = more.get('DYRatio') or 0
+        zt_price = more.get('ZTPrice') or 0
+        dt_price = more.get('DTPrice') or 0
+        beta = more.get('BetaValue') or 0
+        his_high = more.get('HisHigh') or 0
+        his_low = more.get('HisLow') or 0
+
+        # 从stock_info获取财务数据
+        total_shares = stock.get('J_zgb') or stock.get('total_shares') or 0
+
+        return {
+            # ====== 基础字段 ======
+            'code': code,
+            'price': price,
+            'open': float(tick.get('Open') or 0),
+            'high': float(tick.get('Max') or tick.get('High') or 0),
+            'low': float(tick.get('Min') or tick.get('Low') or 0),
+            'pre_close': pre_close,
+            'volume': volume / 100,  # 股→手
+            'amount': (
+                float(tick.get('Amount') or 0) * 10000
+            ),  # 万元→元
+            'change': change,
+            'change_pct': change_pct,
+
+            # ====== 五档盘口 ======
+            'bid1': float(buy_prices[0] if len(buy_prices) > 0 else 0),
+            'bid_vol1': int(buy_volumes[0] if len(buy_volumes) > 0 else 0),
+            'bid2': float(buy_prices[1] if len(buy_prices) > 1 else 0),
+            'bid_vol2': int(buy_volumes[1] if len(buy_volumes) > 1 else 0),
+            'bid3': float(buy_prices[2] if len(buy_prices) > 2 else 0),
+            'bid_vol3': int(buy_volumes[2] if len(buy_volumes) > 2 else 0),
+            'bid4': float(buy_prices[3] if len(buy_prices) > 3 else 0),
+            'bid_vol4': int(buy_volumes[3] if len(buy_volumes) > 3 else 0),
+            'bid5': float(buy_prices[4] if len(buy_prices) > 4 else 0),
+            'bid_vol5': int(buy_volumes[4] if len(buy_volumes) > 4 else 0),
+
+            'ask1': float(sell_prices[0] if len(sell_prices) > 0 else 0),
+            'ask_vol1': int(sell_volumes[0] if len(sell_volumes) > 0 else 0),
+            'ask2': float(sell_prices[1] if len(sell_prices) > 1 else 0),
+            'ask_vol2': int(sell_volumes[1] if len(sell_volumes) > 1 else 0),
+            'ask3': float(sell_prices[2] if len(sell_prices) > 2 else 0),
+            'ask_vol3': int(sell_volumes[2] if len(sell_volumes) > 2 else 0),
+            'ask4': float(sell_prices[3] if len(sell_prices) > 3 else 0),
+            'ask_vol4': int(sell_volumes[3] if len(sell_volumes) > 3 else 0),
+            'ask5': float(sell_prices[4] if len(sell_prices) > 4 else 0),
+            'ask_vol5': int(sell_volumes[4] if len(sell_volumes) > 4 else 0),
+
+            # ====== 扩展字段 ======
+            'inner_vol': inner_vol,
+            'outer_vol': outer_vol,
+            'cur_vol': cur_vol,
+
+            # 衍生指标
+            'turnover_rate': (
+                round(float(turnover_rate), 2) if turnover_rate else 0
+            ),
+            'volume_ratio': (
+                round(float(volume_ratio), 2) if volume_ratio else 0
+            ),
+            'amplitude': (
+                round(float(amplitude), 2) if amplitude else 0
+            ),
+
+            # 估值指标
+            'pe_ratio': round(float(pe_ratio), 2) if pe_ratio else 0,
+            'pb_ratio': round(float(pb_ratio), 2) if pb_ratio else 0,
+            'dy_ratio': round(float(dy_ratio), 2) if dy_ratio else 0,
+
+            # 价格限制
+            'zt_price': round(float(zt_price), 2) if zt_price else 0,
+            'dt_price': round(float(dt_price), 2) if dt_price else 0,
+
+            # 其他指标
+            'beta': round(float(beta), 2) if beta else 0,
+            'his_high': (
+                round(float(his_high), 2) if his_high else 0
+            ),
+            'his_low': (
+                round(float(his_low), 2) if his_low else 0
+            ),
+            'total_shares': float(total_shares),
+
+            # 数据源标识
+            'data_source': 'tdxquant',
+        }
 
     def subscribe(
         self,

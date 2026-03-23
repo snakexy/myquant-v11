@@ -217,31 +217,12 @@ class HealthChecker:
 
         使用V5适配器检查数据源可用性
         """
-        if source == 'pytdx':
-            from myquant.core.market.adapters.v5.pytdx_adapter import V5PyTdxAdapter
-            adapter = V5PyTdxAdapter()
-            if not adapter.is_available():
-                raise ConnectionError("PyTdx connection failed")
-        elif source == 'xtquant':
-            from myquant.core.market.adapters.v5.xtquant_adapter import V5XtQuantAdapter
-            adapter = V5XtQuantAdapter()
-            if not adapter.is_available():
-                raise ConnectionError("XtQuant not available")
-        elif source == 'tdxquant':
-            from myquant.core.market.adapters.v5.tdxquant_adapter import V5TdxQuantAdapter
-            adapter = V5TdxQuantAdapter()
-            if not adapter.is_available():
-                raise ConnectionError("TdxQuant not available")
-        elif source == 'localdb':
-            from myquant.core.market.adapters.v5.localdb_adapter import V5LocalDBAdapter
-            adapter = V5LocalDBAdapter()
-            if not adapter.is_available():
-                raise ConnectionError("LocalDB/QLib not available")
-        elif source == 'tdxlocal':
-            from myquant.core.market.adapters.v5.tdxlocal_adapter import V5TdxLocalAdapter
-            adapter = V5TdxLocalAdapter()
-            if not adapter.is_available():
-                raise FileNotFoundError("TdxLocal data not available")
+        from myquant.core.market.adapters import get_adapter
+        adapter = get_adapter(source)
+        if adapter is None:
+            raise ValueError(f"未知适配器: {source}")
+        if not adapter.is_available():
+            raise ConnectionError(f"{source} 不可用")
 
     def get_summary(self) -> Dict:
         """获取健康检查摘要"""

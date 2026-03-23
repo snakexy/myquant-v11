@@ -523,8 +523,24 @@ class V5PyTdxAdapter(V5DataAdapter):
             ) if quote.get('last_close') else 0,
             'bid1': quote.get('bid1', 0),
             'ask1': quote.get('ask1', 0),
-            'bid1_vol': quote.get('bid_vol1', 0),  # 手
-            'ask1_vol': quote.get('ask_vol1', 0),  # 手
+            'bid_vol1': quote.get('bid_vol1', 0),  # 手
+            'ask_vol1': quote.get('ask_vol1', 0),  # 手
+            'bid2': quote.get('bid2', 0),
+            'ask2': quote.get('ask2', 0),
+            'bid_vol2': quote.get('bid_vol2', 0),
+            'ask_vol2': quote.get('ask_vol2', 0),
+            'bid3': quote.get('bid3', 0),
+            'ask3': quote.get('ask3', 0),
+            'bid_vol3': quote.get('bid_vol3', 0),
+            'ask_vol3': quote.get('ask_vol3', 0),
+            'bid4': quote.get('bid4', 0),
+            'ask4': quote.get('ask4', 0),
+            'bid_vol4': quote.get('bid_vol4', 0),
+            'ask_vol4': quote.get('ask_vol4', 0),
+            'bid5': quote.get('bid5', 0),
+            'ask5': quote.get('ask5', 0),
+            'bid_vol5': quote.get('bid_vol5', 0),
+            'ask_vol5': quote.get('ask_vol5', 0),
             'data_source': source,
         }
 

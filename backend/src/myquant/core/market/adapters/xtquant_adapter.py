@@ -318,10 +318,43 @@ class V5XtQuantAdapter(V5DataAdapter):
                             original_symbol, quote, 'xtquant'
                         )
 
+                        # 获取额外字段（涨停跌停价、股本等）
+                        self._fill_instrument_fields(result[original_symbol], xt_symbol)
+
         except Exception as e:
             logger.error(f"XtQuant 获取行情失败: {e}")
 
         return result
+
+    def _fill_instrument_fields(self, quote: dict, xt_symbol: str) -> None:
+        """从 get_instrument_detail 补充字段
+
+        包括：
+        - 涨停价
+        - 跌停价
+        - 总股本
+        - 流通股本
+
+        Args:
+            quote: 行情数据字典（会被修改）
+            xt_symbol: XtQuant 格式的股票代码
+        """
+        try:
+            detail = xtdata.get_instrument_detail(xt_symbol)
+            if detail:
+                # 涨停跌停价
+                quote['zt_price'] = float(detail.get('UpStopPrice', 0)) or 0
+                quote['dt_price'] = float(detail.get('DownStopPrice', 0)) or 0
+
+                # 总股本和流通股本（转换为万股）
+                total_volume = detail.get('TotalVolume', 0) or 0
+                float_volume = detail.get('FloatVolume', 0) or 0
+                quote['total_shares'] = float(total_volume) if total_volume else 0
+                quote['float_shares'] = float(float_volume) if float_volume else 0
+
+                logger.debug(f"{xt_symbol} 获取到 instrument detail: zt_price={quote['zt_price']}, dt_price={quote['dt_price']}")
+        except Exception as e:
+            logger.debug(f"{xt_symbol} 获取 instrument detail 失败: {e}")
 
     def subscribe(
         self,
@@ -399,12 +432,38 @@ class V5XtQuantAdapter(V5DataAdapter):
         return df
 
     def _normalize_quote_dict(self, code: str, quote: dict, source: str) -> dict:
-        """标准化行情数据
+        """标准化行情数据 - XtQuant特有字段映射
 
         XtQuant 返回的已经是手/元，与通达信本地格式一致，无需转换
+        XtQuant 特有字段：
+        - tickvol: 现手（当前tick成交量）
+        - pvolume: 原始成交总量
+        - stockStatus: 证券状态
         """
-        # 直接调用基类方法（已经是手/元）
-        return super()._normalize_quote_dict(code, quote, source)
+        # 先调用基类方法处理基础字段
+        result = super()._normalize_quote_dict(code, quote, source)
+
+        # XtQuant特有字段映射
+        result.update({
+            'cur_vol': quote.get('tickvol', 0),  # 现手
+            # 其他扩展字段 XtQuant 不直接提供，填0
+            'inner_vol': 0,  # 内盘（不支持）
+            'outer_vol': 0,  # 外盘（不支持）
+            'turnover_rate': 0,  # 换手率（需财务接口）
+            'volume_ratio': 0,   # 量比（不支持）
+            'amplitude': 0,      # 振幅（需计算）
+            'pe_ratio': 0,       # 市盈率（不支持）
+            'pb_ratio': 0,       # 市净率（不支持）
+            'dy_ratio': 0,       # 股息率（不支持）
+            'zt_price': 0,       # 涨停价（不支持）
+            'dt_price': 0,       # 跌停价（不支持）
+            'beta': 0,           # 贝塔系数（不支持）
+            'his_high': 0,       # 历史最高（不支持）
+            'his_low': 0,        # 历史最低（不支持）
+            'total_shares': 0,   # 总股本（不支持）
+        })
+
+        return result
 
     def is_available(self) -> bool:
         """检查适配器是否可用"""

@@ -33,6 +33,11 @@ class SectorData(BaseModel):
     down_count: int           # 下跌家数
     component_count: int      # 成分股数量
     amount: float = 0.0       # 成交额
+    volume_ratio: float = 0.0 # 量比
+    turnover_rate: float = 0.0  # 换手率(%)
+    amplitude: float = 0.0    # 振幅(%)
+    pe_ratio: float = 0.0     # 市盈率
+    pb_ratio: float = 0.0     # 市净率
     timestamp: Optional[str] = None
 
     @property

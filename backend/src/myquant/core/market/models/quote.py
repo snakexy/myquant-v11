@@ -50,6 +50,15 @@ class QuoteData(BaseModel):
     timestamp: Optional[str] = None
     turnover: float = 0.0
 
+    # 扩展指标（新添加）
+    volume_ratio: float = 0.0      # 量比
+    turnover_rate: float = 0.0     # 换手率(%)
+    amplitude: float = 0.0         # 振幅(%)
+    pe_ratio: float = 0.0          # 市盈率
+    pb_ratio: float = 0.0          # 市净率
+    zt_price: float = 0.0          # 涨停价
+    dt_price: float = 0.0          # 跌停价
+
     @property
     def is_up(self) -> bool:
         """是否上涨"""

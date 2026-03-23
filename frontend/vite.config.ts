@@ -28,9 +28,9 @@ export default defineConfig({
     },
   },
   server: {
-    port: 5174,
+    port: 5180,
     host: '0.0.0.0',
-    strictPort: false,  // 如果5174被占用，自动尝试下一个端口
+    strictPort: false,  // 如果5180被占用，自动尝试下一个端口
     proxy: {
       // 代理到 v11 backend
       '/api': {
