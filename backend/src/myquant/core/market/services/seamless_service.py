@@ -75,7 +75,7 @@ class SeamlessKlineService:
         if include_realtime and self._need_realtime_supplement(historical, period):
             # 获取从最后一条数据日期到今天的数据（可能覆盖同一天的数据）
             last_date = historical.df.iloc[-1]['datetime']
-            start_date_formatted = last_date.strftime('%Y-%m-%d')
+            start_date_formatted = last_date.strftime('%Y%m%d')  # 使用YYYYMMDD格式，与DataMerger保持一致
 
             logger.info(f"[数据补全] 准备获取补充数据，start_date={start_date_formatted}")
 
@@ -83,6 +83,7 @@ class SeamlessKlineService:
             realtime = self._get_realtime_kline(
                 symbol, period, 'none',
                 start_date=start_date_formatted,
+                end_date=datetime.now().strftime('%Y%m%d'),  # 添加end_date，确保适配器使用正确的日期范围
                 filter_today=False, get_realtime=True
             )
 
@@ -256,19 +257,17 @@ class SeamlessKlineService:
             chain = adjusted_chain
             logger.debug(f"[服务层] 交易时间，优先级: {chain}")
         else:
-            # 收盘在线优先: xtquant → pytdx（不使用 tdxquant）
-            # TdxQuant 非交易时间不可用（需要通达信终端运行）
-            non_trading_priority = ['xtquant', 'pytdx']
+            # 收盘在线优先: xtquant → pytdx（不使用 tdxquant，也不使用 localdb）
+            # 非交易时间只用在线数据源，确保数据是最新的
+            # LocalDB 可能有过期数据（如缺少最近交易日），必须排除
+            online_sources = ['xtquant', 'pytdx']
             adjusted_chain = []
-            for s in non_trading_priority:
+            for s in online_sources:
                 if s in chain:
                     adjusted_chain.append(s)
-            # 添加其他不在列表中的源（但排除 tdxquant）
-            for s in chain:
-                if s not in adjusted_chain and s != 'tdxquant':
-                    adjusted_chain.append(s)
+            # 不添加其他源（排除 localdb 和 tdxquant）
             chain = adjusted_chain
-            logger.debug(f"[服务层] 非交易时间，优先级: {chain}")
+            logger.debug(f"[服务层] 非交易时间，优先级（仅在线源）: {chain}")
 
         adapter = chain[0] if chain else None
 
@@ -309,6 +308,7 @@ class SeamlessKlineService:
         period: str,
         adjust_type: str,
         start_date: Optional[str] = None,  # 新增：指定开始日期
+        end_date: Optional[str] = None,    # 新增：指定结束日期
         filter_today: bool = True,
         get_realtime: bool = True
     ) -> KlineDataset:
@@ -319,6 +319,7 @@ class SeamlessKlineService:
             period: 周期
             adjust_type: 复权类型
             start_date: 开始日期 (YYYYMMDD)，默认为今天
+            end_date: 结束日期 (YYYYMMDD)，默认为今天
             filter_today: 是否只过滤今天的数据
             get_realtime: 是否获取实时数据
         """
@@ -327,7 +328,11 @@ class SeamlessKlineService:
         if not start_date:
             start_date = datetime.now().strftime('%Y%m%d')
 
-        logger.info(f"[补充数据] 开始获取 {symbol} 从 {start_date} 到现在的数据")
+        # 如果没有指定结束日期，使用今天
+        if not end_date:
+            end_date = datetime.now().strftime('%Y%m%d')
+
+        logger.info(f"[补充数据] 开始获取 {symbol} 从 {start_date} 到 {end_date} 的数据")
 
         # 数据源优先级链（补充数据时跳过 localdb，因为它只有历史数据）
         fallback_chain = self._selector.get_fallback_chain_for_code(DataLevel.L3, symbol)
@@ -362,13 +367,14 @@ class SeamlessKlineService:
                     logger.debug(f"[补充数据] {source} 不可用，跳过")
                     continue
 
-                logger.info(f"[补充数据] 尝试从 {source} 获取 {symbol} 数据 (start_date={start_date}, count=500)")
+                logger.info(f"[补充数据] 尝试从 {source} 获取 {symbol} 数据 (start_date={start_date}, end_date={end_date}, count=500)")
 
-                # 获取从 start_date 到现在的数据（始终获取不复权数据）
+                # 获取从 start_date 到 end_date 的数据（始终获取不复权数据）
                 df_dict = adapter_instance.get_kline(
                     symbols=[symbol],
                     period=period,
                     start_date=start_date,
+                    end_date=end_date,  # 添加结束日期
                     count=500 if not is_trading else 100,  # 收盘后多取
                     adjust_type='none'  # 始终获取不复权数据，复权由服务层统一处理
                 )

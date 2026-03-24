@@ -134,13 +134,16 @@ class V5XtQuantAdapter(V5DataAdapter):
 
         # 策略1: 本地读取（如果提供了时间范围）
         if start_date and end_date:
+            logger.info(f"[XtQuant] 尝试本地读取: {symbol} {xt_period}, 日期范围: {start_date} ~ {end_date}")
             df = self._read_local_data(
                 xt_symbol, xt_period, field_list,
                 start_date, end_date, dividend_type
             )
             if df is not None and not df.empty:
-                logger.debug(f"[本地读取] {symbol} {xt_period} {len(df)}条")
+                logger.info(f"[XtQuant] 本地读取成功: {symbol} {xt_period} {len(df)}条")
                 return df
+            else:
+                logger.info(f"[XtQuant] 本地读取无数据，尝试在线获取")
 
         # 策略2: 在线获取（count方式）
         fetch_count = count or 100
@@ -463,7 +466,97 @@ class V5XtQuantAdapter(V5DataAdapter):
             'total_shares': 0,   # 总股本（不支持）
         })
 
+        # 盘口数据处理 - XtQuant 返回的是数组格式
+        # 买盘：bidPrice(价格数组), bidVol(数量数组)
+        # 卖盘：askPrice(价格数组), askVol(数量数组)
+        self._parse_order_book(result, quote)
+
         return result
+
+    def _parse_order_book(self, result: dict, quote: dict) -> None:
+        """解析盘口数据（买卖5档）
+
+        XtQuant get_full_tick 返回的盘口字段：
+        - bidPrice: [买1价, 买2价, 买3价, 买4价, 买5价]
+        - bidVol:   [买1量, 买2量, 买3量, 买4量, 买5量]
+        - askPrice: [卖1价, 卖2价, 卖3价, 卖4价, 卖5价]
+        - askVol:   [卖1量, 卖2量, 卖3量, 卖4量, 卖5量]
+        """
+        # 买盘价格和数量
+        bid_prices = quote.get('bidPrice', [])
+        bid_vols = quote.get('bidVol', [])
+
+        # 卖盘价格和数量
+        ask_prices = quote.get('askPrice', [])
+        ask_vols = quote.get('askVol', [])
+
+        # 映射到标准字段（确保是数字）
+        for i in range(5):
+            # 买盘
+            if i < len(bid_prices):
+                result[f'bid{i+1}'] = float(bid_prices[i]) if bid_prices[i] else 0
+            if i < len(bid_vols):
+                result[f'bid_vol{i+1}'] = int(bid_vols[i]) if bid_vols[i] else 0
+
+            # 卖盘
+            if i < len(ask_prices):
+                result[f'ask{i+1}'] = float(ask_prices[i]) if ask_prices[i] else 0
+            if i < len(ask_vols):
+                result[f'ask_vol{i+1}'] = int(ask_vols[i]) if ask_vols[i] else 0
+
+        # 调试：打印原始盘口数据
+        logger.info(f"[调试] {result.get('code')} 原始盘口: bidPrice={quote.get('bidPrice')}, bidVol={quote.get('bidVol')}, askPrice={quote.get('askPrice')}, askVol={quote.get('askVol')}")
+
+    def get_extra_indicators(self, code: str) -> dict:
+        """获取额外指标（换手率、市盈率等）
+
+        XtQuant 提供:
+        - get_instrument_detail: 涨跌停价、股本
+        - get_stock_info: 股票基本信息
+
+        Args:
+            code: 股票代码（600519.SH 格式）
+
+        Returns:
+            包含额外指标的字典
+        """
+        try:
+            xt_symbol = self._to_xt_symbol(code)
+
+            # 尝试从 get_stock_info 获取财务数据
+            info = xtdata.get_stock_info(xt_symbol)
+            result = {}
+
+            if info:
+                # 先打印出实际返回的字段，方便调试
+                logger.info(f"{code} get_stock_info 返回字段: {list(info.keys())[:20]}")
+
+                # 尝试常见的字段名
+                for key in info:
+                    val = info.get(key, 0)
+                    if val and isinstance(val, (int, float)):
+                        # 转换小写key匹配我们的字段名
+                        key_lower = key.lower()
+                        if 'turnover' in key_lower or '换手' in str(key):
+                            result['turnover_rate'] = float(val)
+                        elif 'pe' in key_lower or '市盈' in str(key):
+                            result['pe_ratio'] = float(val)
+                        elif 'pb' in key_lower or '市净' in str(key):
+                            result['pb_ratio'] = float(val)
+                        elif 'volume' in key_lower and 'ratio' in key_lower:
+                            result['volume_ratio'] = float(val)
+                        elif 'dividend' in key_lower or '股息' in str(key) or 'dy' in key_lower:
+                            result['dy_ratio'] = float(val)
+                        elif 'amplitude' in key_lower or '振幅' in str(key):
+                            result['amplitude'] = float(val)
+
+                logger.debug(f"{code} 映射后的字段: {result}")
+
+            return result
+
+        except Exception as e:
+            logger.info(f"{code} 获取额外指标失败: {e}")
+            return {}
 
     def is_available(self) -> bool:
         """检查适配器是否可用"""

@@ -433,13 +433,21 @@ class V5PyTdxAdapter(V5DataAdapter):
 
                 # 日期过滤
                 if end_date and 'datetime' in df.columns:
-                    df['datetime_str'] = df['datetime'].astype(str).str[:10]
+                    # 统一转换为 YYYYMMDD 格式进行比较
+                    df['datetime_str'] = df['datetime'].astype(str).str[:10].str.replace('-', '')
+                    before_count = len(df)
                     df = df[df['datetime_str'] <= end_date]
+                    after_count = len(df)
+                    logger.info(f"[PyTdx] {symbol} end_date过滤: {before_count} -> {after_count} 条, 范围: {df['datetime_str'].min() if not df.empty else 'N/A'} ~ {df['datetime_str'].max() if not df.empty else 'N/A'}")
                     df = df.drop(columns=['datetime_str'])
 
                 if start_date and 'datetime' in df.columns:
-                    df['datetime_str'] = df['datetime'].astype(str).str[:10]
+                    # 统一转换为 YYYYMMDD 格式进行比较
+                    df['datetime_str'] = df['datetime'].astype(str).str[:10].str.replace('-', '')
+                    before_count = len(df)
                     df = df[df['datetime_str'] >= start_date]
+                    after_count = len(df)
+                    logger.info(f"[PyTdx] {symbol} start_date过滤: {before_count} -> {after_count} 条, start_date={start_date}")
                     df = df.drop(columns=['datetime_str'])
 
                 if count and len(df) > count:
