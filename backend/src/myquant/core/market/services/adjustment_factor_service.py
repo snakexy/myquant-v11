@@ -98,7 +98,12 @@ class AdjustmentFactorService:
         Returns:
             复权后的DataFrame
         """
+        import sys
+        print(f"[DEBUG apply_factors] 输入数据: {len(df)}条, 因子表: {len(factor_table)}个", file=sys.stderr)
+        logger.info(f"[FactorApply] 输入数据: {len(df)}条, 因子表: {len(factor_table)}个")
+
         if df.empty or not factor_table:
+            logger.warning(f"[FactorApply] 数据为空或因子表为空")
             return df
 
         try:
@@ -111,6 +116,11 @@ class AdjustmentFactorService:
             # 为每条记录查找适用的因子
             # 因子表已经按日期展开，直接map即可
             df['factor'] = df['date'].map(factor_table).fillna(1.0)
+
+            # DEBUG: 打印前5条数据的因子
+            logger.info(f"[FactorApply] 样本数据: {len(df)}条")
+            for i in range(min(5, len(df))):
+                logger.info(f"  日期: {df['date'].iloc[i]}, 原收盘: {df['close'].iloc[i]:.2f}, 因子: {df['factor'].iloc[i]:.6f}")
 
             # 应用因子到价格列
             price_columns = ['open', 'high', 'low', 'close']
@@ -160,7 +170,10 @@ class AdjustmentFactorService:
             # 2. 筛选除权记录（向量化过滤）
             dividend_records = xdxr_df[xdxr_df['category'] == 1].copy()
 
+            logger.info(f"[FactorCalc] XDXR总记录: {len(xdxr_df)}, category=1的记录: {len(dividend_records)}")
+
             if len(dividend_records) == 0:
+                logger.warning(f"[FactorCalc] 没有category=1的除权记录，XDXR categories: {xdxr_df['category'].unique() if 'category' in xdxr_df.columns else 'N/A'}")
                 return {}
 
             # 3. 向量化计算日期列（无Python循环）
@@ -170,6 +183,7 @@ class AdjustmentFactorService:
 
             # 3.5 获取除权日的实际收盘价（直接在方法内获取）
             ex_dates = dividend_records['date'].dt.strftime('%Y-%m-%d').tolist()
+            logger.info(f"[FactorCalc] 需要获取收盘价的除权日: {ex_dates[:5]}...")
 
             # 获取K线数据来匹配收盘价
             from ..adapters import get_adapter
@@ -177,13 +191,19 @@ class AdjustmentFactorService:
             if adapter is None or not adapter.is_available():
                 adapter = get_adapter('pytdx')
 
+            logger.info(f"[FactorCalc] 使用的adapter: {adapter.__class__.__name__ if adapter else 'None'}")
+
             close_dict = {}
             if adapter is not None:
                 try:
                     # 获取足够多的数据覆盖所有除权日
+                    logger.info(f"[FactorCalc] 开始获取K线数据...")
                     klines = adapter.get_kline(symbols=[symbol], period='1d', count=2000)
+                    logger.info(f"[FactorCalc] K线返回结果: symbols={list(klines.keys()) if klines else 'None'}")
+
                     if klines and symbol in klines:
                         df = klines[symbol]
+                        logger.info(f"[FactorCalc] K线数据: {len(df) if df is not None else 0}条, 列: {df.columns.tolist() if df is not None else 'None'}")
                         if df is not None and not df.empty:
                             # 兼容不同的日期列名
                             date_col = None
@@ -194,7 +214,14 @@ class AdjustmentFactorService:
 
                             if date_col:
                                 df['date_str'] = pd.to_datetime(df[date_col]).dt.strftime('%Y-%m-%d')
-                                for ex_date in ex_dates:
+                                logger.info(f"[FactorCalc] K线日期范围: {df['date_str'].iloc[0] if not df.empty else 'N/A'} 到 {df['date_str'].iloc[-1] if not df.empty else 'N/A'}")
+
+                                # 过滤只取最近5年的除权日（K线数据通常只覆盖最近时间）
+                                five_years_ago = pd.Timestamp.now() - pd.Timedelta(days=5*365)
+                                recent_ex_dates = [d for d in ex_dates if pd.to_datetime(d) >= five_years_ago]
+                                logger.info(f"[FactorCalc] 最近5年除权日: {recent_ex_dates}")
+
+                                for ex_date in recent_ex_dates:
                                     matches = df[df['date_str'] == ex_date]
                                     if not matches.empty:
                                         close_dict[ex_date] = matches.iloc[0]['close']
@@ -206,6 +233,10 @@ class AdjustmentFactorService:
 
             dividend_records['close'] = dividend_records['date'].dt.strftime('%Y-%m-%d').map(close_dict)
 
+            logger.info(f"[FactorCalc] 收盘价映射: 成功{dividend_records['close'].notna().sum()}/{len(dividend_records)}")
+            logger.info(f"[FactorCalc] close_dict样例: {list(close_dict.items())[:3]}")
+            logger.info(f"[FactorCalc] dividend_records日期样例: {dividend_records['date'].dt.strftime('%Y-%m-%d').tolist()[:3]}")
+
             # 4. 向量化计算单日复权因子（整列同时计算）
             # 提取字段为Series
             fenhong = dividend_records['fenhong'].fillna(0)  # 10派X元
@@ -214,39 +245,46 @@ class AdjustmentFactorService:
             peigujia = dividend_records['peigujia'].fillna(0)
             close_prices = dividend_records['close']  # 实际收盘价
 
+            logger.info(f"[FactorCalc] close_prices样例: {close_prices.tolist()[:5]}")
+
+            # 如果没有收盘价，无法计算
+            if close_prices.isna().all():
+                logger.warning(f"[FactorCalc] 所有收盘价都是NaN，无法计算因子")
+                return {}
+
             # 每股分红 = 派息金额 / 10
             dividend_per_share = fenhong / 10
 
             # 计算除权价（理论价）
             # 除权价 = (收盘价 - 分红) / (1 + 送股率 + 配股率)
-            # 注意：如果有配股，还需要考虑配股的影响
             ex_price = (close_prices - dividend_per_share) / (1 + songgu/10 + peigu/10)
 
-            # 单日因子 = 除权价 / 收盘价
+            # 前复权：单日因子 = 除权价 / 收盘价（通达信逻辑，让除权日前价格下跌）
             dividend_records['daily_factor'] = (ex_price / close_prices).fillna(1.0)
 
             # 处理无效值
             dividend_records.loc[dividend_records['daily_factor'] <= 0, 'daily_factor'] = 1.0
-            dividend_records.loc[dividend_records['daily_factor'] > 10, 'daily_factor'] = 1.0  # 异常值保护
+            dividend_records.loc[dividend_records['daily_factor'] > 10, 'daily_factor'] = 1.0
 
-            # 5. 向量化累积计算（降序排列，从新到旧）
+            # 前复权不累积，只用最新除权日的因子
+            # 最新除权日的 daily_factor 应用到它之前的所有日期
             dividend_records = dividend_records.sort_values('date', ascending=False)
-            dividend_records['cumulative'] = dividend_records['daily_factor'].cumprod()
+            latest_daily_factor = dividend_records.iloc[0]['daily_factor']
 
             # DEBUG: 打印除权记录
-            logger.debug(f"[FactorCalc] 除权记录 (共{len(dividend_records)}条):")
-            for _, row in dividend_records.head(5).iterrows():
-                logger.debug(f"  日期: {row['date']}, 分红: {row.get('fenhong', 0)}, "
-                           f"收盘: {row.get('close', 0):.2f}, 因子: {row['daily_factor']:.6f}, "
-                           f"累积: {row['cumulative']:.6f}")
+            logger.info(f"[FactorCalc] 除权记录 (共{len(dividend_records)}条):")
+            for _, row in dividend_records.head(10).iterrows():
+                logger.info(f"  日期: {row['date']}, 分红: {row.get('fenhong', 0)}, "
+                           f"收盘: {row.get('close', 0):.2f}, 除权价: {row.get('ex_price', 0):.2f}, "
+                           f"单日因子: {row['daily_factor']:.6f}")
 
-            # 前复权逻辑：使用累积因子（cumprod计算的结果）
-            # 最新除权日之后的日期因子=1.0
+            # 获取最新除权日
             latest_ex_date = dividend_records['date'].max()
+            logger.info(f"[FactorCalc] 最新除权日: {latest_ex_date}, 因子: {latest_daily_factor:.6f}")
 
-            # 6. 动态日期范围优化（从最早除权日往前推，确保包含除权前日期）
+            # 6. 生成日期范围
             earliest_ex_date = dividend_records['date'].min()
-            start_date = earliest_ex_date - pd.Timedelta(days=7)  # 往前推7天，确保覆盖除权前
+            start_date = earliest_ex_date - pd.Timedelta(days=7)
             end_date = pd.Timestamp.now()
 
             # 生成每日日期
@@ -254,32 +292,26 @@ class AdjustmentFactorService:
                 'date': pd.date_range(start=start_date, end=end_date, freq='D')
             })
 
-            # 7. 向量化查找：使用merge_asof（C实现二分查找，替代嵌套循环）
-            # direction='backward': 向后查找最近的除权日
-            # - 除权日之前的日期会找到前一个除权日的累积因子
-            # - 除权日会找到自己的累积因子
-            # 注意：merge_asof 要求 right 必须按 date 升序排列
-            dividend_for_merge = dividend_records.sort_values('date', ascending=True)
-
-            # 前复权特殊处理：最新除权日之后的日期因子=1.0
-            latest_ex_date = dividend_records['date'].max()
-
-            result_df = pd.merge_asof(
-                daily_df,
-                dividend_for_merge[['date', 'cumulative']],
-                on='date',
-                direction='backward'
+            # 7. 应用因子（通达信逻辑：最新除权日之前用最新除权日的因子）
+            # 最新除权日及之后：因子 = 1.0
+            # 最新除权日之前：因子 = latest_daily_factor（< 1.0，让价格下跌）
+            daily_df['cumulative'] = daily_df['date'].apply(
+                lambda d: 1.0 if d >= latest_ex_date else latest_daily_factor
             )
 
-            # 最新除权日之后的日期因子=1.0（让最新价格不变）
-            result_df.loc[result_df['date'] > latest_ex_date, 'cumulative'] = 1.0
+            # DEBUG: 验证因子
+            sample_dates = [latest_ex_date - pd.Timedelta(days=3),
+                           latest_ex_date - pd.Timedelta(days=1),
+                           latest_ex_date,
+                           latest_ex_date + pd.Timedelta(days=1)]
+            logger.info(f"[FactorCalc] 因子验证:")
+            for d in sample_dates:
+                factor = daily_df[daily_df['date'] == d]['cumulative'].iloc[0] if len(daily_df[daily_df['date'] == d]) > 0 else 'N/A'
+                logger.info(f"  {d.date()}: {factor}")
 
-            # 填充无除权日的因子为1.0
-            result_df['cumulative'] = result_df['cumulative'].fillna(1.0)
-
-            # 8. 向量化转为字典（比Python循环快）
-            result_df['date_str'] = result_df['date'].dt.strftime('%Y-%m-%d')
-            factor_dict = result_df.set_index('date_str')['cumulative'].to_dict()
+            # 8. 向量化转为字典
+            daily_df['date_str'] = daily_df['date'].dt.strftime('%Y-%m-%d')
+            factor_dict = daily_df.set_index('date_str')['cumulative'].to_dict()
 
             logger.debug(f"[FactorCalc] 向量化计算完成: {len(factor_dict)}天, "
                         f"除权日{len(dividend_records)}个")
@@ -287,7 +319,8 @@ class AdjustmentFactorService:
             return factor_dict
 
         except Exception as e:
-            logger.warning(f"[FactorCalc] 向量化计算失败: {e}，回退到循环版本")
+            import traceback
+            logger.error(f"[FactorCalc] 向量化计算失败: {e}\n{traceback.format_exc()}")
             # 回退到旧版本（保险）
             return self._calculate_front_factors_legacy(xdxr_data)
 

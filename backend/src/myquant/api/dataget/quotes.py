@@ -261,12 +261,13 @@ async def get_seamless_kline(request: SeamlessKlineRequest):
                     adjust_type=_map_adjust_type(request.adjust_type),
                 )
                 if df is not None and not df.empty:
+                    mapped_adjust_type = _map_adjust_type(request.adjust_type)
                     data[symbol] = {
                         'symbol': symbol,
                         'period': request.period,
                         'data': [item.dict() for item in _df_to_kline_items(df)],
                         'source': 'seamless',
-                        'adjust_type': request.adjust_type,
+                        'adjust_type': mapped_adjust_type,
                     }
             except Exception as e:
                 logger.warning(f"[V5] seamless {symbol} 失败: {e}")
