@@ -24,9 +24,7 @@ class AdjustmentFactorService:
     """复权因子服务
 
     管理复权因子表的计算、缓存和应用
-    支持两种复权方式：
-    - 前复权(front): 累积因子，适用于日线（数据完整）
-    - 等比前复权(front_ratio): 独立因子，适用于分钟线（数据不完整）
+    支持前复权方式：累积因子，适用于所有周期
     """
 
     def __init__(self):
@@ -43,7 +41,7 @@ class AdjustmentFactorService:
 
         Args:
             symbol: 股票代码
-            adjust_type: 复权类型 (front/front_ratio)
+            adjust_type: 复权类型 (front)
 
         Returns:
             复权因子表 { "2024-01-01": 1.05, ... }
@@ -75,8 +73,6 @@ class AdjustmentFactorService:
         # 计算因子表
         if adjust_type == 'front':
             factor_table = self._calculate_front_factors(symbol, xdxr_data)
-        elif adjust_type == 'front_ratio':
-            factor_table = self._calculate_front_ratio_factors(xdxr_data)
         else:
             logger.warning(f"[FactorCache] 不支持的复权类型: {adjust_type}")
             return {}
@@ -389,164 +385,6 @@ class AdjustmentFactorService:
 
         except Exception as e:
             logger.warning(f"[FactorCalc] 循环版本也失败: {e}")
-            return {}
-
-    def _calculate_front_ratio_factors(self, xdxr_data: list) -> dict:
-        """计算等比前复权独立因子表（分钟线用）- 向量化优化版
-
-        优化点：
-        1. 向量化计算独立因子（无Python循环）
-        2. 使用cumprod累积（C实现）
-        3. 动态日期范围（从最早除权日开始）
-
-        性能：从~100ms降至~10ms
-
-        Args:
-            xdxr_data: XDXR原始数据列表
-
-        Returns:
-            每日对应的独立因子表 { "2024-01-01": 1.05, ... }
-        """
-        if not xdxr_data:
-            return {}
-
-        try:
-            # 1. 转换为DataFrame
-            xdxr_df = pd.DataFrame(xdxr_data)
-
-            if 'category' not in xdxr_df.columns:
-                logger.debug(f"[FactorCalc] XDXR数据缺少category字段")
-                return {}
-
-            # 2. 筛选除权记录（向量化）
-            dividend_records = xdxr_df[xdxr_df['category'] == 1].copy()
-
-            if len(dividend_records) == 0:
-                return {}
-
-            # 3. 向量化计算日期列
-            dividend_records['date'] = pd.to_datetime(
-                dividend_records[['year', 'month', 'day']]
-            )
-
-            # 4. 向量化计算等比因子（整列计算）
-            songgu = dividend_records['songzhuangu'].fillna(0) / 10
-            peigu = dividend_records['peigu'].fillna(0) / 10
-            denominator = (1 + songgu + peigu).replace(0, np.nan)
-            dividend_records['ratio_factor'] = (1 / denominator).fillna(1.0)
-
-            # 5. 按日期排序（从旧到新，升序）
-            dividend_records = dividend_records.sort_values('date', ascending=True)
-
-            # 6. 从旧到新累积计算
-            # 这样越新的日期累积值越大（累积了更多除权）
-            dividend_records['cumulative'] = dividend_records['ratio_factor'].cumprod()
-
-            # 7. 取倒数作为前复权因子
-            # 最新日期的cumulative最大，倒数最小→接近1.0（最新价格不变）
-            # 早期日期的cumulative接近1.0，倒数较大→历史价格放大
-            dividend_records['adjustment_factor'] = 1.0 / dividend_records['cumulative']
-
-            # 8. 动态日期范围
-            earliest_ex_date = dividend_records['date'].min()
-            latest_ex_date = dividend_records['date'].max()
-            start_date = earliest_ex_date - pd.Timedelta(days=7)  # 往前推7天
-            end_date = pd.Timestamp.now()
-
-            daily_df = pd.DataFrame({
-                'date': pd.date_range(start=start_date, end=end_date, freq='D')
-            })
-
-            # 9. 向量化查找（merge_asof with direction='backward'）
-            # 关键理解：
-            # - dividend_records 已按 date 升序排列
-            # - cumulative 已从旧到新累积（越新越大）
-            # - direction='backward': 向后找最近的除权日
-            #   - 除权日当天：找到自己的累积因子
-            #   - 除权日之间的日期：找到上一个除权日的累积因子
-            #   - 最旧除权日之前的日期：找不到 → NaN → 需要特殊处理
-            # merge_asof 要求 left 必须升序
-            result_df = pd.merge_asof(
-                daily_df,  # 默认已升序
-                dividend_records[['date', 'cumulative']],  # 升序
-                on='date',
-                direction='backward'
-            )
-
-            # 10. 特殊处理
-            # 最新除权日之后的日期因子=1.0（最新价格不变）
-            result_df.loc[result_df['date'] > latest_ex_date, 'cumulative'] = 1.0
-
-            # 最旧除权日之前的日期：应该使用最旧除权日的累积因子
-            # 这些日期的 cumulative 是 NaN（找不到过去的除权日）
-            earliest_cumulative = dividend_records.iloc[0]['cumulative']
-            result_df['cumulative'] = result_df['cumulative'].fillna(earliest_cumulative)
-
-            # 11. 取倒数作为前复权因子
-            # 这样最新日期factor=1.0，旧日期factor>1.0（历史价格放大）
-            result_df['adjustment_factor'] = 1.0 / result_df['cumulative']
-
-            # 12. 转为字典
-            result_df['date_str'] = result_df['date'].dt.strftime('%Y-%m-%d')
-            return result_df.set_index('date_str')['adjustment_factor'].to_dict()
-
-        except Exception as e:
-            logger.warning(f"[FactorCalc] 等比复权向量化计算失败: {e}，回退到循环版本")
-            return self._calculate_front_ratio_factors_legacy(xdxr_data)
-
-    def _calculate_front_ratio_factors_legacy(self, xdxr_data: list) -> dict:
-        """计算等比前复权独立因子表（循环版本，作为回退）"""
-        try:
-            xdxr_df = pd.DataFrame(xdxr_data)
-            if 'category' not in xdxr_df.columns:
-                return {}
-
-            dividend_records = xdxr_df[xdxr_df['category'] == 1].copy()
-            if len(dividend_records) == 0:
-                return {}
-
-            dividend_records['date'] = dividend_records.apply(
-                lambda row: f"{int(row['year'])}-{int(row['month']):02d}-{int(row['day']):02d}",
-                axis=1
-            )
-            dividend_records = dividend_records.sort_values('date', ascending=False)
-
-            daily_factors = {}
-            for _, record in dividend_records.iterrows():
-                date = record['date']
-                songgu = float(record.get('songzhuangu', 0) or 0) / 10
-                peigu = float(record.get('peigu', 0) or 0) / 10
-                if (1 + songgu + peigu) > 0:
-                    factor = 1 / (1 + songgu + peigu)
-                    daily_factors[date] = factor
-
-            if not daily_factors:
-                return {}
-
-            # 从新到旧累积，最后取倒数
-            sorted_dates = sorted(daily_factors.keys(), reverse=True)
-            if not sorted_dates:
-                return {}
-
-            earliest_date = sorted_dates[-1]
-            latest_date = datetime.now().strftime('%Y-%m-%d')
-            date_range = pd.date_range(start=earliest_date, end=latest_date, freq='D')
-
-            result = {}
-            cumulative = 1.0
-
-            # 从新到旧遍历
-            for current_date in reversed(date_range):
-                date_str = current_date.strftime('%Y-%m-%d')
-                if date_str in daily_factors:
-                    cumulative = cumulative * daily_factors[date_str]
-                # 倒数作为前复权因子
-                result[date_str] = 1.0 / cumulative
-
-            return result
-
-        except Exception as e:
-            logger.warning(f"[FactorCalc] 等比复权循环版本也失败: {e}")
             return {}
 
     def _get_xdxr_data(self, symbol: str) -> list:

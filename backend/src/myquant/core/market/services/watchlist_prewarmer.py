@@ -57,13 +57,11 @@ class WatchlistPrewarmer:
         logger.info("[预热] 自选股复权因子预加载完成")
 
     def _warmup_symbols(self, symbols: List[str]):
-        """预热指定股票的两种复权因子"""
+        """预热指定股票的复权因子"""
         for symbol in symbols:
             try:
-                # 预计算日线用前复权
+                # 预计算前复权因子（所有周期通用）
                 self.factor_service.get_factor_table(symbol, 'front')
-                # 预计算分钟线用等比复权
-                self.factor_service.get_factor_table(symbol, 'front_ratio')
             except Exception as e:
                 logger.debug(f"[预热] {symbol} 预热失败: {e}")
 

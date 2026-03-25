@@ -29,7 +29,7 @@ from .services import (
 from .routing import DataLevel, get_source_selector
 
 # 工具
-from .utils import TradingTimeChecker, AdjustmentCalculator
+from .utils import TradingTimeChecker
 
 __all__ = [
     # 适配器
@@ -43,5 +43,4 @@ __all__ = [
     "get_source_selector",
     # 工具
     "TradingTimeChecker",
-    "AdjustmentCalculator",
 ]

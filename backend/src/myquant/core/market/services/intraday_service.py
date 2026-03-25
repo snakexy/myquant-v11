@@ -16,7 +16,7 @@ from loguru import logger
 from myquant.core.market.models import KlineData, KlineDataset
 from myquant.core.market.routing import DataLevel, get_source_selector
 from myquant.core.market.adapters import get_adapter
-from myquant.core.market.utils.adjustment_calculator import get_adjustment_calculator
+from myquant.core.market.services.adjustment_factor_service import get_adjustment_factor_service
 
 
 class CacheStrategy(Enum):
@@ -84,7 +84,7 @@ class IntradayKlineService:
             count: 数据条数
             use_cache: 是否使用缓存
             adapter: 指定适配器（如果为 None，使用路由选择）
-            adjust_type: 复权类型 (none/front/back/front_ratio/back_ratio)
+            adjust_type: 复权类型 (none/front/back)
 
         Returns:
             {symbol: IntradayKlineResult} 字典
@@ -162,16 +162,15 @@ class IntradayKlineService:
         Returns:
             复权后的 DataFrame
         """
+        if df.empty or adjust_type == 'none':
+            return df
+
         try:
-            calculator = get_adjustment_calculator()
-
-            # 获取除权除息数据（优先 TdxQuant）
-            xdxr_data = self._get_xdxr_data(symbol)
-
-            if xdxr_data:
-                df = calculator.apply_adjustment(df, xdxr_data, symbol, adjust_type)
+            factor_service = get_adjustment_factor_service()
+            factor_table = factor_service.get_factor_table(symbol, adjust_type)
+            if factor_table:
+                df = factor_service.apply_factors(df, factor_table)
                 logger.debug(f"[IntradayKline] {symbol} 应用 {adjust_type} 复权完成")
-
         except Exception as e:
             logger.warning(f"[IntradayKline] {symbol} 复权计算失败: {e}")
 

@@ -29,7 +29,7 @@ class KlineRequest(BaseModel):
     period: str = Field("1m", description="周期: 1m, 5m, 15m, 30m, 1h, 1d")
     count: int = Field(100, description="返回数量", ge=1, le=1000)
     subscribe: bool = Field(True, description="是否启用订阅更新")
-    adjust_type: str = Field("none", description="复权类型: none/front/back/front_ratio/back_ratio")
+    adjust_type: str = Field("none", description="复权类型: none/front/back")
 
 
 class SeamlessKlineRequest(BaseModel):
@@ -40,7 +40,7 @@ class SeamlessKlineRequest(BaseModel):
     end_date: Optional[str] = Field(None, description="结束日期 YYYY-MM-DD")
     start_date: Optional[str] = Field(None, description="开始日期 YYYY-MM-DD")
     days_back: int = Field(5, description="历史回溯天数（当count未指定时使用）", ge=1, le=30)
-    adjust_type: str = Field("none", description="复权类型: none/front/back/front_ratio/back_ratio")
+    adjust_type: str = Field("none", description="复权类型: none/front/back")
 
 
 # ─── 响应模型 ───────────────────────────────────────────────────────────────

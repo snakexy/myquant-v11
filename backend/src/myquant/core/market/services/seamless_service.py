@@ -5,7 +5,7 @@
 
 统一复权架构:
 - 所有数据源返回不复权原始数据
-- 服务层统一应用 AdjustmentCalculator 进行复权
+- 服务层统一应用 AdjustmentFactorService 进行复权
 """
 
 from typing import Optional
@@ -89,7 +89,7 @@ class SeamlessKlineService:
             start_date: 开始日期
             end_date: 结束日期
             include_realtime: 是否包含实时数据
-            adjust_type: 复权类型 (none/front/back/front_ratio/back_ratio)
+            adjust_type: 复权类型 (none/front/back)
 
         Returns:
             DataFrame with OHLCV columns
@@ -272,17 +272,15 @@ class SeamlessKlineService:
         adjust_type: str,
         period: str = '1d'
     ) -> pd.DataFrame:
-        """应用复权（混合模式）
+        """应用复权
 
-        混合模式策略：
-        - 日线(1d): 使用传统前复权(front) - 累积因子，最新价不变
-        - 分钟线: 使用等比前复权(front_ratio) - 独立因子，不依赖完整历史
+        使用前复权(front)：累积因子，最新价不变
 
         Args:
             df: K线数据
             symbol: 股票代码
-            adjust_type: 复权类型（用户请求的）
-            period: 周期，用于判断使用哪种复权方式
+            adjust_type: 复权类型 (none/front/back)
+            period: 周期
 
         Returns:
             复权后的 DataFrame
@@ -291,12 +289,11 @@ class SeamlessKlineService:
             return df
 
         try:
-            # 混合模式：暂时禁用front_ratio，所有周期都用front
-            # TODO: front_ratio算法需要重新修复
-            actual_adjust_type = 'front'  # 所有周期都用前复权
+            # 所有周期统一使用前复权
+            actual_adjust_type = 'front'
 
-            # 如果用户明确请求了等比复权，尊重用户选择
-            if adjust_type in ['front_ratio', 'back_ratio']:
+            # 如果用户明确请求了其他复权类型，尊重用户选择
+            if adjust_type in ['back', 'back_ratio']:
                 actual_adjust_type = adjust_type
 
             logger.info(f"[复权] {symbol} {period}: 用户请求{adjust_type}, 实际使用{actual_adjust_type}")
