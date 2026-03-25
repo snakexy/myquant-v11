@@ -90,6 +90,44 @@ export interface WatchlistItem {
 }
 
 /**
+ * 自选股分组
+ */
+export interface WatchlistGroup {
+  id: string
+  name: string
+  stocks: WatchlistItem[]
+  createdAt: number
+  refreshInterval: number  // 刷新间隔（毫秒）
+  preheat?: boolean       // 是否预加载（程序启动时自动加载）
+}
+
+/**
+ * 监控规则条件
+ */
+export interface MonitorCondition {
+  type: string  // 'price' | 'change_percent' | 'volume' | 'macd' | 'kdj' | 'rsi' | 'custom'
+  operator: '>' | '<' | '>=' | '<=' | '==' | 'cross_up' | 'cross_down'
+  value: number
+  params?: Record<string, any>  // 额外参数（如周期、指标参数等）
+}
+
+/**
+ * 监控规则
+ */
+export interface MonitorRule {
+  id: string
+  name: string
+  description: string
+  enabled: boolean
+  targetGroupId: string  // 触发后添加到的分组ID
+  conditions: MonitorCondition[]
+  symbols?: string[]  // 可选：监控指定股票列表，空则监控全市场
+  createdAt: number
+  lastTriggered?: number
+  triggerCount: number
+}
+
+/**
  * 板块数据
  */
 export interface Sector {
@@ -150,6 +188,11 @@ export const useDataStore = defineStore('data', () => {
   const quotes = ref<QuoteState>({})
   const klineData = ref<Map<string, KlineData[]>>(new Map())
   const watchlist = ref<WatchlistItem[]>([])
+  // 自选股分组
+  const watchlistGroups = ref<WatchlistGroup[]>([])
+  const activeGroupId = ref<string>('')
+  // 监控规则
+  const monitorRules = ref<MonitorRule[]>([])
   const marketOverview = ref<MarketOverview | null>(null)
   const lastUpdate = ref<number>(0)
 
@@ -552,6 +595,280 @@ export const useDataStore = defineStore('data', () => {
     }
   }
 
+  // ==================== Actions - 分组管理 ====================
+
+  /**
+   * 获取当前激活分组
+   */
+  const activeGroup = computed(() => {
+    return watchlistGroups.value.find(g => g.id === activeGroupId.value) || watchlistGroups.value[0] || null
+  })
+
+  /**
+   * 获取当前激活分组的股票列表
+   */
+  const currentWatchlist = computed(() => {
+    const group = activeGroup.value
+    if (group) {
+      return group.stocks
+    }
+    // 如果没有分组，返回旧的 watchlist（向后兼容）
+    return watchlist.value
+  })
+
+  /**
+   * 创建新分组
+   */
+  const createGroup = (name: string, refreshInterval: number = 5000) => {
+    const newGroup: WatchlistGroup = {
+      id: `group_${Date.now()}`,
+      name,
+      stocks: [],
+      createdAt: Date.now(),
+      refreshInterval  // 默认5秒
+    }
+    watchlistGroups.value.push(newGroup)
+    saveWatchlistGroups()
+    return newGroup
+  }
+
+  /**
+   * 重命名分组
+   */
+  const renameGroup = (groupId: string, newName: string) => {
+    const group = watchlistGroups.value.find(g => g.id === groupId)
+    if (group) {
+      group.name = newName
+      saveWatchlistGroups()
+    }
+  }
+
+  /**
+   * 删除分组
+   */
+  const deleteGroup = (groupId: string) => {
+    const index = watchlistGroups.value.findIndex(g => g.id === groupId)
+    if (index > -1) {
+      // 如果删除的是当前激活分组，切换到第一个分组
+      if (activeGroupId.value === groupId) {
+        activeGroupId.value = watchlistGroups.value.length > 1
+          ? watchlistGroups.value[0].id
+          : ''
+      }
+      watchlistGroups.value.splice(index, 1)
+      saveWatchlistGroups()
+    }
+  }
+
+  /**
+   * 切换激活分组
+   */
+  const setActiveGroup = (groupId: string) => {
+    const group = watchlistGroups.value.find(g => g.id === groupId)
+    if (group) {
+      activeGroupId.value = groupId
+      saveActiveGroup()
+    }
+  }
+
+  /**
+   * 添加股票到指定分组
+   */
+  const addToGroup = (groupId: string, symbol: string, name: string) => {
+    const group = watchlistGroups.value.find(g => g.id === groupId)
+    if (group && !group.stocks.find(s => s.symbol === symbol)) {
+      group.stocks.push({
+        symbol,
+        name,
+        addedAt: Date.now()
+      })
+      saveWatchlistGroups()
+    }
+  }
+
+  /**
+   * 从分组移除股票（同时清理热数据）
+   */
+  const removeFromGroup = (groupId: string, symbol: string) => {
+    const group = watchlistGroups.value.find(g => g.id === groupId)
+    if (group) {
+      const index = group.stocks.findIndex(s => s.symbol === symbol)
+      if (index > -1) {
+        group.stocks.splice(index, 1)
+
+        // 检查该股票是否还在其他分组中
+        const inOtherGroups = watchlistGroups.value.some(g =>
+          g.id !== groupId && g.stocks.some(s => s.symbol === symbol)
+        )
+
+        // 如果不在任何其他分组，清理热数据
+        if (!inOtherGroups) {
+          delete quotes.value[symbol]
+          console.log(`[DataStore] 清理股票 ${symbol} 的热数据`)
+        }
+
+        saveWatchlistGroups()
+      }
+    }
+  }
+
+  /**
+   * 设置分组刷新间隔
+   */
+  const setGroupRefreshInterval = (groupId: string, interval: number) => {
+    const group = watchlistGroups.value.find(g => g.id === groupId)
+    if (group) {
+      group.refreshInterval = interval
+      saveWatchlistGroups()
+      console.log(`[DataStore] 分组 ${group.name} 刷新间隔设置为 ${interval}ms`)
+    }
+  }
+
+  /**
+   * 设置分组预热状态
+   */
+  const setGroupPreheat = (groupId: string, preheat: boolean) => {
+    const group = watchlistGroups.value.find(g => g.id === groupId)
+    if (group) {
+      group.preheat = preheat
+      saveWatchlistGroups()
+      console.log(`[DataStore] 分组 ${group.name} 预热${preheat ? '已启用' : '已禁用'}`)
+    }
+  }
+
+  /**
+   * 获取需要预热的分组
+   */
+  const getPreheatGroups = () => {
+    return watchlistGroups.value.filter(g => g.preheat && g.stocks.length > 0)
+  }
+
+  /**
+   * 预热数据（加载所有标记为预热的分组数据）
+   */
+  const preheatData = async (fetchCallback?: (symbols: string[]) => Promise<void>) => {
+    const preheatGroups = getPreheatGroups()
+    if (preheatGroups.length === 0) {
+      console.log('[DataStore] 没有需要预热的分组')
+      return
+    }
+
+    console.log(`[DataStore] 开始预热 ${preheatGroups.length} 个分组的数据...`)
+
+    for (const group of preheatGroups) {
+      const symbols = group.stocks.map(s => s.symbol)
+      console.log(`[DataStore] 预热分组: ${group.name} (${symbols.length} 只股票)`)
+
+      if (fetchCallback) {
+        try {
+          await fetchCallback(symbols)
+        } catch (error) {
+          console.error(`[DataStore] 预热分组 ${group.name} 失败:`, error)
+        }
+      }
+    }
+
+    console.log('[DataStore] 数据预热完成')
+  }
+
+  // ==================== Actions - 监控规则 ====================
+
+  /**
+   * 创建监控规则
+   */
+  const createMonitorRule = (rule: Omit<MonitorRule, 'id' | 'createdAt' | 'triggerCount'>): MonitorRule => {
+    const newRule: MonitorRule = {
+      id: `rule_${Date.now()}`,
+      ...rule,
+      createdAt: Date.now(),
+      triggerCount: 0
+    }
+    monitorRules.value.push(newRule)
+    saveMonitorRules()
+    return newRule
+  }
+
+  /**
+   * 更新监控规则
+   */
+  const updateMonitorRule = (ruleId: string, updates: Partial<MonitorRule>) => {
+    const rule = monitorRules.value.find(r => r.id === ruleId)
+    if (rule) {
+      Object.assign(rule, updates)
+      saveMonitorRules()
+    }
+  }
+
+  /**
+   * 删除监控规则
+   */
+  const deleteMonitorRule = (ruleId: string) => {
+    const index = monitorRules.value.findIndex(r => r.id === ruleId)
+    if (index > -1) {
+      monitorRules.value.splice(index, 1)
+      saveMonitorRules()
+    }
+  }
+
+  /**
+   * 启用/禁用监控规则
+   */
+  const toggleMonitorRule = (ruleId: string) => {
+    const rule = monitorRules.value.find(r => r.id === ruleId)
+    if (rule) {
+      rule.enabled = !rule.enabled
+      saveMonitorRules()
+    }
+  }
+
+  /**
+   * 执行监控规则检查（预留接口）
+   * TODO: 实现具体的监控逻辑
+   */
+  const executeMonitorRules = async (): Promise<void> => {
+    const enabledRules = monitorRules.value.filter(r => r.enabled)
+
+    for (const rule of enabledRules) {
+      try {
+        // TODO: 根据规则条件检查股票
+        // 1. 获取待监控股票列表（rule.symbols 或全市场）
+        // 2. 检查每个股票是否满足 rule.conditions
+        // 3. 满足条件则添加到 rule.targetGroupId
+        // 4. 更新 rule.lastTriggered 和 rule.triggerCount
+
+        console.log(`[Monitor] 检查规则: ${rule.name}`)
+        // 预留接口，以后实现
+      } catch (error) {
+        console.error(`[Monitor] 规则 ${rule.name} 执行失败:`, error)
+      }
+    }
+  }
+
+  /**
+   * 保存监控规则到本地存储
+   */
+  const saveMonitorRules = () => {
+    try {
+      localStorage.setItem('myquant_monitor_rules', JSON.stringify(monitorRules.value))
+    } catch (e) {
+      console.error('保存监控规则失败:', e)
+    }
+  }
+
+  /**
+   * 从本地存储加载监控规则
+   */
+  const loadMonitorRules = () => {
+    try {
+      const saved = localStorage.getItem('myquant_monitor_rules')
+      if (saved) {
+        monitorRules.value = JSON.parse(saved)
+      }
+    } catch (e) {
+      console.error('加载监控规则失败:', e)
+    }
+  }
+
   /**
    * 清空行情数据
    */
@@ -856,6 +1173,81 @@ export const useDataStore = defineStore('data', () => {
     }
   }
 
+  /**
+   * 保存分组数据到本地存储
+   */
+  const saveWatchlistGroups = () => {
+    try {
+      localStorage.setItem('myquant_watchlist_groups', JSON.stringify(watchlistGroups.value))
+    } catch (e) {
+      console.error('保存分组失败:', e)
+    }
+  }
+
+  /**
+   * 从本地存储加载分组数据
+   */
+  const loadWatchlistGroups = () => {
+    try {
+      const saved = localStorage.getItem('myquant_watchlist_groups')
+      if (saved) {
+        watchlistGroups.value = JSON.parse(saved)
+      } else {
+        // 如果没有分组数据，创建默认分组并迁移旧数据
+        const defaultGroup: WatchlistGroup = {
+          id: 'group_default',
+          name: '默认分组',
+          stocks: [...watchlist.value],
+          createdAt: Date.now()
+        }
+        watchlistGroups.value = [defaultGroup]
+        saveWatchlistGroups()
+      }
+    } catch (e) {
+      console.error('加载分组失败:', e)
+      // 出错时创建默认分组
+      const defaultGroup: WatchlistGroup = {
+        id: 'group_default',
+        name: '默认分组',
+        stocks: [],
+        createdAt: Date.now()
+      }
+      watchlistGroups.value = [defaultGroup]
+    }
+  }
+
+  /**
+   * 保存激活分组ID
+   */
+  const saveActiveGroup = () => {
+    try {
+      localStorage.setItem('myquant_active_group', activeGroupId.value)
+    } catch (e) {
+      console.error('保存激活分组失败:', e)
+    }
+  }
+
+  /**
+   * 加载激活分组ID
+   */
+  const loadActiveGroup = () => {
+    try {
+      const saved = localStorage.getItem('myquant_active_group')
+      if (saved) {
+        activeGroupId.value = saved
+      } else if (watchlistGroups.value.length > 0) {
+        // 默认激活第一个分组
+        activeGroupId.value = watchlistGroups.value[0].id
+        saveActiveGroup()
+      }
+    } catch (e) {
+      console.error('加载激活分组失败:', e)
+      if (watchlistGroups.value.length > 0) {
+        activeGroupId.value = watchlistGroups.value[0].id
+      }
+    }
+  }
+
   // ==================== 初始化 ====================
 
   /**
@@ -874,8 +1266,17 @@ export const useDataStore = defineStore('data', () => {
       dataSources.value = savedDataSources
     }
 
-    // 加载自选列表
+    // 加载自选列表（旧数据，用于迁移）
     loadWatchlist()
+
+    // 加载分组数据（新数据结构）
+    loadWatchlistGroups()
+
+    // 加载激活分组
+    loadActiveGroup()
+
+    // 加载监控规则
+    loadMonitorRules()
   }
 
   /**
@@ -916,6 +1317,9 @@ export const useDataStore = defineStore('data', () => {
     quotes,
     klineData,
     watchlist,
+    watchlistGroups,
+    activeGroupId,
+    monitorRules,
     marketOverview,
     lastUpdate,
 
@@ -941,6 +1345,10 @@ export const useDataStore = defineStore('data', () => {
     marketStats,
     watchlistQuotes,
     lastUpdateText,
+
+    // ========== 计算属性 - 分组数据 ==========
+    activeGroup,
+    currentWatchlist,
 
     // ========== 计算属性 - 板块数据 ==========
     sortedSectors,
@@ -979,6 +1387,25 @@ export const useDataStore = defineStore('data', () => {
     clearKlineData,
     filterByChange,
     searchStocks,
+
+    // ========== Actions - 分组管理 ==========
+    createGroup,
+    renameGroup,
+    deleteGroup,
+    setActiveGroup,
+    addToGroup,
+    removeFromGroup,
+    setGroupRefreshInterval,
+    setGroupPreheat,
+    getPreheatGroups,
+    preheatData,
+
+    // ========== Actions - 监控规则 ==========
+    createMonitorRule,
+    updateMonitorRule,
+    deleteMonitorRule,
+    toggleMonitorRule,
+    executeMonitorRules,
 
     // ========== Actions - 板块数据 ==========
     setSectors,
