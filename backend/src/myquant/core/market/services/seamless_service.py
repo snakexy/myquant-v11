@@ -11,24 +11,64 @@
 from typing import Optional
 import pandas as pd
 from datetime import datetime
+from pathlib import Path
 from loguru import logger
 
 from myquant.core.market.models import KlineDataset
 from myquant.core.market.routing import DataLevel, get_source_selector
 from myquant.core.market.adapters import get_adapter
 from myquant.core.market.utils.trading_time import TradingTimeChecker
-from myquant.core.market.utils.adjustment_calculator import get_adjustment_calculator
+from myquant.core.market.services.cache import TTLCache
+from myquant.config.settings import XDXR_DIR
+from myquant.core.market.services.adjustment_factor_service import get_adjustment_factor_service
+
+
+# 自动保存配置
+AUTO_SAVE_TO_LOCALDB = True  # 开关
+SAVE_PERIODS = {'1d'}  # 只保存日线数据
+SAVE_ONLINE_SOURCES = {'xtquant', 'pytdx', 'tdxquant'}  # 只保存从在线源获取的数据
+
+
+import pickle
+import os
+import time
+
+# 目录创建标记（类级别，只检查一次）
+_xdxr_dir_initialized = False
+
+def _ensure_xdxr_dir():
+    """确保XDXR目录存在（只执行一次）"""
+    global _xdxr_dir_initialized
+    if not _xdxr_dir_initialized:
+        XDXR_DIR.mkdir(parents=True, exist_ok=True)
+        _xdxr_dir_initialized = True
 
 
 class SeamlessKlineService:
     """无缝 K线服务
 
     合并历史数据和实时数据，提供连续的 K线序列
+    带复权结果缓存（L1内存缓存）
     """
 
     def __init__(self):
         self._selector = get_source_selector()
         self._adapter_cache = {}
+        # XDXR除权除息数据缓存（TTL 1小时，因为这数据变化不频繁）
+        self._xdxr_cache = TTLCache(maxsize=200, ttl=3600)  # 1小时TTL
+        # XDXR文件缓存TTL（秒）：1天
+        self._xdxr_file_ttl = 24 * 3600
+        # K线数据缓存（TTL 60秒，加速周期切换）
+        self._kline_cache = TTLCache(maxsize=500, ttl=60)
+        # 复权因子服务（预计算复权因子表，支持混合模式）
+        self._factor_service = get_adjustment_factor_service()
+        logger.info("[SeamlessKlineService] 初始化完成，混合模式复权已启用，K线缓存已开启")
+
+    def _get_adapter(self, name: str):
+        """获取适配器实例（带缓存）"""
+        if name not in self._adapter_cache:
+            self._adapter_cache[name] = get_adapter(name)
+        return self._adapter_cache[name]
 
     def get_kline(
         self,
@@ -54,18 +94,31 @@ class SeamlessKlineService:
         Returns:
             DataFrame with OHLCV columns
         """
-        # 计算实际需要获取的数据量
-        # 复权时需要获取更多历史数据来覆盖除权日（至少1000条）
-        actual_count = count
-        if adjust_type != 'none':
-            actual_count = max(count * 10, 1000)  # 复权时获取更多数据
-            logger.debug(f"[复权] 扩大数据量: {count} -> {actual_count}")
+        # ── 简单缓存策略────────────────────────────────────
+        CACHE_SIZE = 5000
+        cache_key = f"kline:{symbol}:{period}:{adjust_type}"
+
+        # 检查缓存（仅对分钟线和日线有效）
+        use_cache = period in ['1m', '5m', '15m', '30m', '1h', '1d']
+        cached = None
+        incremental_fetch = False
+
+        if use_cache:
+            cached = self._kline_cache.get(cache_key)
+            if cached is not None:
+                logger.debug(f"[K线缓存] 命中: {symbol} {period} {adjust_type}, 缓存{len(cached)}条")
+                return cached.copy()
+
+        # 增量获取：暂时禁用
+        start_date_for_fetch = start_date
+        fetch_count = count
+        incremental_fetch = False
+        cached = None
 
         # 获取历史数据（始终获取不复权原始数据）
-        # 注意：所有适配器现在都返回不复权数据，复权由服务层统一处理
         historical = self._get_historical_kline(
-            symbol, period, actual_count,
-            start_date, end_date, 'none'  # 始终获取不复权数据
+            symbol, period, fetch_count,
+            start_date_for_fetch, end_date, 'none'
         )
 
         if historical.df.empty:
@@ -102,26 +155,33 @@ class SeamlessKlineService:
         if start_date or end_date:
             historical = historical.slice_by_date(start_date, end_date)
 
-        # 统一应用复权（所有数据源现在都返回不复权数据）
-        # 复权在数据合并后统一应用，确保一致性
+        # 增量合并：暂时禁用
+        # if incremental_fetch and cached is not None...
+
+        # 应用复权到数据
         if adjust_type != 'none' and not historical.df.empty:
             historical.df = self._apply_adjustment(
-                historical.df, symbol, adjust_type
+                historical.df, symbol, adjust_type, period
             )
 
-        # 日线数据标准化时间为 15:00:00（A股收盘时间）
-        # 并过滤掉周末数据
+        # 写入缓存（缓存复权后数据）
+        if use_cache and not historical.df.empty:
+            cache_df = historical.df.tail(CACHE_SIZE).copy() if len(historical.df) > CACHE_SIZE else historical.df.copy()
+            ttl = 60 if period in ['1m', '5m', '15m', '30m', '1h'] else 300
+            self._kline_cache.set(cache_key, cache_df, ttl=ttl)
+            logger.debug(f"[K线缓存] 已缓存: {symbol} {period} {adjust_type}, {len(cache_df)}条")
+
+        # 日线特殊处理：标准化时间并过滤周末
+        # 日线特殊处理：标准化时间并过滤周末
         if period == '1d' and not historical.df.empty:
             def normalize_daily_time(dt):
                 if pd.isna(dt):
                     return dt
                 if isinstance(dt, str):
                     dt = pd.to_datetime(dt)
-                # 标准化为北京时间 15:00
                 return dt.replace(hour=15, minute=0, second=0, microsecond=0)
             historical.df['datetime'] = historical.df['datetime'].apply(normalize_daily_time)
-
-            # 过滤周末（周六=5, 周日=6）
+            # 过滤周末
             historical.df = historical.df[historical.df['datetime'].dt.weekday < 5].copy()
 
         # 全周期通用去重：同一时间戳可能来自多个数据源，保留最后一条（在线数据）
@@ -134,12 +194,12 @@ class SeamlessKlineService:
 
         # 应用数量限制（必须在周末过滤和去重之后，确保返回的是最新的交易日数据）
         if count:
-            # 复权时返回扩展后的数量，否则用户看不到除权日之前的数据
-            return_count = actual_count if adjust_type != 'none' else count
+            # 返回用户请求的数量
+            return_count = count
             before_count = len(historical.df)
             historical = historical.filter_by_count(return_count, from_end=True)
             after_count = len(historical.df)
-            logger.info(f"[数量限制] 请求={count}, actual_count={actual_count}, return_count={return_count}, 限制前={before_count}, 限制后={after_count}")
+            logger.info(f"[数量限制] 请求={count}, return_count={return_count}, 限制前={before_count}, 限制后={after_count}")
 
         # 标记正在形成的K线
         historical.df = self._mark_forming_kline(historical.df, period)
@@ -150,41 +210,63 @@ class SeamlessKlineService:
         self,
         df: pd.DataFrame,
         symbol: str,
-        adjust_type: str
+        adjust_type: str,
+        period: str = '1d'
     ) -> pd.DataFrame:
-        """应用复权
+        """应用复权（混合模式）
+
+        混合模式策略：
+        - 日线(1d): 使用传统前复权(front) - 累积因子，最新价不变
+        - 分钟线: 使用等比前复权(front_ratio) - 独立因子，不依赖完整历史
 
         Args:
             df: K线数据
             symbol: 股票代码
-            adjust_type: 复权类型
+            adjust_type: 复权类型（用户请求的）
+            period: 周期，用于判断使用哪种复权方式
 
         Returns:
             复权后的 DataFrame
         """
+        if df.empty or adjust_type == 'none':
+            return df
+
         try:
-            calculator = get_adjustment_calculator()
-
-            # 获取除权除息数据
-            xdxr_data = self._get_xdxr_data(symbol)
-
-            if xdxr_data:
-                df = calculator.apply_adjustment(df, xdxr_data, symbol, adjust_type)
-                logger.info(f"[复权] {symbol} 应用 {adjust_type} 复权完成")
+            # 混合模式：根据周期选择实际的复权方式
+            if period == '1d':
+                actual_adjust_type = 'front'  # 日线用前复权
             else:
-                logger.debug(f"[复权] {symbol} 无除权数据，无需复权")
+                actual_adjust_type = 'front'  # 分钟线也用前复权（暂时禁用front_ratio）
+
+            # 如果用户明确请求了等比复权，尊重用户选择
+            if adjust_type in ['front_ratio', 'back_ratio']:
+                actual_adjust_type = adjust_type
+
+            logger.debug(f"[复权] {symbol} {period}: 用户请求{adjust_type}, 实际使用{actual_adjust_type}")
+
+            # 使用因子服务获取预计算的因子表并应用
+            factor_table = self._factor_service.get_factor_table(symbol, actual_adjust_type)
+            if factor_table:
+                result = self._factor_service.apply_factors(df, factor_table)
+                logger.info(f"[复权] {symbol} {period} 应用 {actual_adjust_type} 复权完成，"
+                           f"共{len(factor_table)}个因子")
+                return result
+            else:
+                logger.debug(f"[复权] {symbol} 无复权因子，返回原始数据")
+                return df
 
         except Exception as e:
-            logger.warning(f"[复权] {symbol} 复权计算失败: {e}")
-
-        return df
+            logger.warning(f"[复权] {symbol} {period} 复权应用失败: {e}")
+            return df
 
     def _get_xdxr_data(self, symbol: str) -> list:
-        """获取除权除息数据
+        """获取除权除息数据（带内存缓存+文件持久化缓存）
 
-        优先级: TdxQuant → PyTdx
-        - TdxQuant: 覆盖范围更广（支持板块和指数）
-        - PyTdx: 作为备用
+        优先级: 内存缓存 → 文件缓存 → TdxQuant → PyTdx
+        - 内存缓存: TTL 1小时（高频访问）
+        - 文件缓存: TTL 1天（持久化，按股票分文件夹）
+        - TdxQuant: 覆盖范围更广（支持板块和指数），仅交易时间可用
+        - PyTdx: 作为备用，24/7可用
 
         Args:
             symbol: 股票代码
@@ -192,6 +274,23 @@ class SeamlessKlineService:
         Returns:
             除权除息记录列表
         """
+        # 1. 检查内存缓存（L1）
+        cached = self._xdxr_cache.get(symbol)
+        if cached is not None:
+            logger.debug(f"[XDXR缓存] L1内存命中: {symbol}, {len(cached)}条")
+            return cached
+
+        # 2. 检查文件缓存（L2持久化）
+        file_cached = self._load_xdxr_from_file(symbol)
+        if file_cached is not None:
+            # 放入内存缓存
+            self._xdxr_cache.set(symbol, file_cached, ttl=3600)
+            logger.debug(f"[XDXR缓存] L2文件命中: {symbol}, {len(file_cached)}条")
+            return file_cached
+
+        # 3. 缓存未命中，从数据源获取
+        xdxr_data = None
+
         # 优先从 TdxQuant 获取（覆盖范围更广，仅交易时间可用）
         if TradingTimeChecker.is_trading_time():
             try:
@@ -201,24 +300,141 @@ class SeamlessKlineService:
                     if hasattr(tdxquant._tq, 'get_xdxr_info'):
                         xdxr_data = tdxquant._tq.get_xdxr_info([symbol])
                         if xdxr_data and symbol in xdxr_data:
-                            logger.debug(f"[XDXR] TdxQuant 获取 {symbol} 除权数据: {len(xdxr_data[symbol])} 条")
-                            return xdxr_data[symbol]
+                            xdxr_data = xdxr_data[symbol]
+                            logger.debug(f"[XDXR] TdxQuant 获取 {symbol} 除权数据: {len(xdxr_data)} 条")
             except Exception as e:
                 logger.debug(f"[XDXR] TdxQuant 获取除权数据失败: {e}")
 
-        # 备用: 从 PyTdx 获取
-        try:
-            pytdx = self._get_adapter('pytdx')
-            if pytdx and pytdx.is_available():
-                xdxr_data = pytdx.get_xdxr_info(symbol)
-                if xdxr_data:
-                    logger.debug(f"[XDXR] PyTdx 获取 {symbol} 除权数据: {len(xdxr_data)} 条")
-                    return xdxr_data
-        except Exception as e:
-            logger.debug(f"[XDXR] PyTdx 获取除权数据失败: {e}")
+        # 备用: 从 PyTdx 获取（24/7可用）
+        if xdxr_data is None:
+            try:
+                pytdx = self._get_adapter('pytdx')
+                if pytdx and pytdx.is_available():
+                    xdxr_data = pytdx.get_xdxr_info(symbol)
+                    if xdxr_data:
+                        logger.debug(f"[XDXR] PyTdx 获取 {symbol} 除权数据: {len(xdxr_data)} 条")
+            except Exception as e:
+                logger.debug(f"[XDXR] PyTdx 获取除权数据失败: {e}")
+
+        # 4. 如果获取成功，存入两级缓存
+        if xdxr_data:
+            # 存入内存缓存
+            self._xdxr_cache.set(symbol, xdxr_data, ttl=3600)
+            # 存入文件缓存
+            self._save_xdxr_to_file(symbol, xdxr_data)
+            logger.info(f"[XDXR缓存] 已更新: {symbol}, {len(xdxr_data)}条")
+            return xdxr_data
 
         logger.debug(f"[XDXR] {symbol} 无除权数据")
         return []
+
+    def _get_xdxr_file_path(self, symbol: str, use_binary: bool = True) -> Path:
+        """获取XDXR数据文件路径
+
+        Args:
+            symbol: 股票代码
+            use_binary: 是否使用二进制格式（.pkl 比 .json 快 5-10 倍）
+
+        Returns:
+            Path对象
+        """
+        # 确保目录已创建（只执行一次）
+        _ensure_xdxr_dir()
+
+        # 清理股票代码中的特殊字符
+        safe_symbol = symbol.replace('.', '_').replace('/', '_')
+        symbol_dir = XDXR_DIR / safe_symbol
+
+        # 只在目录不存在时创建（减少磁盘IO）
+        if not symbol_dir.exists():
+            symbol_dir.mkdir(parents=True, exist_ok=True)
+
+        ext = 'pkl' if use_binary else 'json'
+        return symbol_dir / f"{safe_symbol}.{ext}"
+
+    def _load_xdxr_from_file(self, symbol: str) -> Optional[list]:
+        """从文件加载XDXR数据（高性能版本）
+
+        优化点：
+        1. 使用 pickle 二进制格式（比 JSON 快 5-10 倍）
+        2. 减少磁盘 IO 检查次数
+        3. 优先读取 .pkl，如果不存在则回退到 .json
+
+        Args:
+            symbol: 股票代码
+
+        Returns:
+            XDXR数据列表，或None（如果文件不存在或过期）
+        """
+        try:
+            # 优先尝试二进制格式（更快）
+            file_path = self._get_xdxr_file_path(symbol, use_binary=True)
+
+            # 检查文件是否存在且未过期
+            if not file_path.exists():
+                # 回退到 JSON 格式（兼容旧数据）
+                file_path = self._get_xdxr_file_path(symbol, use_binary=False)
+                if not file_path.exists():
+                    return None
+
+            # 检查文件修改时间（使用缓存的 stat 结果）
+            stat = file_path.stat()
+            age = time.time() - stat.st_mtime
+            if age > self._xdxr_file_ttl:
+                logger.debug(f"[XDXR文件缓存] {symbol} 已过期 ({age/3600:.1f}小时)")
+                return None
+
+            # 根据扩展名选择读取方式
+            if file_path.suffix == '.pkl':
+                # 二进制格式：快 5-10 倍
+                with open(file_path, 'rb') as f:
+                    data = pickle.load(f)
+            else:
+                # JSON 格式：兼容旧数据
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+
+            # 验证数据格式
+            if isinstance(data, list):
+                logger.debug(f"[XDXR文件缓存] {symbol} 加载成功: {len(data)}条 ({file_path.suffix})")
+                return data
+            else:
+                logger.warning(f"[XDXR文件缓存] {symbol} 数据格式错误")
+                return None
+
+        except Exception as e:
+            logger.debug(f"[XDXR文件缓存] {symbol} 加载失败: {e}")
+            return None
+
+    def _save_xdxr_to_file(self, symbol: str, data: list, use_binary: bool = True) -> bool:
+        """保存XDXR数据到文件（高性能版本）
+
+        Args:
+            symbol: 股票代码
+            data: XDXR数据列表
+            use_binary: 是否使用二进制格式（默认True）
+
+        Returns:
+            是否保存成功
+        """
+        try:
+            file_path = self._get_xdxr_file_path(symbol, use_binary=use_binary)
+
+            if use_binary:
+                # 二进制格式：更快且更小
+                with open(file_path, 'wb') as f:
+                    pickle.dump(data, f, protocol=pickle.HIGHEST_PROTOCOL)
+            else:
+                # JSON 格式：便于调试
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    json.dump(data, f, ensure_ascii=False)
+
+            logger.debug(f"[XDXR文件缓存] {symbol} 已保存: {len(data)}条 -> {file_path}")
+            return True
+
+        except Exception as e:
+            logger.warning(f"[XDXR文件缓存] {symbol} 保存失败: {e}")
+            return False
 
     def _get_historical_kline(
         self,
@@ -295,6 +511,14 @@ class SeamlessKlineService:
                 )
 
                 if symbol in df_dict and not df_dict[symbol].empty:
+                    df = df_dict[symbol]
+                    time_range = f"{df['datetime'].iloc[0]} to {df['datetime'].iloc[-1]}" if 'datetime' in df.columns else 'N/A'
+                    logger.info(f"[数据源] {try_adapter} 返回 {symbol} {period}: {len(df)}条, 时间范围: {time_range}")
+
+                    # 自动保存到LocalDB（如果是从在线源获取的数据）
+                    if AUTO_SAVE_TO_LOCALDB and try_adapter in SAVE_ONLINE_SOURCES:
+                        self._save_to_localdb(symbol, df, period, try_adapter)
+
                     return KlineDataset.from_adapter(df_dict[symbol], try_adapter)
 
             except Exception:
@@ -404,6 +628,11 @@ class SeamlessKlineService:
                                 logger.debug(f"[补充数据] 无法检查数据新鲜度: {e}")
 
                         logger.info(f"[{'实时' if is_trading else '补充'}] {source} 获取 {symbol} 数据成功: {len(df)} 条 (从 {start_date})")
+
+                        # 自动保存到LocalDB（如果是从在线源获取的数据）
+                        if AUTO_SAVE_TO_LOCALDB and source in SAVE_ONLINE_SOURCES:
+                            self._save_to_localdb(symbol, df, period, source)
+
                         return KlineDataset.from_adapter(df, source)
                 else:
                     logger.debug(f"[补充数据] {source} 没有返回 {symbol} 的数据")
@@ -416,30 +645,83 @@ class SeamlessKlineService:
         return KlineDataset.empty()
 
     def _need_realtime_supplement(self, historical: KlineDataset, period: str) -> bool:
-        """判断是否需要补充实时数据"""
+        """判断是否需要补充实时数据
+
+        修复：考虑交易时间，避免开盘前误判需要补数据
+        """
         if historical.df.empty:
             return False
 
         last_time = historical.df.iloc[-1]['datetime']
+        now = datetime.now()
+        today = now.date()
+        last_date = last_time.date()
 
-        # 判断最后一条数据是否是今天
-        today = datetime.now().date()
-        logger.info(f"[数据补全检查] 最后数据日期: {last_time.date()}, 今天: {today}")
-        if last_time.date() < today:
-            logger.info(f"[数据补全] 需要补充: 最后数据({last_time.date()}) 早于今天({today})")
-            return True
+        # 判断最后数据日期 vs 今天
+        logger.info(f"[数据补全检查] 最后数据日期: {last_date}, 今天: {today}, 当前时间: {now.strftime('%H:%M')}")
 
-        # 对于分钟级别数据，检查最后一条时间是否过时
-        if period in ['1m', '5m', '15m', '30m', '1h']:
-            now = datetime.now()
-            time_diff = (now - last_time).total_seconds()
+        if last_date < today:
+            # 最后数据是昨天或更早
+            # 关键修复：如果现在还在当天开盘前（< 09:30），今天本来就没有数据
+            current_time = now.time()
+            market_open = datetime.strptime("09:30", "%H:%M").time()
 
-            # 如果超过2个周期，认为需要补充
-            period_minutes = {'1m': 1, '5m': 5, '15m': 15, '30m': 30, '1h': 60}.get(period, 5)
-            if time_diff > period_minutes * 2 * 60:
+            if current_time < market_open:
+                # 开盘前：昨天的数据是完整的，不需要补"今天"的数据
+                logger.info(f"[数据补全] 当前时间 {current_time.strftime('%H:%M')} 早于开盘时间 09:30，昨天的数据已完整，不需要补充")
+                return False
+            else:
+                # 开盘后：如果最后数据还是昨天，需要补充
+                logger.info(f"[数据补全] 需要补充: 最后数据({last_date}) 早于今天({today}) 且已过开盘时间")
                 return True
+        elif last_date == today:
+            # 最后数据是今天，检查是否需要更新（分钟级数据）
+            if period in ['1m', '5m', '15m', '30m', '1h']:
+                time_diff = (now - last_time).total_seconds()
+
+                # 如果超过2个周期，认为需要补充
+                period_minutes = {'1m': 1, '5m': 5, '15m': 15, '30m': 30, '1h': 60}.get(period, 5)
+                if time_diff > period_minutes * 2 * 60:
+                    logger.info(f"[数据补全] 今天数据需要更新: 最后数据时间 {last_time}, 距离现在 {time_diff/60:.1f} 分钟")
+                    return True
 
         return False
+
+    def _save_to_localdb(self, symbol: str, df: pd.DataFrame, period: str, source: str):
+        """异步保存数据到LocalDB
+
+        Args:
+            symbol: 股票代码
+            df: K线数据DataFrame
+            period: 周期
+            source: 数据源名称
+        """
+        # 检查是否需要保存
+        if period not in SAVE_PERIODS:
+            return
+
+        try:
+            # 获取LocalDB适配器
+            localdb = self._get_adapter('localdb')
+            if not localdb:
+                logger.debug("[LocalDB] 适配器不可用，跳过保存")
+                return
+
+            # 检查LocalDB是否已有该股票的数据
+            existing = localdb.get_kline([symbol], period=period, count=1)
+            if symbol in existing and not existing[symbol].empty:
+                logger.debug(f"[LocalDB] {symbol} {period} 已存在，跳过保存")
+                return
+
+            # 保存数据
+            success = localdb.save_kline(symbol, df, period)
+            if success:
+                logger.info(f"[LocalDB] 从 {source} 自动保存 {symbol} {period}: {len(df)} 条")
+            else:
+                logger.warning(f"[LocalDB] 保存 {symbol} {period} 失败")
+
+        except Exception as e:
+            logger.warning(f"[LocalDB] 保存过程出错: {e}")
 
     def _get_adapter(self, name: str):
         """获取或创建适配器（带缓存）"""

@@ -74,7 +74,7 @@ class AdjustmentFactorService:
 
         # 计算因子表
         if adjust_type == 'front':
-            factor_table = self._calculate_front_factors(xdxr_data)
+            factor_table = self._calculate_front_factors(symbol, xdxr_data)
         elif adjust_type == 'front_ratio':
             factor_table = self._calculate_front_ratio_factors(xdxr_data)
         else:
@@ -131,17 +131,19 @@ class AdjustmentFactorService:
             logger.warning(f"[FactorApply] 应用复权因子失败: {e}")
             return df
 
-    def _calculate_front_factors(self, xdxr_data: list) -> dict:
+    def _calculate_front_factors(self, symbol: str, xdxr_data: list) -> dict:
         """计算前复权累积因子表（日线用）- 向量化优化版
 
         优化点：
         1. 使用pandas向量化操作替代Python循环（提速10-30x）
         2. 使用merge_asof替代嵌套循环查找（O(n×m) -> O(n log m)）
         3. 动态日期范围（从最早除权日开始，而非固定2020-01-01）
+        4. 使用除权日实际收盘价计算分红因子（提高准确性）
 
         性能：从~200ms降至~20ms
 
         Args:
+            symbol: 股票代码
             xdxr_data: XDXR原始数据列表
 
         Returns:
@@ -170,67 +172,85 @@ class AdjustmentFactorService:
                 dividend_records[['year', 'month', 'day']]
             )
 
+            # 3.5 获取除权日的实际收盘价（直接在方法内获取）
+            ex_dates = dividend_records['date'].dt.strftime('%Y-%m-%d').tolist()
+
+            # 获取K线数据来匹配收盘价
+            from ..adapters import get_adapter
+            adapter = get_adapter('xtquant')
+            if adapter is None or not adapter.is_available():
+                adapter = get_adapter('pytdx')
+
+            close_dict = {}
+            if adapter is not None:
+                try:
+                    # 获取足够多的数据覆盖所有除权日
+                    klines = adapter.get_kline(symbols=[symbol], period='1d', count=2000)
+                    if klines and symbol in klines:
+                        df = klines[symbol]
+                        if df is not None and not df.empty:
+                            # 兼容不同的日期列名
+                            date_col = None
+                            for col in ['datetime', 'date', 'time', 'timestamp']:
+                                if col in df.columns:
+                                    date_col = col
+                                    break
+
+                            if date_col:
+                                df['date_str'] = pd.to_datetime(df[date_col]).dt.strftime('%Y-%m-%d')
+                                for ex_date in ex_dates:
+                                    matches = df[df['date_str'] == ex_date]
+                                    if not matches.empty:
+                                        close_dict[ex_date] = matches.iloc[0]['close']
+                                        logger.info(f"[FactorCalc] {ex_date} 收盘价: {close_dict[ex_date]:.2f}")
+                            else:
+                                logger.warning(f"[FactorCalc] K线数据没有日期列，可用列: {df.columns.tolist()}")
+                except Exception as e:
+                    logger.warning(f"[FactorCalc] 获取收盘价失败: {e}")
+
+            dividend_records['close'] = dividend_records['date'].dt.strftime('%Y-%m-%d').map(close_dict)
+
             # 4. 向量化计算单日复权因子（整列同时计算）
             # 提取字段为Series
             fenhong = dividend_records['fenhong'].fillna(0)  # 10派X元
             songgu = dividend_records['songzhuangu'].fillna(0)  # 10送Y股
             peigu = dividend_records['peigu'].fillna(0)  # 10配Z股
             peigujia = dividend_records['peigujia'].fillna(0)
+            close_prices = dividend_records['close']  # 实际收盘价
 
-            # 标准前复权算法：累积复权因子
-            # 处理送转股：比例因子 = 1 / (1 + 送转率 + 配股率)
-            share_ratio = (1 + songgu/10 + peigu/10).replace(0, np.nan)
-            ratio_factor = (1.0 / share_ratio).fillna(1.0)
-
-            # 处理分红：价格调整因子
-            # 改进：使用动态估算，根据分红金额推断股价水平
             # 每股分红 = 派息金额 / 10
             dividend_per_share = fenhong / 10
 
-            # 动态估算：根据每股分红金额推断股价水平
-            # 茅台2024-2025年每股分红约24-31元，实际股价1500-2000元
-            # 前复权基准：用更高估值以减少误差
-            avg_dividend = dividend_per_share.mean()
-            if avg_dividend > 20:  # 每股分红>20元，茅台级别
-                est_price = 2200.0  # 提高到2200元（更接近实际前复权基准）
-            elif avg_dividend > 12:  # 每股分红>12元，对应高价股
-                est_price = 1600.0
-            elif avg_dividend > 8:  # 每股分红>8元，对应中高价股
-                est_price = 1000.0
-            elif avg_dividend > 3:  # 每股分红>3元，对应中价股
-                est_price = 500.0
-            else:  # 低价股
-                est_price = 200.0
+            # 计算除权价（理论价）
+            # 除权价 = (收盘价 - 分红) / (1 + 送股率 + 配股率)
+            # 注意：如果有配股，还需要考虑配股的影响
+            ex_price = (close_prices - dividend_per_share) / (1 + songgu/10 + peigu/10)
 
-            if 'close' in dividend_records.columns:
-                # 如果有收盘价字段，用它覆盖
-                est_price = dividend_records['close'].fillna(est_price)
-
-            # 分红导致的向下调整因子 = (价格 - 分红) / 价格
-            dividend_factor = ((est_price - dividend_per_share) / est_price).fillna(1.0)
-            dividend_factor = dividend_factor.replace([np.inf, -np.inf], 1.0)
-
-            # 综合因子 = 股本调整因子 * 分红调整因子
-            dividend_records['daily_factor'] = ratio_factor * dividend_factor
+            # 单日因子 = 除权价 / 收盘价
+            dividend_records['daily_factor'] = (ex_price / close_prices).fillna(1.0)
 
             # 处理无效值
             dividend_records.loc[dividend_records['daily_factor'] <= 0, 'daily_factor'] = 1.0
             dividend_records.loc[dividend_records['daily_factor'] > 10, 'daily_factor'] = 1.0  # 异常值保护
 
-            # 处理无效值
-            dividend_records.loc[dividend_records['daily_factor'] <= 0, 'daily_factor'] = 1.0
-
-            # 5. 向量化累积计算（C实现cumprod，非Python循环）
+            # 5. 向量化累积计算（降序排列，从新到旧）
             dividend_records = dividend_records.sort_values('date', ascending=False)
             dividend_records['cumulative'] = dividend_records['daily_factor'].cumprod()
 
-            # 关键修复：前复权基准调整
-            # 最新的除权日及之后应该使用因子 1.0（不复权）
-            # 将累积因子向后移动一位：最新除权日=1.0，前一个区间=最新除权日的因子
-            dividend_records['cumulative'] = dividend_records['cumulative'].shift(1, fill_value=1.0)
+            # DEBUG: 打印除权记录
+            logger.debug(f"[FactorCalc] 除权记录 (共{len(dividend_records)}条):")
+            for _, row in dividend_records.head(5).iterrows():
+                logger.debug(f"  日期: {row['date']}, 分红: {row.get('fenhong', 0)}, "
+                           f"收盘: {row.get('close', 0):.2f}, 因子: {row['daily_factor']:.6f}, "
+                           f"累积: {row['cumulative']:.6f}")
 
-            # 6. 动态日期范围优化（从最早除权日开始，而非2020-01-01）
-            start_date = dividend_records['date'].min()
+            # 前复权逻辑：使用累积因子（cumprod计算的结果）
+            # 最新除权日之后的日期因子=1.0
+            latest_ex_date = dividend_records['date'].max()
+
+            # 6. 动态日期范围优化（从最早除权日往前推，确保包含除权前日期）
+            earliest_ex_date = dividend_records['date'].min()
+            start_date = earliest_ex_date - pd.Timedelta(days=7)  # 往前推7天，确保覆盖除权前
             end_date = pd.Timestamp.now()
 
             # 生成每日日期
@@ -239,12 +259,24 @@ class AdjustmentFactorService:
             })
 
             # 7. 向量化查找：使用merge_asof（C实现二分查找，替代嵌套循环）
+            # direction='backward': 向后查找最近的除权日
+            # - 除权日之前的日期会找到前一个除权日的累积因子
+            # - 除权日会找到自己的累积因子
+            # 注意：merge_asof 要求 right 必须按 date 升序排列
+            dividend_for_merge = dividend_records.sort_values('date', ascending=True)
+
+            # 前复权特殊处理：最新除权日之后的日期因子=1.0
+            latest_ex_date = dividend_records['date'].max()
+
             result_df = pd.merge_asof(
                 daily_df,
-                dividend_records[['date', 'cumulative']],
+                dividend_for_merge[['date', 'cumulative']],
                 on='date',
-                direction='backward'  # 向后查找最近的除权日
+                direction='backward'
             )
+
+            # 最新除权日之后的日期因子=1.0（让最新价格不变）
+            result_df.loc[result_df['date'] > latest_ex_date, 'cumulative'] = 1.0
 
             # 填充无除权日的因子为1.0
             result_df['cumulative'] = result_df['cumulative'].fillna(1.0)
@@ -330,16 +362,28 @@ class AdjustmentFactorService:
             result = {}
             end_date = datetime.now().strftime('%Y-%m-%d')
             start_date = dividend_records['date'].min()[:10] if 'date' in dividend_records.columns else "2020-01-01"
+            # 往前推7天，确保覆盖除权前日期
+            from datetime import timedelta
+            start_dt = datetime.strptime(start_date, '%Y-%m-%d') - timedelta(days=7)
+            start_date = start_dt.strftime('%Y-%m-%d')
             date_range = pd.date_range(start=start_date, end=end_date, freq='D')
+
+            # 获取最新除权日
+            latest_ex_date = sorted_dates[0] if sorted_dates else None
 
             for current_date in date_range:
                 date_str = current_date.strftime('%Y-%m-%d')
-                applicable_factor = 1.0
-                for ex_date in sorted_dates:
-                    if date_str >= ex_date:
-                        applicable_factor = cumulative_factors[ex_date]
-                        break
-                result[date_str] = applicable_factor
+                # 除权日及之后用 1.0
+                if latest_ex_date and date_str >= latest_ex_date:
+                    result[date_str] = 1.0
+                else:
+                    # 除权日之前，查找适用的累积因子
+                    applicable_factor = 1.0
+                    for ex_date in sorted_dates:
+                        if date_str < ex_date:
+                            applicable_factor = cumulative_factors[ex_date]
+                            break
+                    result[date_str] = applicable_factor
 
             return result
 
@@ -391,9 +435,13 @@ class AdjustmentFactorService:
             denominator = (1 + songgu + peigu).replace(0, np.nan)
             dividend_records['ratio_factor'] = (1 / denominator).fillna(1.0)
 
-            # 5. 按日期排序并累积（向量化cumprod）
-            dividend_records = dividend_records.sort_values('date', ascending=True)
+            # 5. 按日期排序并累积（从新到旧）
+            dividend_records = dividend_records.sort_values('date', ascending=False)
             dividend_records['cumulative'] = dividend_records['ratio_factor'].cumprod()
+
+            # 关键修正：前复权因子应该是累积值的倒数
+            # 这样最新价格不变，历史价格按比例放大
+            dividend_records['cumulative'] = 1.0 / dividend_records['cumulative']
 
             # 6. 动态日期范围
             start_date = dividend_records['date'].min()
@@ -403,7 +451,8 @@ class AdjustmentFactorService:
                 'date': pd.date_range(start=start_date, end=end_date, freq='D')
             })
 
-            # 7. 向量化查找（merge_asof替代循环）
+            # 7. 向量查找（merge_asof）
+            # direction='backward': 向后查找最近的除权日
             result_df = pd.merge_asof(
                 daily_df,
                 dividend_records[['date', 'cumulative']],
@@ -411,6 +460,7 @@ class AdjustmentFactorService:
                 direction='backward'
             )
 
+            # 填充：最新除权日之后的用1.0
             result_df['cumulative'] = result_df['cumulative'].fillna(1.0)
 
             # 8. 转为字典
@@ -450,19 +500,25 @@ class AdjustmentFactorService:
             if not daily_factors:
                 return {}
 
-            sorted_dates = sorted(daily_factors.keys())
-            start_date = sorted_dates[0]
-            end_date = datetime.now().strftime('%Y-%m-%d')
-            date_range = pd.date_range(start=start_date, end=end_date, freq='D')
+            # 从新到旧累积，最后取倒数
+            sorted_dates = sorted(daily_factors.keys(), reverse=True)
+            if not sorted_dates:
+                return {}
+
+            earliest_date = sorted_dates[-1]
+            latest_date = datetime.now().strftime('%Y-%m-%d')
+            date_range = pd.date_range(start=earliest_date, end=latest_date, freq='D')
 
             result = {}
             cumulative = 1.0
-            date_idx = 0
-            for current_date in date_range:
+
+            # 从新到旧遍历
+            for current_date in reversed(date_range):
                 date_str = current_date.strftime('%Y-%m-%d')
                 if date_str in daily_factors:
                     cumulative = cumulative * daily_factors[date_str]
-                result[date_str] = cumulative
+                # 倒数作为前复权因子
+                result[date_str] = 1.0 / cumulative
 
             return result
 

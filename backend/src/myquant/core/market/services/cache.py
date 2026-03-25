@@ -69,7 +69,7 @@ class TTLCache:
         """设置缓存值"""
         with self._lock:
             # 检查容量
-            if len(self._cache) >= self._maxsize and key not in _cache:
+            if len(self._cache) >= self._maxsize and key not in self._cache:
                 self._evict_oldest()
 
             entry = CacheEntry(

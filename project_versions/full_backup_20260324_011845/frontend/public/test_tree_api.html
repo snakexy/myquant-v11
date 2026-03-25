@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>88板块树形视图测试</title>
+    <style>
+        body {
+            font-family: 'Microsoft YaHei', Arial, sans-serif;
+            margin: 20px;
+            background: #f5f7fa;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #409eff;
+            text-align: center;
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .stat-card h3 {
+            margin: 0;
+            font-size: 14px;
+            opacity: 0.9;
+        }
+        .stat-card .value {
+            font-size: 32px;
+            font-weight: bold;
+            margin-top: 10px;
+        }
+        .tree-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 15px;
+        }
+        .parent-sector {
+            border: 3px solid #409eff;
+            border-radius: 8px;
+            padding: 15px;
+            background: white;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .parent-sector:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 6px 20px rgba(0,0,0,0.15);
+        }
+        .parent-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .parent-name {
+            font-size: 18px;
+            font-weight: bold;
+            color: #333;
+        }
+        .parent-stats {
+            font-size: 14px;
+            color: #666;
+        }
+        .children {
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 2px solid #eee;
+            display: none;
+        }
+        .children.show {
+            display: block;
+        }
+        .child-sector {
+            background: #f5f7fa;
+            padding: 8px;
+            margin: 5px 0;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #409eff;
+        }
+        .btn {
+            background: #409eff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 10px 5px;
+        }
+        .btn:hover {
+            background: #66b1ff;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🌳 88板块树形视图测试</h1>
+
+        <div id="loading" class="loading">
+            <p>正在加载88板块数据...</p>
+        </div>
+
+        <div id="content" style="display: none;">
+            <div class="stats">
+                <div class="stat-card">
+                    <h3>父板块数</h3>
+                    <div class="value" id="totalParents">-</div>
+                </div>
+                <div class="stat-card">
+                    <h3>独立板块</h3>
+                    <div class="value" id="totalStandalone">-</div>
+                </div>
+                <div class="stat-card">
+                    <h3>有子板块</h3>
+                    <div class="value" id="totalWithChildren">-</div>
+                </div>
+                <div class="stat-card">
+                    <h3>总板块数</h3>
+                    <div class="value" id="total">-</div>
+                </div>
+            </div>
+
+            <div style="text-align: center; margin-bottom: 20px;">
+                <button class="btn" onclick="expandAll()">展开所有</button>
+                <button class="btn" onclick="collapseAll()">收起所有</button>
+                <button class="btn" onclick="loadData()">刷新数据</button>
+            </div>
+
+            <h2 style="color: #409eff; margin-bottom: 15px;">父板块（点击展开/收起）</h2>
+            <div id="treeContainer" class="tree-container"></div>
+
+            <h2 style="color: #67c23a; margin: 30px 0 15px;">独立板块（无父板块）</h2>
+            <div id="standaloneContainer" class="tree-container"></div>
+        </div>
+    </div>
+
+    <script>
+        let apiData = null;
+
+        async function loadData() {
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('content').style.display = 'none';
+
+            try {
+                const response = await fetch('http://localhost:8008/api/v1/hotspot/88sectors');
+                const data = await response.json();
+
+                if (data.success) {
+                    apiData = data.data;
+                    renderData(data.data);
+                    document.getElementById('loading').style.display = 'none';
+                    document.getElementById('content').style.display = 'block';
+                } else {
+                    alert('加载失败: ' + data.error);
+                }
+            } catch (error) {
+                alert('请求失败: ' + error.message);
+                console.error(error);
+            }
+        }
+
+        function renderData(data) {
+            // 更新统计
+            document.getElementById('totalParents').textContent = data.summary.totalParents;
+            document.getElementById('totalStandalone').textContent = data.summary.totalStandalone;
+            document.getElementById('totalWithChildren').textContent = data.summary.totalWithChildren;
+            document.getElementById('total').textContent = data.summary.totalParents + data.summary.totalStandalone;
+
+            // 渲染父板块
+            const treeContainer = document.getElementById('treeContainer');
+            treeContainer.innerHTML = '';
+
+            data.sectors.slice(0, 20).forEach(sector => {
+                const div = document.createElement('div');
+                div.className = 'parent-sector';
+
+                const changeClass = sector.changePercent >= 0 ? 'positive' : 'negative';
+                const changeColor = sector.changePercent >= 0 ? '#f56c6c' : '#67c23a';
+
+                div.innerHTML = `
+                    <div class="parent-header" onclick="toggleChildren(this)">
+                        <div>
+                            <div class="parent-name">${sector.code} ${sector.name}</div>
+                            <div class="parent-stats">
+                                <span style="color: ${changeColor}; font-weight: bold;">
+                                    ${sector.changePercent >= 0 ? '+' : ''}${sector.changePercent.toFixed(2)}%
+                                </span> |
+                                成分股: ${sector.stocksCount}只 |
+                                子板块: ${sector.children.length}个
+                            </div>
+                        </div>
+                        <span style="font-size: 24px; color: #409eff;">▶</span>
+                    </div>
+                    <div class="children">
+                        ${sector.children.map(child => `
+                            <div class="child-sector">
+                                <strong>${child.code} ${child.name}</strong> |
+                                <span style="color: ${child.changePercent >= 0 ? '#f56c6c' : '#67c23a'};">
+                                    ${child.changePercent >= 0 ? '+' : ''}${child.changePercent.toFixed(2)}%
+                                </span> |
+                                成分股: ${child.stocksCount}只
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+
+                treeContainer.appendChild(div);
+            });
+
+            // 渲染独立板块
+            const standaloneContainer = document.getElementById('standaloneContainer');
+            standaloneContainer.innerHTML = '';
+
+            data.standalone.slice(0, 20).forEach(sector => {
+                const div = document.createElement('div');
+                div.className = 'parent-sector';
+
+                const changeColor = sector.changePercent >= 0 ? '#f56c6c' : '#67c23a';
+
+                div.innerHTML = `
+                    <div class="parent-header">
+                        <div>
+                            <div class="parent-name">${sector.code} ${sector.name}</div>
+                            <div class="parent-stats">
+                                <span style="color: ${changeColor}; font-weight: bold;">
+                                    ${sector.changePercent >= 0 ? '+' : ''}${sector.changePercent.toFixed(2)}%
+                                </span> |
+                                成分股: ${sector.stocksCount}只
+                            </div>
+                        </div>
+                    </div>
+                `;
+
+                standaloneContainer.appendChild(div);
+            });
+        }
+
+        function toggleChildren(header) {
+            const children = header.nextElementSibling;
+            const icon = header.querySelector('span:last-child');
+
+            if (children.classList.contains('show')) {
+                children.classList.remove('show');
+                icon.textContent = '▶';
+            } else {
+                children.classList.add('show');
+                icon.textContent = '▼';
+            }
+        }
+
+        function expandAll() {
+            document.querySelectorAll('.children').forEach(el => el.classList.add('show'));
+            document.querySelectorAll('.parent-header span:last-child').forEach(el => el.textContent = '▼');
+        }
+
+        function collapseAll() {
+            document.querySelectorAll('.children').forEach(el => el.classList.remove('show'));
+            document.querySelectorAll('.parent-header span:last-child').forEach(el => el.textContent = '▶');
+        }
+
+        // 页面加载时自动获取数据
+        window.onload = loadData;
+    </script>
+</body>
+</html>

@@ -42,6 +42,7 @@ export default defineConfig({
       '/ws': {
         target: 'ws://localhost:8000',
         ws: true,
+        secure: false,
       },
     },
     // proxy 配置由 autoDetectApiPort 插件自动设置

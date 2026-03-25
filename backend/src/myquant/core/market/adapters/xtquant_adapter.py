@@ -9,7 +9,7 @@ V5 XtQuant 适配器
 import threading
 import time
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Callable
+from typing import Dict, List, Optional, Callable, Set
 
 from loguru import logger
 import pandas as pd
@@ -39,6 +39,13 @@ class V5XtQuantAdapter(V5DataAdapter):
         self._subscriptions: Dict[str, Callable] = {}
         # 记录已下载的股票+周期，避免重复下载
         self._download_cache: Dict[str, bool] = {}
+        # 观察列表：需要实时订阅的股票
+        self._watchlist: Set[str] = set()
+        # 观察列表默认周期（分钟线）
+        self._watchlist_periods = ['1m', '5m', '15m', '30m']
+        # XtQuant本地只支持下载5m和1d，其他周期通过订阅实时获取或从5m聚合
+        self._downloadable_periods = {'5m', '1d'}  # 可下载到本地的周期集合
+        self._subscribe_periods = ['1m', '5m', '15m', '30m']  # 需要订阅的周期
 
     def _ensure_xtdata(self):
         """确保 xtdata 可用"""
@@ -197,7 +204,10 @@ class V5XtQuantAdapter(V5DataAdapter):
         count: int,
         dividend_type: str
     ) -> Optional[pd.DataFrame]:
-        """第二层：在线获取（count方式）"""
+        """第二层：在线获取（count方式）
+
+        改进：如果本地没有数据，使用实时订阅+后台下载获取数据
+        """
         try:
             start = time.time()
             data = xtdata.get_market_data_ex(
@@ -220,9 +230,107 @@ class V5XtQuantAdapter(V5DataAdapter):
                         f"{len(df)}条, 耗时:{elapsed:.1f}ms"
                     )
                     return self._normalize_kline_df(df, 'xtquant_online')
+
+            # 如果到这里，说明本地没有数据，启动订阅+下载
+            logger.info(f"[在线获取] {symbol} {xt_period} 本地无数据，启动订阅+下载...")
+
+            # 检查是否交易时间
+            from myquant.core.market.utils.trading_time import TradingTimeChecker
+            is_trading = TradingTimeChecker.is_trading_time()
+
+            # 对于分钟线，交易时间启动实时订阅，非交易时间直接下载
+            if xt_period in ['1m', '5m', '15m', '30m', '60m']:
+                if is_trading:
+                    self._subscribe_and_download(symbol, xt_period)
+                else:
+                    logger.info(f"[在线获取] 非交易时间，直接下载历史数据: {symbol} {xt_period}")
+                    self._sync_download_data(symbol, xt_period)
+            else:
+                # 日线直接同步下载
+                self._sync_download_data(symbol, xt_period)
+
+            # 等待一小段时间让数据下载完成
+            time.sleep(0.5)  # 重载标记: 2026-03-25-03-47
+
+            # 再次尝试获取
+            data = xtdata.get_market_data_ex(
+                field_list=field_list,
+                stock_list=[xt_symbol],
+                period=xt_period,
+                start_time='',
+                end_time='',
+                count=count,
+                dividend_type=dividend_type,
+                fill_data=True
+            )
+
+            if data and xt_symbol in data:
+                df = data[xt_symbol]
+                if df is not None and not df.empty:
+                    elapsed = (time.time() - start) * 1000
+                    logger.info(
+                        f"[在线获取] {symbol} {xt_period} "
+                        f"{len(df)}条(下载后), 总耗时:{elapsed:.1f}ms"
+                    )
+                    return self._normalize_kline_df(df, 'xtquant_online')
+
         except Exception as e:
             logger.warning(f"[在线获取] {symbol} {xt_period} 失败: {e}")
         return None
+
+    def _subscribe_and_download(self, symbol: str, xt_period: str):
+        """启动实时订阅并后台下载历史数据（用于分钟线）
+
+        Args:
+            symbol: 股票代码
+            xt_period: XtQuant周期格式
+        """
+        try:
+            xt_symbol = self._to_xt_symbol(symbol)
+
+            # 1. 启动实时订阅（如果还没订阅）
+            cache_key = self._get_cache_key(symbol, xt_period)
+            if cache_key not in self._subscriptions:
+                logger.info(f"[订阅+下载] 启动实时订阅: {symbol} {xt_period}")
+                xtdata.subscribe_quote([xt_symbol], period=xt_period)
+                self._subscriptions[cache_key] = True
+
+            # 2. 同时后台下载历史数据
+            self._download_in_background(symbol, xt_period)
+
+        except Exception as e:
+            # 订阅失败（非交易时间会失败），降级为debug日志
+            logger.debug(f"[订阅+下载] {symbol} {xt_period} 失败: {e}")
+
+    def _sync_download_data(self, symbol: str, xt_period: str) -> bool:
+        """同步下载历史数据（阻塞式，用于日线等非分钟线）"""
+        try:
+            end_date = datetime.now()
+            if xt_period == '1d':
+                start_date = end_date - timedelta(days=730)
+            else:
+                start_date = end_date - timedelta(days=180)
+
+            start_str = start_date.strftime('%Y%m%d')
+            end_str = end_date.strftime('%Y%m%d')
+            xt_symbol = self._to_xt_symbol(symbol)
+
+            logger.info(f"[同步下载] 开始: {symbol} {xt_period} {start_str}~{end_str}")
+
+            xtdata.download_history_data(
+                stock_code=xt_symbol,
+                period=xt_period,
+                start_time=start_str,
+                end_time=end_str
+            )
+
+            self._download_cache[self._get_cache_key(symbol, xt_period)] = True
+            logger.info(f"[同步下载] 完成: {symbol} {xt_period}")
+            return True
+
+        except Exception as e:
+            logger.error(f"[同步下载] {symbol} {xt_period} 失败: {e}")
+            return False
 
     def _download_in_background(self, symbol: str, xt_period: str):
         """第三层：后台下载完整历史数据"""
@@ -512,7 +620,7 @@ class V5XtQuantAdapter(V5DataAdapter):
 
         XtQuant 提供:
         - get_instrument_detail: 涨跌停价、股本
-        - get_stock_info: 股票基本信息
+        - get_stock_info: 股票基本信息（可能不存在）
 
         Args:
             code: 股票代码（600519.SH 格式）
@@ -522,36 +630,42 @@ class V5XtQuantAdapter(V5DataAdapter):
         """
         try:
             xt_symbol = self._to_xt_symbol(code)
-
-            # 尝试从 get_stock_info 获取财务数据
-            info = xtdata.get_stock_info(xt_symbol)
             result = {}
 
-            if info:
-                # 先打印出实际返回的字段，方便调试
-                logger.info(f"{code} get_stock_info 返回字段: {list(info.keys())[:20]}")
+            # 尝试从 get_instrument_detail 获取数据（更稳定）
+            if hasattr(xtdata, 'get_instrument_detail'):
+                detail = xtdata.get_instrument_detail(xt_symbol)
+                if detail:
+                    logger.debug(f"{code} get_instrument_detail 返回: {list(detail.keys())[:10]}")
+                    # 提取可用字段
+                    if isinstance(detail, dict):
+                        for key, val in detail.items():
+                            if isinstance(val, (int, float)) and val > 0:
+                                key_lower = key.lower()
+                                if 'turnover' in key_lower or '换手' in str(key):
+                                    result['turnover_rate'] = float(val)
+                                elif 'pe' in key_lower or '市盈' in str(key):
+                                    result['pe_ratio'] = float(val)
+                                elif 'pb' in key_lower or '市净' in str(key):
+                                    result['pb_ratio'] = float(val)
 
-                # 尝试常见的字段名
-                for key in info:
-                    val = info.get(key, 0)
-                    if val and isinstance(val, (int, float)):
-                        # 转换小写key匹配我们的字段名
-                        key_lower = key.lower()
-                        if 'turnover' in key_lower or '换手' in str(key):
-                            result['turnover_rate'] = float(val)
-                        elif 'pe' in key_lower or '市盈' in str(key):
-                            result['pe_ratio'] = float(val)
-                        elif 'pb' in key_lower or '市净' in str(key):
-                            result['pb_ratio'] = float(val)
-                        elif 'volume' in key_lower and 'ratio' in key_lower:
-                            result['volume_ratio'] = float(val)
-                        elif 'dividend' in key_lower or '股息' in str(key) or 'dy' in key_lower:
-                            result['dy_ratio'] = float(val)
-                        elif 'amplitude' in key_lower or '振幅' in str(key):
-                            result['amplitude'] = float(val)
+            # 尝试从 get_stock_info 获取（如果存在）
+            if hasattr(xtdata, 'get_stock_info'):
+                info = xtdata.get_stock_info(xt_symbol)
+                if info:
+                    logger.debug(f"{code} get_stock_info 返回字段: {list(info.keys())[:10]}")
+                    if isinstance(info, dict):
+                        for key, val in info.items():
+                            if isinstance(val, (int, float)) and val > 0:
+                                key_lower = key.lower()
+                                if 'turnover' in key_lower or '换手' in str(key):
+                                    result['turnover_rate'] = float(val)
+                                elif 'pe' in key_lower or '市盈' in str(key):
+                                    result['pe_ratio'] = float(val)
+                                elif 'amplitude' in key_lower or '振幅' in str(key):
+                                    result['amplitude'] = float(val)
 
-                logger.debug(f"{code} 映射后的字段: {result}")
-
+            logger.debug(f"{code} 最终额外指标: {result}")
             return result
 
         except Exception as e:
@@ -561,6 +675,182 @@ class V5XtQuantAdapter(V5DataAdapter):
     def is_available(self) -> bool:
         """检查适配器是否可用"""
         return XTQUANT_AVAILABLE
+
+    def add_to_watchlist(self, symbols: List[str]) -> Dict:
+        """添加股票到观察列表并自动订阅分钟线
+
+        这是实时行情系统的核心功能：
+        - 将股票加入观察列表
+        - 自动订阅分钟线（1m/5m/15m/30m）
+        - 非交易时间会自动降级到历史数据
+
+        Args:
+            symbols: 股票代码列表，如 ['000858.SZ', '600519.SH']
+
+        Returns:
+            {
+                'added': [],      # 成功添加的股票
+                'subscribed': [], # 成功订阅的(symbol, period)列表
+                'failed': []      # 失败的列表
+            }
+        """
+        if not self._ensure_xtdata():
+            return {'added': [], 'subscribed': [], 'failed': []}
+
+        result = {'added': [], 'subscribed': [], 'failed': []}
+
+        for symbol in symbols:
+            try:
+                # 1. 添加到观察列表
+                if symbol not in self._watchlist:
+                    self._watchlist.add(symbol)
+                    result['added'].append(symbol)
+                    logger.info(f"[观察列表] 添加: {symbol}")
+
+                # 2. 自动订阅分钟线（交易时间有效，非交易时间订阅会静默失败）
+                xt_symbol = self._to_xt_symbol(symbol)
+                subscribe_success = False
+                for period in self._watchlist_periods:
+                    try:
+                        cache_key = self._get_cache_key(symbol, period)
+                        if cache_key not in self._subscriptions:
+                            xtdata.subscribe_quote([xt_symbol], period=period)
+                            self._subscriptions[cache_key] = True
+                            result['subscribed'].append((symbol, period))
+                            logger.info(f"[观察列表] 订阅: {symbol} {period}")
+                            subscribe_success = True
+                    except Exception as e:
+                        # 订阅失败（非交易时间会失败）
+                        logger.debug(f"[观察列表] 订阅失败: {symbol} {period} - {e}")
+
+                # 3. 数据确保策略（先检查本地是否已有）
+                for period in self._watchlist_periods:
+                    cache_key = self._get_cache_key(symbol, period)
+                    if cache_key in self._download_cache:
+                        continue  # 已下载过，跳过
+
+                    # 检查本地是否已有数据
+                    try:
+                        test_data = xtdata.get_market_data_ex(
+                            field_list=['time'],  # 最少字段，快速检查
+                            stock_list=[xt_symbol],
+                            period=period,
+                            start_time='',
+                            end_time='',
+                            count=1
+                        )
+                        if test_data and xt_symbol in test_data and not test_data[xt_symbol].empty:
+                            # 本地已有数据，标记缓存
+                            self._download_cache[cache_key] = True
+                            logger.debug(f"[观察列表] 本地已有数据: {symbol} {period}")
+                            continue
+                    except Exception:
+                        pass
+
+                    # 本地没有数据，需要下载
+                    if subscribe_success:
+                        # 交易时间：后台下载
+                        self._download_in_background(symbol, period)
+                    else:
+                        # 非交易时间：同步下载
+                        logger.info(f"[观察列表] 同步下载: {symbol} {period}")
+                        self._sync_download_data(symbol, period)
+
+            except Exception as e:
+                logger.error(f"[观察列表] 添加 {symbol} 失败: {e}")
+                result['failed'].append((symbol, str(e)))
+
+        return result
+
+    def remove_from_watchlist(self, symbols: List[str]) -> Dict:
+        """从观察列表移除股票
+
+        Args:
+            symbols: 股票代码列表
+
+        Returns:
+            {'removed': [], 'unsubscribed': []}
+        """
+        result = {'removed': [], 'unsubscribed': []}
+
+        for symbol in symbols:
+            try:
+                if symbol in self._watchlist:
+                    self._watchlist.discard(symbol)
+                    result['removed'].append(symbol)
+
+                # 取消订阅
+                for period in self._watchlist_periods:
+                    cache_key = self._get_cache_key(symbol, period)
+                    if cache_key in self._subscriptions:
+                        del self._subscriptions[cache_key]
+                        # XtQuant没有真正的unsubscribe，这里只是移除本地记录
+                        result['unsubscribed'].append((symbol, period))
+
+            except Exception as e:
+                logger.error(f"[观察列表] 移除 {symbol} 失败: {e}")
+
+        return result
+
+    def get_watchlist(self) -> Dict:
+        """获取观察列表状态
+
+        Returns:
+            {
+                'watchlist': [],      # 观察列表股票
+                'subscriptions': [],  # 当前订阅列表
+                'is_trading_time': bool  # 是否交易时间
+            }
+        """
+        from myquant.core.market.utils.trading_time import TradingTimeChecker
+
+        return {
+            'watchlist': list(self._watchlist),
+            'subscriptions': [
+                {'symbol': k.split('_')[0], 'period': k.split('_')[1]}
+                for k in self._subscriptions.keys()
+            ],
+            'is_trading_time': TradingTimeChecker.is_trading_time()
+        }
+
+    def ensure_watchlist_data(self) -> Dict:
+        """确保观察列表所有股票都有数据
+
+        在非交易时间调用，用于预加载数据
+        交易时间内订阅会自动更新数据，不需要手动调用
+
+        Returns:
+            {'downloaded': [], 'failed': []}
+        """
+        result = {'downloaded': [], 'failed': []}
+
+        for symbol in self._watchlist:
+            for period in self._watchlist_periods:
+                try:
+                    cache_key = self._get_cache_key(symbol, period)
+                    if cache_key not in self._download_cache:
+                        # 检查本地是否有数据
+                        xt_symbol = self._to_xt_symbol(symbol)
+                        data = xtdata.get_market_data_ex(
+                            field_list=['time', 'open', 'high', 'low', 'close', 'volume', 'amount'],
+                            stock_list=[xt_symbol],
+                            period=period,
+                            start_time='',
+                            end_time='',
+                            count=10
+                        )
+
+                        if not data or xt_symbol not in data or data[xt_symbol].empty:
+                            # 没有数据，触发下载
+                            self._sync_download_data(symbol, period)
+                            result['downloaded'].append((symbol, period))
+                        else:
+                            self._download_cache[cache_key] = True
+
+                except Exception as e:
+                    result['failed'].append((symbol, period, str(e)))
+
+        return result
 
 
 def create_xtquant_adapter() -> V5XtQuantAdapter:

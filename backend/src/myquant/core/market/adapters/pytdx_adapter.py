@@ -421,7 +421,10 @@ class V5PyTdxAdapter(V5DataAdapter):
             market = self._get_market(symbol)
             code = symbol.replace('.SH', '').replace('.SZ', '').replace('.BJ', '')
 
-            data = self._api.get_security_bars(category, market, code, 0, count or 800)
+            # PyTdx API有单次请求限制，最多约800条
+            max_bars = 800
+            request_count = min(count, max_bars) if count else max_bars
+            data = self._api.get_security_bars(category, market, code, 0, request_count)
 
             if data and len(data) > 0:
                 df = pd.DataFrame(data)
@@ -461,7 +464,10 @@ class V5PyTdxAdapter(V5DataAdapter):
             self._disconnect()
             if self._ensure_connected():
                 try:
-                    data = self._api.get_security_bars(category, market, code, 0, count or 800)
+                    # PyTdx API有单次请求限制，最多约800条
+                    max_bars = 800
+                    request_count = min(count, max_bars) if count else max_bars
+                    data = self._api.get_security_bars(category, market, code, 0, request_count)
                     if data and len(data) > 0:
                         df = pd.DataFrame(data)
                         if count and len(df) > count:

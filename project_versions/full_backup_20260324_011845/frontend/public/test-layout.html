@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>布局文件测试</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 30px;
+        }
+        .section {
+            margin-bottom: 30px;
+            padding: 20px;
+            background: #f9f9f9;
+            border-radius: 8px;
+        }
+        button {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+            font-size: 16px;
+        }
+        button:hover {
+            background: #2563eb;
+        }
+        button.success {
+            background: #22c55e;
+        }
+        button.success:hover {
+            background: #16a34a;
+        }
+        button.warning {
+            background: #f59e0b;
+        }
+        button.warning:hover {
+            background: #d97706;
+        }
+        textarea {
+            width: 100%;
+            height: 200px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-family: monospace;
+            font-size: 14px;
+            margin-top: 10px;
+        }
+        .info {
+            color: #666;
+            font-size: 14px;
+            margin-top: 10px;
+        }
+        .success {
+            color: #22c55e;
+        }
+        .error {
+            color: #ef4444;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>节点工作流布局测试工具</h1>
+
+        <div class="section">
+            <h2>1. 生成示例布局文件</h2>
+            <p>点击按钮生成一个示例的工作流布局文件：</p>
+            <button class="success" onclick="generateSampleLayout()">生成示例布局</button>
+            <button class="warning" onclick="generateRandomLayout()">生成随机布局</button>
+            <textarea id="layoutData" placeholder="布局数据将显示在这里..."></textarea>
+        </div>
+
+        <div class="section">
+            <h2>2. 下载布局文件</h2>
+            <p>将生成的布局数据保存为JSON文件：</p>
+            <button onclick="downloadLayout()">下载布局文件</button>
+            <div class="info">文件名格式：node-workflow-layout-YYYY-MM-DD.json</div>
+        </div>
+
+        <div class="section">
+            <h2>3. 上传并验证布局文件</h2>
+            <p>选择一个布局文件上传并验证其格式：</p>
+            <input type="file" id="fileInput" accept=".json" onchange="handleFileUpload(event)">
+            <br><br>
+            <button onclick="validateLayout()">验证布局文件</button>
+            <div id="validationResult" class="info"></div>
+        </div>
+
+        <div class="section">
+            <h2>4. 使用说明</h2>
+            <ul>
+                <li>生成的布局文件包含了节点位置、画布偏移和缩放信息</li>
+                <li>保存的布局文件可以在节点工作流页面中导入</li>
+                <li>每次保存布局时，会自动下载一个备份文件</li>
+                <li>上传的布局文件会自动恢复节点位置和画布状态</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        // 生成示例布局数据
+        function generateSampleLayout() {
+            const layoutData = {
+                nodePositions: {
+                    'strategy-conception': { x: 100, y: 100 },
+                    'pattern-recognition': { x: 400, y: 100 },
+                    'model-training': { x: 250, y: 300 },
+                    'ai-assistant': { x: 250, y: 500 },
+                    'data-processing': { x: 550, y: 300 }
+                },
+                canvasOffset: { x: 0, y: 0 },
+                canvasScale: 1,
+                timestamp: new Date().toISOString()
+            }
+
+            document.getElementById('layoutData').value = JSON.stringify(layoutData, null, 2)
+            showMessage('布局数据已生成', 'success')
+        }
+
+        // 生成随机布局
+        function generateRandomLayout() {
+            const nodes = ['strategy-conception', 'pattern-recognition', 'model-training', 'ai-assistant', 'data-processing']
+            const nodePositions = {}
+
+            nodes.forEach(nodeId => {
+                nodePositions[nodeId] = {
+                    x: Math.floor(Math.random() * 600) + 50,
+                    y: Math.floor(Math.random() * 400) + 50
+                }
+            })
+
+            const layoutData = {
+                nodePositions,
+                canvasOffset: {
+                    x: Math.floor(Math.random() * 200) - 100,
+                    y: Math.floor(Math.random() * 200) - 100
+                },
+                canvasScale: parseFloat((Math.random() * 1.5 + 0.5).toFixed(2)),
+                timestamp: new Date().toISOString()
+            }
+
+            document.getElementById('layoutData').value = JSON.stringify(layoutData, null, 2)
+            showMessage('随机布局已生成', 'success')
+        }
+
+        // 下载布局文件
+        function downloadLayout() {
+            const layoutData = document.getElementById('layoutData').value
+            if (!layoutData) {
+                showMessage('请先生成或输入布局数据', 'error')
+                return
+            }
+
+            try {
+                // 验证是否为有效的JSON
+                JSON.parse(layoutData)
+
+                // 创建下载
+                const blob = new Blob([layoutData], { type: 'application/json' })
+                const url = URL.createObjectURL(blob)
+
+                const link = document.createElement('a')
+                link.href = url
+                link.download = `node-workflow-layout-${new Date().toISOString().slice(0, 10)}.json`
+                document.body.appendChild(link)
+                link.click()
+                document.body.removeChild(link)
+                URL.revokeObjectURL(url)
+
+                showMessage('布局文件已下载', 'success')
+            } catch (error) {
+                showMessage('布局数据格式错误，请检查JSON格式', 'error')
+            }
+        }
+
+        // 处理文件上传
+        function handleFileUpload(event) {
+            const file = event.target.files[0]
+            if (!file) return
+
+            const reader = new FileReader()
+            reader.onload = function(e) {
+                document.getElementById('layoutData').value = e.target.result
+                showMessage(`文件 ${file.name} 已加载`, 'success')
+            }
+            reader.readAsText(file)
+        }
+
+        // 验证布局文件
+        function validateLayout() {
+            const layoutData = document.getElementById('layoutData').value
+            if (!layoutData) {
+                showMessage('请先输入或上传布局数据', 'error')
+                return
+            }
+
+            try {
+                const data = JSON.parse(layoutData)
+
+                // 检查必需的字段
+                const requiredFields = ['nodePositions', 'canvasOffset', 'canvasScale', 'timestamp']
+                const missingFields = requiredFields.filter(field => !(field in data))
+
+                if (missingFields.length > 0) {
+                    throw new Error(`缺少必需字段: ${missingFields.join(', ')}`)
+                }
+
+                // 检查数据类型
+                if (typeof data.nodePositions !== 'object' ||
+                    typeof data.canvasOffset !== 'object' ||
+                    typeof data.canvasScale !== 'number' ||
+                    typeof data.timestamp !== 'string') {
+                    throw new Error('数据类型不正确')
+                }
+
+                // 检查时间戳格式
+                if (isNaN(Date.parse(data.timestamp))) {
+                    throw new Error('时间戳格式无效')
+                }
+
+                showMessage('布局文件验证成功！', 'success')
+                console.log('验证通过的布局数据:', data)
+            } catch (error) {
+                showMessage(`验证失败: ${error.message}`, 'error')
+            }
+        }
+
+        // 显示消息
+        function showMessage(message, type) {
+            const resultDiv = document.getElementById('validationResult')
+            resultDiv.textContent = message
+            resultDiv.className = `info ${type}`
+        }
+
+        // 页面加载时生成一个示例
+        window.onload = function() {
+            generateSampleLayout()
+        }
+    </script>
+</body>
+</html>

@@ -24,7 +24,8 @@ class RealtimeMarketService:
 
     def __init__(self):
         self._quote_cache = TTLCache(maxsize=500, ttl=10)
-        self._adapter_cache: Dict[str, object] = {}
+        # 适配器缓存使用TTLCache，避免内存泄漏（最多缓存20个适配器实例，TTL 1小时）
+        self._adapter_cache = TTLCache(maxsize=20, ttl=3600)
 
     def _get_adapter_cached(self, name: str, force_retry: bool = False):
         """获取适配器单例（避免重复初始化 SDK）
@@ -33,14 +34,22 @@ class RealtimeMarketService:
             name: 适配器名称
             force_retry: 是否强制重试初始化（用于 TdxQuant 等可能初始化失败的适配器）
         """
-        if name not in self._adapter_cache:
-            adapter = get_adapter(name)
-            if adapter is not None:
-                # 如果是 TdxQuant 且强制重试，调用强制初始化
-                if force_retry and name == 'tdxquant' and hasattr(adapter, '_ensure_initialized'):
-                    adapter._ensure_initialized(force_retry=True)
-                self._adapter_cache[name] = adapter
-        return self._adapter_cache.get(name)
+        # 先检查缓存
+        cached = self._adapter_cache.get(name)
+        if cached is not None:
+            return cached
+
+        # 缓存未命中，创建新适配器
+        adapter = get_adapter(name)
+        if adapter is not None:
+            # 如果是 TdxQuant 且强制重试，调用强制初始化
+            if force_retry and name == 'tdxquant' and hasattr(
+                adapter, '_ensure_initialized'
+            ):
+                adapter._ensure_initialized(force_retry=True)
+            # 缓存适配器实例（TTL 1小时，自动过期）
+            self._adapter_cache.set(name, adapter, ttl=3600)
+        return adapter
 
     # ========== 市场状态 ==========
 
@@ -76,14 +85,14 @@ class RealtimeMarketService:
             # 交易时间：TdxQuant (0.60ms) → XtQuant → PyTdx
             for name in ['tdxquant', 'xtquant', 'pytdx']:
                 # TdxQuant 使用强制重试（因为可能之前初始化失败）
-                adapter = self._get_adapter_cached(name, force_retry=(name=='tdxquant'))
+                adapter = self._get_adapter_cached(name, force_retry=(name == 'tdxquant'))
                 if adapter and adapter.is_available():
                     return (name, adapter)
         else:
             # 非交易时间：优先尝试 TdxQuant/XtQuant 获取完整字段
             for name in ['tdxquant', 'xtquant', 'pytdx']:
                 # 对 TdxQuant 强制重试，避免之前的失败标志影响
-                adapter = self._get_adapter_cached(name, force_retry=(name=='tdxquant'))
+                adapter = self._get_adapter_cached(name, force_retry=(name == 'tdxquant'))
                 if adapter and adapter.is_available():
                     logger.info(f"非交易时间使用 {name} 获取完整行情数据")
                     return (name, adapter)

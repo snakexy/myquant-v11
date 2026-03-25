@@ -16,6 +16,8 @@ from .base import V5DataAdapter
 # 全局初始化状态标志（防止重复初始化尝试）
 _TDXQUANT_INIT_ATTEMPTED = False
 _TDXQUANT_INIT_SUCCESS = False
+_TDXQUANT_LAST_ERROR = None
+_TDXQUANT_INIT_LOCK = False  # 新增：初始化锁，防止并发初始化
 
 
 class V5TdxQuantAdapter(V5DataAdapter):
@@ -36,79 +38,159 @@ class V5TdxQuantAdapter(V5DataAdapter):
     def _ensure_initialized(self, force_retry: bool = False) -> bool:
         """确保 TdxQuant 已初始化
 
-        使用全局标志防止重复初始化尝试：
-        - _TDXQUANT_INIT_ATTEMPTED: 已尝试初始化（成功或失败）
-        - _TDXQUANT_INIT_SUCCESS: 初始化成功标志
-
-        TdxQuant SDK 是类级别单例，检查 tq._initialized 后复用连接
-
-        Args:
-            force_retry: 强制重试（即使之前失败过）
+        TdxQuant SDK 是类级别单例，核心原则：
+        1. 如果 tq._initialized 为 True，直接复用，不做任何操作
+        2. 如果未初始化，调用 initialize() 且只调用一次
+        3. 任何情况下都不应该关闭已初始化的连接
         """
-        global _TDXQUANT_INIT_ATTEMPTED, _TDXQUANT_INIT_SUCCESS
+        global _TDXQUANT_INIT_ATTEMPTED, _TDXQUANT_INIT_SUCCESS, _TDXQUANT_LAST_ERROR, _TDXQUANT_INIT_LOCK
 
         # 如果已初始化，直接返回
         if self._initialized and self._tq:
             return True
 
-        # 如果强制重试，重置全局标志
-        if force_retry:
-            _TDXQUANT_INIT_ATTEMPTED = False
-            _TDXQUANT_INIT_SUCCESS = False
-
-        # 如果已经尝试过初始化但失败了，不再重试（避免日志刷屏）
-        if _TDXQUANT_INIT_ATTEMPTED and not _TDXQUANT_INIT_SUCCESS:
-            logger.debug("TdxQuant 初始化已失败过，跳过重试")
+        # 如果不是强制重试，且已经尝试过初始化但失败了，不再重试（避免日志刷屏）
+        if not force_retry and _TDXQUANT_INIT_ATTEMPTED and not _TDXQUANT_INIT_SUCCESS:
+            logger.debug("[TdxQuant] 初始化已失败过，跳过重试（使用 force_retry=True 强制重试）")
             return False
 
+        # 检查是否有其他实例正在初始化（防止并发）
+        if _TDXQUANT_INIT_LOCK:
+            logger.debug("[TdxQuant] 另一个实例正在初始化，等待...")
+            import time
+            for _ in range(50):  # 最多等5秒
+                time.sleep(0.1)
+                if not _TDXQUANT_INIT_LOCK:
+                    break
+
+            # 等待后检查是否已初始化成功
+            try:
+                from tqcenter import tq
+                if hasattr(tq, '_initialized') and tq._initialized:
+                    logger.debug("[TdxQuant] 等待后检测到 SDK 已初始化，直接复用")
+                    self._tq = tq
+                    self._initialized = True
+                    return True
+            except Exception:
+                pass
+
+            if _TDXQUANT_INIT_LOCK:
+                logger.warning("[TdxQuant] 等待初始化超时")
+                return False
+
+        # 标记正在初始化
+        _TDXQUANT_INIT_LOCK = True
+
         try:
-            # 添加 SDK 路径
-            sdk_path = (
-                r'E:\MyQuant_v10.0.0v2\backend\data\adapters\tdxquant_sdk'
-            )
+            # 添加 SDK 路径（使用 v11 自己的路径，不依赖 v10）
+            sdk_path = r'E:\MyQuant_v11\backend\external\tdxquant_sdk'
             if sdk_path not in sys.path:
                 sys.path.insert(0, sdk_path)
 
             from tqcenter import tq
 
-            # 关键检查：如果 SDK 已经初始化，直接复用（不调用 initialize）
+            # 关键检查：如果 SDK 已经初始化，直接复用（这是最常见的情况）
             if hasattr(tq, '_initialized') and tq._initialized:
-                logger.info("TdxQuant SDK 已初始化，复用现有连接")
+                logger.debug("[TdxQuant] SDK 已初始化，直接复用现有连接")
                 self._tq = tq
                 self._initialized = True
                 _TDXQUANT_INIT_SUCCESS = True
+                _TDXQUANT_INIT_ATTEMPTED = True
                 return True
 
+            # SDK 未初始化，执行初始化（这只应该发生一次）
+            logger.info("[TdxQuant] 开始初始化 SDK...")
             _TDXQUANT_INIT_ATTEMPTED = True
-
-            # 先关闭可能存在的旧连接（避免"已有同名策略运行"错误）
-            try:
-                if hasattr(tq, '_initialized') and tq._initialized:
-                    logger.info("检测到旧连接，先关闭...")
-                    tq.close()
-            except Exception:
-                pass
 
             # 设置 DLL 路径（必须在 initialize 之前设置）
             tq.dll_path = r'E:\new_tdx64\PYPlugins\TPythClient.dll'
-
-            # TdxQuant SDK 的 InitConnect 要求传入 .py 文件路径（非目录）
             init_path = r'E:\new_tdx64\PYPlugins\user\myquant_init.py'
 
-            # 执行初始化（仅在未初始化时）
+            # 检查必要文件
+            import os
+            if not os.path.exists(tq.dll_path):
+                error_msg = f"DLL 文件不存在: {tq.dll_path}"
+                logger.error(f"[TdxQuant] ❌ {error_msg}")
+                _TDXQUANT_LAST_ERROR = error_msg
+                return False
+
+            if not os.path.exists(init_path):
+                error_msg = f"初始化脚本不存在: {init_path}"
+                logger.error(f"[TdxQuant] ❌ {error_msg}")
+                _TDXQUANT_LAST_ERROR = error_msg
+                return False
+
+            # 执行初始化前记录状态
+            logger.info(f"[TdxQuant] DLL路径: {tq.dll_path}")
+            logger.info(f"[TdxQuant] 初始化脚本: {init_path}")
+            logger.info("[TdxQuant] 准备调用 initialize()...")
+
+            # 执行初始化
             tq.initialize(path=init_path)
 
-            self._tq = tq
-            self._initialized = True
-            _TDXQUANT_INIT_SUCCESS = True
+            # 验证初始化结果
+            if hasattr(tq, '_initialized') and tq._initialized:
+                self._tq = tq
+                self._initialized = True
+                _TDXQUANT_INIT_SUCCESS = True
+                _TDXQUANT_LAST_ERROR = None
 
-            logger.info(f"TdxQuant 初始化成功 (run_id={self._tq.run_id})")
-            return True
+                logger.info(f"[TdxQuant] ✅ 初始化成功 (run_id={self._tq.run_id})")
+                return True
+            else:
+                error_msg = "初始化未完成（_initialized=False）"
+                logger.warning(f"[TdxQuant] ⚠️ {error_msg}")
+                _TDXQUANT_LAST_ERROR = error_msg
+                return False
 
         except Exception as e:
-            logger.error(f"TdxQuant 初始化失败: {e}")
-            _TDXQUANT_INIT_SUCCESS = False
+            error_str = str(e)
+            _TDXQUANT_LAST_ERROR = error_str
+
+            # 详细诊断信息
+            import traceback
+            tb_str = traceback.format_exc()
+
+            # 检查常见错误
+            if "TQ数据接口初始化失败" in error_str:
+                # 检查是否已经初始化成功（SDK 可能已可用）
+                try:
+                    from tqcenter import tq
+                    if hasattr(tq, '_initialized') and tq._initialized:
+                        logger.info("[TdxQuant] ✅ 检测到 SDK 已初始化成功，复用现有连接")
+                        self._tq = tq
+                        self._initialized = True
+                        _TDXQUANT_INIT_SUCCESS = True
+                        _TDXQUANT_LAST_ERROR = None
+                        return True
+                except Exception:
+                    pass
+
+                logger.error(f"[TdxQuant] ❌ 初始化失败:\n{tb_str}")
+                logger.error("[TdxQuant] 💡 可能原因：")
+                logger.error("   1. 通达信终端未运行或未登录")
+                logger.error("   2. TPythClient.dll 被其他程序占用")
+                logger.error("   3. myquant_init.py 已在运行（重启通达信可解决）")
+                logger.error("   4. 用户权限不足（需要管理员权限）")
+                logger.error("   请检查通达信是否已启动并登录")
+            elif "已有同名策略运行" in error_str:
+                # 关键修复：同名策略运行说明 myquant_init.py 已在运行
+                # 此时应静默处理，因为系统会自动降级到其他适配器
+                logger.warning("[TdxQuant] ⚠️ myquant_init.py 已在通达信中运行")
+                logger.info("[TdxQuant] 💡 将自动降级到 PyTdx/LocalDB 适配器")
+                # 标记为初始化失败，但不再重复尝试
+                _TDXQUANT_INIT_ATTEMPTED = True
+                _TDXQUANT_INIT_SUCCESS = False
+            elif "返回ID小于0" in error_str or "ErrorId=11" in error_str:
+                logger.error(f"[TdxQuant] ❌ 重复初始化错误 (ErrorId=11): {error_str}")
+            else:
+                logger.error(f"[TdxQuant] ❌ 初始化失败: {error_str}")
+                logger.debug(f"[TdxQuant] 详细错误:\n{tb_str}")
+
             return False
+        finally:
+            # 无论如何都要释放锁
+            _TDXQUANT_INIT_LOCK = False
 
     def _to_tdx_period(self, period: str) -> str:
         """转换周期到 TdxQuant 格式"""
@@ -251,10 +333,27 @@ class V5TdxQuantAdapter(V5DataAdapter):
         more = more or {}
         stock = stock or {}
 
+        # 安全转换函数（处理 '.' 等非数字字符串）
+        def safe_float(val, default=0.0):
+            if val is None or val == '' or val == '.':
+                return default
+            try:
+                return float(val)
+            except (ValueError, TypeError):
+                return default
+
+        def safe_int(val, default=0):
+            if val is None or val == '' or val == '.':
+                return default
+            try:
+                return int(float(val))
+            except (ValueError, TypeError):
+                return default
+
         # 基础字段（from get_market_snapshot）
-        price = float(tick.get('Now') or tick.get('Price') or 0)
-        pre_close = float(tick.get('LastClose') or 0)
-        volume = float(tick.get('Volume') or 0)  # 股
+        price = safe_float(tick.get('Now') or tick.get('Price'), 0)
+        pre_close = safe_float(tick.get('LastClose'), 0)
+        volume = safe_float(tick.get('Volume'), 0)  # 股
 
         # 计算涨跌
         change = round(price - pre_close, 4)
@@ -267,63 +366,61 @@ class V5TdxQuantAdapter(V5DataAdapter):
         sell_volumes = tick.get('Sellv') or tick.get('SellVolume') or []
 
         # 内外盘（get_market_snapshot 独有）
-        inner_vol = int(tick.get('Inside') or 0)
-        outer_vol = int(tick.get('Outside') or 0)
-        cur_vol = int(tick.get('NowVol') or 0)
+        inner_vol = safe_int(tick.get('Inside'), 0)
+        outer_vol = safe_int(tick.get('Outside'), 0)
+        cur_vol = safe_int(tick.get('NowVol'), 0)
 
         # 从more_info获取扩展字段（86个字段中的核心指标）
-        turnover_rate = more.get('fHSL') or more.get('Zjl') or 0
-        volume_ratio = more.get('fLianB') or more.get('LB') or 0
-        amplitude = more.get('ZAF') or 0
-        pe_ratio = more.get('DynaPE') or 0
-        pb_ratio = more.get('PB_MRQ') or 0
-        dy_ratio = more.get('DYRatio') or 0
-        zt_price = more.get('ZTPrice') or 0
-        dt_price = more.get('DTPrice') or 0
-        beta = more.get('BetaValue') or 0
-        his_high = more.get('HisHigh') or 0
-        his_low = more.get('HisLow') or 0
+        turnover_rate = safe_float(more.get('fHSL') or more.get('Zjl'), 0)
+        volume_ratio = safe_float(more.get('fLianB') or more.get('LB'), 0)
+        amplitude = safe_float(more.get('ZAF'), 0)
+        pe_ratio = safe_float(more.get('DynaPE'), 0)
+        pb_ratio = safe_float(more.get('PB_MRQ'), 0)
+        dy_ratio = safe_float(more.get('DYRatio'), 0)
+        zt_price = safe_float(more.get('ZTPrice'), 0)
+        dt_price = safe_float(more.get('DTPrice'), 0)
+        beta = safe_float(more.get('BetaValue'), 0)
+        his_high = safe_float(more.get('HisHigh'), 0)
+        his_low = safe_float(more.get('HisLow'), 0)
 
         # 从stock_info获取财务数据
-        total_shares = stock.get('J_zgb') or stock.get('total_shares') or 0
+        total_shares = safe_float(stock.get('J_zgb') or stock.get('total_shares'), 0)
 
         return {
             # ====== 基础字段 ======
             'code': code,
             'price': price,
-            'open': float(tick.get('Open') or 0),
-            'high': float(tick.get('Max') or tick.get('High') or 0),
-            'low': float(tick.get('Min') or tick.get('Low') or 0),
+            'open': safe_float(tick.get('Open'), 0),
+            'high': safe_float(tick.get('Max') or tick.get('High'), 0),
+            'low': safe_float(tick.get('Min') or tick.get('Low'), 0),
             'pre_close': pre_close,
             'volume': volume / 100,  # 股→手
-            'amount': (
-                float(tick.get('Amount') or 0) * 10000
-            ),  # 万元→元
+            'amount': safe_float(tick.get('Amount'), 0) * 10000,  # 万元→元
             'change': change,
             'change_pct': change_pct,
 
             # ====== 五档盘口 ======
-            'bid1': float(buy_prices[0] if len(buy_prices) > 0 else 0),
-            'bid_vol1': int(buy_volumes[0] if len(buy_volumes) > 0 else 0),
-            'bid2': float(buy_prices[1] if len(buy_prices) > 1 else 0),
-            'bid_vol2': int(buy_volumes[1] if len(buy_volumes) > 1 else 0),
-            'bid3': float(buy_prices[2] if len(buy_prices) > 2 else 0),
-            'bid_vol3': int(buy_volumes[2] if len(buy_volumes) > 2 else 0),
-            'bid4': float(buy_prices[3] if len(buy_prices) > 3 else 0),
-            'bid_vol4': int(buy_volumes[3] if len(buy_volumes) > 3 else 0),
-            'bid5': float(buy_prices[4] if len(buy_prices) > 4 else 0),
-            'bid_vol5': int(buy_volumes[4] if len(buy_volumes) > 4 else 0),
+            'bid1': safe_float(buy_prices[0] if len(buy_prices) > 0 else 0, 0),
+            'bid_vol1': safe_int(buy_volumes[0] if len(buy_volumes) > 0 else 0, 0),
+            'bid2': safe_float(buy_prices[1] if len(buy_prices) > 1 else 0, 0),
+            'bid_vol2': safe_int(buy_volumes[1] if len(buy_volumes) > 1 else 0, 0),
+            'bid3': safe_float(buy_prices[2] if len(buy_prices) > 2 else 0, 0),
+            'bid_vol3': safe_int(buy_volumes[2] if len(buy_volumes) > 2 else 0, 0),
+            'bid4': safe_float(buy_prices[3] if len(buy_prices) > 3 else 0, 0),
+            'bid_vol4': safe_int(buy_volumes[3] if len(buy_volumes) > 3 else 0, 0),
+            'bid5': safe_float(buy_prices[4] if len(buy_prices) > 4 else 0, 0),
+            'bid_vol5': safe_int(buy_volumes[4] if len(buy_volumes) > 4 else 0, 0),
 
-            'ask1': float(sell_prices[0] if len(sell_prices) > 0 else 0),
-            'ask_vol1': int(sell_volumes[0] if len(sell_volumes) > 0 else 0),
-            'ask2': float(sell_prices[1] if len(sell_prices) > 1 else 0),
-            'ask_vol2': int(sell_volumes[1] if len(sell_volumes) > 1 else 0),
-            'ask3': float(sell_prices[2] if len(sell_prices) > 2 else 0),
-            'ask_vol3': int(sell_volumes[2] if len(sell_volumes) > 2 else 0),
-            'ask4': float(sell_prices[3] if len(sell_prices) > 3 else 0),
-            'ask_vol4': int(sell_volumes[3] if len(sell_volumes) > 3 else 0),
-            'ask5': float(sell_prices[4] if len(sell_prices) > 4 else 0),
-            'ask_vol5': int(sell_volumes[4] if len(sell_volumes) > 4 else 0),
+            'ask1': safe_float(sell_prices[0] if len(sell_prices) > 0 else 0, 0),
+            'ask_vol1': safe_int(sell_volumes[0] if len(sell_volumes) > 0 else 0, 0),
+            'ask2': safe_float(sell_prices[1] if len(sell_prices) > 1 else 0, 0),
+            'ask_vol2': safe_int(sell_volumes[1] if len(sell_volumes) > 1 else 0, 0),
+            'ask3': safe_float(sell_prices[2] if len(sell_prices) > 2 else 0, 0),
+            'ask_vol3': safe_int(sell_volumes[2] if len(sell_volumes) > 2 else 0, 0),
+            'ask4': safe_float(sell_prices[3] if len(sell_prices) > 3 else 0, 0),
+            'ask_vol4': safe_int(sell_volumes[3] if len(sell_volumes) > 3 else 0, 0),
+            'ask5': safe_float(sell_prices[4] if len(sell_prices) > 4 else 0, 0),
+            'ask_vol5': safe_int(sell_volumes[4] if len(sell_volumes) > 4 else 0, 0),
 
             # ====== 扩展字段 ======
             'inner_vol': inner_vol,
@@ -331,15 +428,9 @@ class V5TdxQuantAdapter(V5DataAdapter):
             'cur_vol': cur_vol,
 
             # 衍生指标
-            'turnover_rate': (
-                round(float(turnover_rate), 2) if turnover_rate else 0
-            ),
-            'volume_ratio': (
-                round(float(volume_ratio), 2) if volume_ratio else 0
-            ),
-            'amplitude': (
-                round(float(amplitude), 2) if amplitude else 0
-            ),
+            'turnover_rate': round(turnover_rate, 2) if turnover_rate else 0,
+            'volume_ratio': round(volume_ratio, 2) if volume_ratio else 0,
+            'amplitude': round(amplitude, 2) if amplitude else 0,
 
             # 估值指标
             'pe_ratio': round(float(pe_ratio), 2) if pe_ratio else 0,
@@ -463,13 +554,13 @@ class V5TdxQuantAdapter(V5DataAdapter):
             info = self._tq.get_more_info(stock_code=code)
             if info:
                 return {
-                    'turnover': info.get('Zjl'),      # 换手率
-                    'dyna_pe': info.get('DynaPE'),     # 动态市盈率
-                    'pb_mrq': info.get('PB_MRQ'),      # 市净率
-                    'dy_ratio': info.get('DYRatio'),   # 股息率
-                    'amplitude': info.get('ZAF'),      # 振幅
-                    'high_52w': info.get('HisHigh'),   # 52周高
-                    'low_52w': info.get('HisLow'),     # 52周低
+                    'turnover_rate': info.get('Zjl'),      # 换手率
+                    'pe_ratio': info.get('DynaPE'),        # 动态市盈率
+                    'pb_ratio': info.get('PB_MRQ'),        # 市净率
+                    'dy_ratio': info.get('DYRatio'),       # 股息率
+                    'amplitude': info.get('ZAF'),          # 振幅
+                    'his_high': info.get('HisHigh'),       # 52周高
+                    'his_low': info.get('HisLow'),         # 52周低
                 }
         except Exception as e:
             logger.debug(f"获取 {code} 额外指标失败: {e}")
@@ -530,14 +621,21 @@ class V5TdxQuantAdapter(V5DataAdapter):
         return {"available": False, "mode": "未初始化"}
 
     def is_available(self) -> bool:
-        """检查适配器是否可用"""
-        if not self._initialized:
-            # 使用 force_retry=True，即使之前失败也尝试重新初始化
-            return self._ensure_initialized(force_retry=True)
+        """检查适配器是否可用
 
-        # 已初始化即认为可用（不依赖 get_tdxquant_status 的模式检查）
-        # 因为状态检查可能不稳定，但已初始化的连接通常可以正常使用
-        return True
+        注意：此方法会在后台静默检查，不会触发初始化尝试。
+        如果尚未初始化或初始化失败，返回 False。
+        """
+        # 如果已经初始化成功，直接返回 True
+        if self._initialized and self._tq:
+            return True
+
+        # 如果尚未初始化，尝试初始化，但捕获所有异常
+        try:
+            return self._ensure_initialized()
+        except Exception as e:
+            logger.debug(f"[TdxQuant] 初始化失败，标记为不可用: {e}")
+            return False
 
 
 def create_tdxquant_adapter() -> V5TdxQuantAdapter:

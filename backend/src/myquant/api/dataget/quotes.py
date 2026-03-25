@@ -5,6 +5,7 @@ V5 K线服务 API 路由
 """
 
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.concurrency import run_in_threadpool
 from typing import List, Optional
 from datetime import datetime
 from pydantic import BaseModel, Field
@@ -170,7 +171,8 @@ async def get_realtime_kline(
     """
     try:
         service = get_seamless_kline_service()
-        df = service.get_kline(
+        df = await run_in_threadpool(
+            service.get_kline,
             symbol=symbol,
             period=period,
             count=count,
@@ -210,9 +212,10 @@ async def get_intraday_kline(request: KlineRequest):
         service = get_intraday_kline_service()
 
         if request.subscribe:
-            service.set_subscription(request.symbols)
+            await run_in_threadpool(service.set_subscription, request.symbols)
 
-        result = service.get_kline(
+        result = await run_in_threadpool(
+            service.get_kline,
             symbols=request.symbols,
             period=request.period,
             count=request.count,
@@ -245,7 +248,8 @@ async def get_seamless_kline(request: SeamlessKlineRequest):
 
         for symbol in request.symbols:
             try:
-                df = service.get_kline(
+                df = await run_in_threadpool(
+                    service.get_kline,
                     symbol=symbol,
                     period=request.period,
                     end_date=request.end_date,
@@ -284,7 +288,8 @@ async def get_history_kline(
     """获取历史K线"""
     try:
         service = get_seamless_kline_service()
-        df = service.get_kline(
+        df = await run_in_threadpool(
+            service.get_kline,
             symbol=symbol,
             period=period,
             start_date=start_date,
@@ -315,11 +320,11 @@ async def get_subscription_status():
     """获取当前订阅状态"""
     try:
         service = get_intraday_kline_service()
-        status = {
+        status = await run_in_threadpool(lambda: {
             'subscribed_symbols': service.get_subscribed_symbols(),
             'subscription_count': len(service.get_subscribed_symbols()),
             'adapter_status': service._get_adapter_status(),
-        }
+        })
         return KlineBatchResponse(data=status)
     except Exception as e:
         logger.error(f"[V5] 获取订阅状态失败: {e}")
@@ -331,7 +336,7 @@ async def update_subscription(symbols: List[str]):
     """更新订阅列表"""
     try:
         service = get_intraday_kline_service()
-        service.set_subscription(symbols)
+        await run_in_threadpool(service.set_subscription, symbols)
         return KlineBatchResponse(data={'subscribed_count': len(symbols)})
     except Exception as e:
         logger.error(f"[V5] 更新订阅失败: {e}")

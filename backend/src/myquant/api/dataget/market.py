@@ -10,7 +10,8 @@ from typing import List, Optional
 from pydantic import BaseModel
 from loguru import logger
 
-from myquant.core.market.services import get_realtime_market_service
+from myquant.core.market.services import get_realtime_market_service, get_seamless_kline_service
+from myquant.core.market.utils.trading_time import TradingTimeChecker
 
 
 router = APIRouter(tags=["实时行情"])
@@ -27,7 +28,7 @@ class MarketResponse(BaseModel):
 @router.post("/quotes", response_model=MarketResponse)
 async def get_realtime_quotes(
     codes: List[str],
-    use_cache: bool = Query(True, description="是否使用缓存")
+    use_cache: bool = Query(False, description="是否使用缓存")  # 临时禁用缓存，强制使用 XtQuant
 ):
     """获取实时行情
 
@@ -73,7 +74,10 @@ async def get_snapshot_batch(
             codes=codes, use_cache=True
         )
         return JSONResponse({
-            'data': [{**q, 'symbol': q.get('code', '')} for q in quotes.values()],
+            'data': [
+                {**q, 'symbol': q.get('code', '')}
+                for q in quotes.values()
+            ],
             'data_source': data_source,
             'count': len(quotes),
             'timestamp': 0,
@@ -95,7 +99,11 @@ async def get_snapshot_single(symbol: str):
             codes=[symbol], use_cache=True
         )
         quote = quotes.get(symbol, {})
-        return JSONResponse({**quote, 'symbol': quote.get('code', ''), 'data_source': data_source})
+        return JSONResponse({
+            **quote,
+            'symbol': quote.get('code', ''),
+            'data_source': data_source
+        })
     except Exception as e:
         logger.error("获取快照失败 {}: {}", symbol, e)
         raise HTTPException(status_code=500, detail=str(e))
@@ -220,34 +228,43 @@ async def update_subscriptions(hot_symbols: List[str]):
 async def get_market_kline(
     symbol: str,
     period: str = Query("1m", description="周期: 1m, 5m, 15m, 30m, 1h, 1d"),
-    count: int = Query(100, description="返回数量", ge=1, le=1000)
+    count: int = Query(100, description="返回数量", ge=1, le=1000),
+    adjust_type: str = Query("qfq", description="复权类型: qfq(前复权)/hfq(后复权)/none(不复权)")
 ):
     """获取K线数据
 
     委托给KlineService获取
     """
     try:
-        logger.info("获取K线: symbol={}, period={}, count={}", symbol, period, count)
-
-        service = get_realtime_market_service()
-
-        kline = service.get_kline(
-            symbol=symbol,
-            period=period,
-            count=count
+        logger.info(
+            "获取K线: symbol={}, period={}, count={}, adjust={}",
+            symbol, period, count, adjust_type
         )
 
-        if kline is None:
+        service = get_seamless_kline_service()
+
+        kline_df = service.get_kline(
+            symbol=symbol,
+            period=period,
+            count=count,
+            adjust_type=adjust_type
+        )
+
+        if kline_df is None or kline_df.empty:
             return MarketResponse(
                 code=404,
                 data=None,
                 message=f"未找到股票 {symbol} 的K线数据"
             )
 
+        # 将DataFrame转换为字典列表，以便JSON序列化
+        kline_data = kline_df.to_dict(orient='records')
+
         data = {
             'symbol': symbol,
             'period': period,
-            'kline': kline
+            'kline': kline_data,
+            'count': len(kline_data)
         }
 
         return MarketResponse(data=data)
@@ -290,4 +307,43 @@ async def get_cache_stats():
 
     except Exception as e:
         logger.error("获取缓存统计失败: {}", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# 前端兼容路由 - 市场状态检查（用于控制自动刷新）
+@router.get("/market/status", response_model=MarketResponse)
+async def get_quotes_market_status():
+    """获取市场状态（前端兼容路由 /api/v1/quotes/market/status）
+
+    用于前端判断是否处于交易时间，控制自动刷新频率：
+    - 交易中：高频刷新（3-5秒）
+    - 休市：低频刷新或暂停（30秒或更长）
+    """
+    try:
+        from datetime import datetime
+
+        checker = TradingTimeChecker()
+        phase = checker.get_current_phase()
+        is_trading = checker.is_trading_time()
+        now = datetime.now()
+
+        data = {
+            'is_open': is_trading,
+            'phase': phase.value,
+            'phase_description': checker.get_phase_description(),
+            'market': 'A股',
+            'date': now.strftime('%Y-%m-%d'),
+            'time': now.strftime('%H:%M:%S'),
+            'status': '交易中' if is_trading else '休市',
+            'is_weekend': phase.name == 'WEEKEND',
+            'refresh_interval': checker.get_next_refresh_interval(),
+            'cache_ttl': checker.get_cache_ttl(),
+        }
+
+        logger.debug("市场状态查询: {}", data['status'])
+
+        return MarketResponse(data=data)
+
+    except Exception as e:
+        logger.error("获取市场状态失败: {}", e)
         raise HTTPException(status_code=500, detail=str(e))

@@ -24,9 +24,10 @@ DB_DIR = DATA_DIR / "db"
 QLIB_DIR = DATA_DIR / "qlib"
 TDX_DIR = DATA_DIR / "tdx"
 LOGS_DIR = DATA_DIR / "logs"
+XDXR_DIR = DATA_DIR / "xdxr_cache"  # XDXR除权除息数据持久化缓存
 
 # 确保目录存在
-for d in [DATA_DIR, CACHE_DIR, DB_DIR, QLIB_DIR, TDX_DIR, LOGS_DIR]:
+for d in [DATA_DIR, CACHE_DIR, DB_DIR, QLIB_DIR, TDX_DIR, LOGS_DIR, XDXR_DIR]:
     d.mkdir(parents=True, exist_ok=True)
 
 # 数据库配置

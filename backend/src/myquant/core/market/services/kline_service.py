@@ -177,10 +177,31 @@ class KlineService:
             self._poll_task = asyncio.create_task(self._poll_loop())
 
     async def _poll_loop(self):
-        """后台轮询：每秒拉取最新 bar，检测变化后广播"""
+        """后台轮询：交易时间运行，收盘后停止"""
         logger.info("KlineService: 轮询任务启动")
+        check_interval = 60  # 非交易时间检查间隔（秒）
+        last_status = None  # 上次状态，用于避免重复日志
+
         try:
             while self._clients:
+                # 检查是否在交易时间
+                trading = is_trading_time()
+
+                # 状态变化时记录日志
+                if trading != last_status:
+                    if trading:
+                        logger.info("[KlineService] 进入交易时间，开始数据轮询")
+                    else:
+                        logger.info("[KlineService] 离开交易时间，停止数据轮询，仅保持连接")
+                    last_status = trading
+
+                if not trading:
+                    # 收盘后：完全停止数据轮询，只保持连接
+                    # 等待一段时间后重新检查是否开盘
+                    await asyncio.sleep(check_interval)
+                    continue  # 跳过数据获取，继续循环
+
+                # 交易时间：正常轮询
                 await self._poll_once()
                 await asyncio.sleep(self.POLL_INTERVAL)
         except asyncio.CancelledError:

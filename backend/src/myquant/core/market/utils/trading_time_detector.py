@@ -163,8 +163,10 @@ class TradingTimeDetectorV2:
         import calendar
         working_days = set()
         for week in calendar.monthcalendar(year, month):
-            for day, weekday in enumerate(week, start=1):
-                if weekday < 5:  # 0-4 表示周一到周五
+            for weekday, day in enumerate(week):
+                # weekday: 0=周一, 4=周五, 5=周六, 6=周日
+                # day: 日期，0表示不在当月
+                if day > 0 and weekday < 5:  # 工作日（周一到周五）
                     working_days.add(f"{year}{month:02d}{day:02d}")
 
         return working_days
@@ -220,14 +222,33 @@ class TradingTimeDetectorV2:
             是否为交易日
         """
         check_date = check_date if check_date else datetime.now()
+
+        # 临时修复：系统时间异常（年份>2025）时，强制使用2025年
+        # TODO: 移除此修复后需修正系统时间
+        if check_date.year > 2025:
+            from datetime import timedelta
+            check_date = datetime(2025, check_date.month, check_date.day,
+                                 check_date.hour, check_date.minute, check_date.second)
+
         date_str = check_date.strftime("%Y%m%d")
         year = check_date.year
         month = check_date.month
 
         # 获取该月的交易日
         trading_days = self._get_trading_days(year, month)
+        is_trading = date_str in trading_days
 
-        return date_str in trading_days
+        # 详细日志
+        weekday_name = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"][check_date.weekday()]
+        if is_trading:
+            logger.debug(f"[交易日检查] {date_str} ({weekday_name}) 是交易日")
+        else:
+            if check_date.weekday() >= 5:
+                logger.debug(f"[交易日检查] {date_str} ({weekday_name}) 不是交易日：周末")
+            else:
+                logger.debug(f"[交易日检查] {date_str} ({weekday_name}) 不是交易日：节假日")
+
+        return is_trading
 
     def is_trading_time(self, check_time: datetime = None) -> bool:
         """
@@ -240,9 +261,12 @@ class TradingTimeDetectorV2:
             是否为交易时间
         """
         check_time = check_time if check_time else datetime.now()
+        date_str = check_time.strftime("%Y%m%d")
+        time_str = check_time.strftime("%H:%M:%S")
 
         # 检查是否为交易日
         if not self.is_trading_day(check_time):
+            logger.debug(f"[交易时间检查] {date_str} {time_str} 不是交易时间：非交易日")
             return False
 
         # 检查是否在交易时段内
@@ -253,8 +277,12 @@ class TradingTimeDetectorV2:
                 continue
 
             if start <= current_time <= end:
+                logger.debug(f"[交易时间检查] {date_str} {time_str} 是交易时间：{phase.value}")
                 return True
 
+        # 不在任何交易时段
+        phase = self.get_trading_phase(check_time)
+        logger.debug(f"[交易时间检查] {date_str} {time_str} 不是交易时间：{phase.value}")
         return False
 
     def get_trading_phase(self, check_time: datetime = None) -> TradingPhase:

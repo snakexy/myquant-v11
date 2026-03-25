@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>自定义指标管理器 - TradingView风格</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #131722;
+            color: #d1d4dc;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid #2a2e39;
+        }
+
+        .header h1 {
+            font-size: 24px;
+            font-weight: 600;
+        }
+
+        .btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: #2962ff;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #1e54e4;
+        }
+
+        .btn-secondary {
+            background: #2a2e39;
+            color: #d1d4dc;
+        }
+
+        .btn-secondary:hover {
+            background: #363a45;
+        }
+
+        .btn-danger {
+            background: #ef5350;
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: #e53935;
+        }
+
+        .indicator-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+
+        .indicator-card {
+            background: #1e222d;
+            border: 1px solid #2a2e39;
+            border-radius: 8px;
+            padding: 16px;
+            transition: all 0.2s;
+        }
+
+        .indicator-card:hover {
+            border-color: #2962ff;
+            box-shadow: 0 4px 12px rgba(41, 98, 255, 0.1);
+        }
+
+        .indicator-card h3 {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: #2962ff;
+        }
+
+        .indicator-card .description {
+            font-size: 13px;
+            color: #787b86;
+            margin-bottom: 12px;
+            min-height: 40px;
+        }
+
+        .indicator-card .meta {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+
+        .indicator-card .badge {
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 500;
+        }
+
+        .badge-custom {
+            background: #9c27b0;
+            color: white;
+        }
+
+        .badge-trend {
+            background: #26a69a;
+            color: white;
+        }
+
+        .badge-oscillator {
+            background: #ff9800;
+            color: white;
+        }
+
+        .indicator-card .actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: #1e222d;
+            border-radius: 8px;
+            width: 90%;
+            max-width: 900px;
+            max-height: 90vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .modal-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid #2a2e39;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .modal-header h2 {
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        .modal-close {
+            background: none;
+            border: none;
+            color: #787b86;
+            font-size: 24px;
+            cursor: pointer;
+            line-height: 1;
+        }
+
+        .modal-close:hover {
+            color: #d1d4dc;
+        }
+
+        .modal-body {
+            padding: 20px;
+            overflow-y: auto;
+            flex: 1;
+        }
+
+        .form-group {
+            margin-bottom: 16px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 6px;
+            font-size: 13px;
+            font-weight: 500;
+            color: #787b86;
+        }
+
+        .form-group input,
+        .form-group textarea,
+        .form-group select {
+            width: 100%;
+            padding: 8px 12px;
+            background: #2a2e39;
+            border: 1px solid #363a45;
+            border-radius: 4px;
+            color: #d1d4dc;
+            font-size: 14px;
+            font-family: 'Consolas', 'Monaco', monospace;
+        }
+
+        .form-group textarea {
+            min-height: 300px;
+            resize: vertical;
+        }
+
+        .form-group input:focus,
+        .form-group textarea:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #2962ff;
+        }
+
+        .modal-footer {
+            padding: 16px 20px;
+            border-top: 1px solid #2a2e39;
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+        }
+
+        .code-editor {
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            font-size: 13px;
+            line-height: 1.5;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #787b86;
+        }
+
+        .empty-state svg {
+            width: 64px;
+            height: 64px;
+            margin-bottom: 16px;
+            opacity: 0.5;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #787b86;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📊 自定义指标管理器</h1>
+            <button class="btn btn-primary" onclick="showCreateModal()">
+                + 新建指标
+            </button>
+        </div>
+
+        <div id="indicators-container" class="indicator-grid">
+            <div class="loading">加载中...</div>
+        </div>
+    </div>
+
+    <!-- 创建/编辑指标模态框 -->
+    <div id="indicator-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="modal-title">新建指标</h2>
+                <button class="modal-close" onclick="closeModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="indicator-form">
+                    <input type="hidden" id="edit-indicator-name">
+
+                    <div class="form-group">
+                        <label for="indicator-name">指标名称 *</label>
+                        <input type="text" id="indicator-name" required
+                               placeholder="例如: MyMACD" pattern="[a-zA-Z][a-zA-Z0-9_]*">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="indicator-description">描述</label>
+                        <input type="text" id="indicator-description" required
+                               placeholder="简要描述这个指标的用途">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="indicator-category">分类</label>
+                        <select id="indicator-category">
+                            <option value="custom">自定义</option>
+                            <option value="trend">趋势指标</option>
+                            <option value="oscillator">震荡指标</option>
+                            <option value="volume">成交量指标</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="indicator-code">Python代码 *</label>
+                        <textarea id="indicator-code" class="code-editor"
+                                  placeholder="在此粘贴您的Python指标代码..."></textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <button type="button" class="btn btn-secondary" onclick="loadTemplate()">
+                            加载模板
+                        </button>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeModal()">取消</button>
+                <button type="button" class="btn btn-primary" onclick="saveIndicator()">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let indicators = [];
+
+        // 加载指标列表
+        async function loadIndicators() {
+            const container = document.getElementById('indicators-container');
+
+            try {
+                const response = await fetch('/api/custom-indicators/list');
+                const result = await response.json();
+
+                if (result.success) {
+                    indicators = result.indicators || [];
+                    renderIndicators();
+                } else {
+                    container.innerHTML = '<div class="empty-state">加载失败</div>';
+                }
+            } catch (error) {
+                console.error('加载指标列表失败:', error);
+                container.innerHTML = '<div class="empty-state">加载失败: ' + error.message + '</div>';
+            }
+        }
+
+        // 渲染指标列表
+        function renderIndicators() {
+            const container = document.getElementById('indicators-container');
+
+            if (indicators.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <p>还没有自定义指标</p>
+                        <p>点击"新建指标"开始创建您的第一个自定义指标</p>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = indicators.map(ind => `
+                <div class="indicator-card">
+                    <h3>${ind.name}</h3>
+                    <p class="description">${ind.description || '暂无描述'}</p>
+                    <div class="meta">
+                        <span class="badge badge-${ind.category}">${getCategoryLabel(ind.category)}</span>
+                    </div>
+                    <div class="actions">
+                        <button class="btn btn-secondary" onclick="editIndicator('${ind.name}')">编辑</button>
+                        <button class="btn btn-danger" onclick="deleteIndicator('${ind.name}')">删除</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // 获取分类标签
+        function getCategoryLabel(category) {
+            const labels = {
+                'custom': '自定义',
+                'trend': '趋势',
+                'oscillator': '震荡',
+                'volume': '成交量'
+            };
+            return labels[category] || category;
+        }
+
+        // 显示创建模态框
+        function showCreateModal() {
+            document.getElementById('modal-title').textContent = '新建指标';
+            document.getElementById('edit-indicator-name').value = '';
+            document.getElementById('indicator-name').value = '';
+            document.getElementById('indicator-name').disabled = false;
+            document.getElementById('indicator-description').value = '';
+            document.getElementById('indicator-category').value = 'custom';
+            document.getElementById('indicator-code').value = '';
+            document.getElementById('indicator-modal').classList.add('active');
+        }
+
+        // 编辑指标
+        async function editIndicator(name) {
+            try {
+                const response = await fetch(`/api/custom-indicators/get/${name}`);
+                const result = await response.json();
+
+                if (result.success) {
+                    const ind = result.indicator;
+                    document.getElementById('modal-title').textContent = '编辑指标';
+                    document.getElementById('edit-indicator-name').value = name;
+                    document.getElementById('indicator-name').value = name;
+                    document.getElementById('indicator-name').disabled = true;
+                    document.getElementById('indicator-description').value = ind.description || '';
+                    document.getElementById('indicator-category').value = ind.category || 'custom';
+                    document.getElementById('indicator-code').value = ind.code || '';
+                    document.getElementById('indicator-modal').classList.add('active');
+                } else {
+                    alert('加载指标失败: ' + result.error);
+                }
+            } catch (error) {
+                console.error('编辑指标失败:', error);
+                alert('编辑指标失败: ' + error.message);
+            }
+        }
+
+        // 删除指标
+        async function deleteIndicator(name) {
+            if (!confirm(`确定要删除指标 "${name}" 吗？`)) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/custom-indicators/delete/${name}`, {
+                    method: 'DELETE'
+                });
+                const result = await response.json();
+
+                if (result.success) {
+                    alert('删除成功');
+                    loadIndicators();
+                } else {
+                    alert('删除失败: ' + result.error);
+                }
+            } catch (error) {
+                console.error('删除指标失败:', error);
+                alert('删除失败: ' + error.message);
+            }
+        }
+
+        // 保存指标
+        async function saveIndicator() {
+            const editName = document.getElementById('edit-indicator-name').value;
+            const name = document.getElementById('indicator-name').value.trim();
+            const description = document.getElementById('indicator-description').value.trim();
+            const category = document.getElementById('indicator-category').value;
+            const code = document.getElementById('indicator-code').value;
+
+            if (!name) {
+                alert('请输入指标名称');
+                return;
+            }
+
+            if (!code) {
+                alert('请输入Python代码');
+                return;
+            }
+
+            try {
+                const url = editName ? `/api/custom-indicators/update/${editName}` : '/api/custom-indicators/create';
+                const method = editName ? 'PUT' : 'POST';
+
+                const body = {
+                    name: editName || name,
+                    description: description,
+                    code: code,
+                    category: category,
+                    parameters: {}
+                };
+
+                const response = await fetch(url, {
+                    method: method,
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(body)
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    alert(editName ? '更新成功' : '创建成功');
+                    closeModal();
+                    loadIndicators();
+                } else {
+                    alert('保存失败: ' + (result.error || result.detail));
+                }
+            } catch (error) {
+                console.error('保存指标失败:', error);
+                alert('保存失败: ' + error.message);
+            }
+        }
+
+        // 加载模板
+        async function loadTemplate() {
+            try {
+                const response = await fetch('/api/custom-indicators/template');
+                const result = await response.json();
+
+                if (result.success && result.template) {
+                    const template = result.template;
+                    document.getElementById('indicator-name').value = template.name;
+                    document.getElementById('indicator-description').value = template.description;
+                    document.getElementById('indicator-code').value = template.code;
+                    document.getElementById('indicator-category').value = template.category;
+                } else {
+                    alert('加载模板失败');
+                }
+            } catch (error) {
+                console.error('加载模板失败:', error);
+                alert('加载模板失败: ' + error.message);
+            }
+        }
+
+        // 关闭模态框
+        function closeModal() {
+            document.getElementById('indicator-modal').classList.remove('active');
+        }
+
+        // 页面加载时自动加载指标列表
+        window.addEventListener('DOMContentLoaded', () => {
+            loadIndicators();
+        });
+
+        // ESC键关闭模态框
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                closeModal();
+            }
+        });
+
+        // 点击模态框外部关闭
+        document.getElementById('indicator-modal').addEventListener('click', (e) => {
+            if (e.target.id === 'indicator-modal') {
+                closeModal();
+            }
+        });
+    </script>
+</body>
+</html>

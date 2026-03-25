@@ -1,0 +1,202 @@
+/**
+ * MyQuant v10.0.0 - 统一设计系统
+ * 基于工作流和因子分析页面的风格
+ * 用于全局样式统一，支持主题切换
+ */
+
+/* ========================================
+   1. 基础颜色系统（TradingView 风格）
+   ======================================== */
+:root {
+  /* 主背景色 */
+  --bg-primary: #131722;
+  --bg-secondary: #1e222d;
+  --bg-tertiary: #2a2e39;
+  --bg-elevated: #363a45;
+
+  /* 文字色 */
+  --text-primary: #d1d4dc;
+  --text-secondary: #787b86;
+  --text-tertiary: #575e6a;
+  --text-disabled: #363a45;
+
+  /* 主色调 */
+  --accent-blue: #2962ff;
+  --accent-blue-hover: #1e4fd8;
+  --accent-blue-light: rgba(41, 98, 255, 0.15);
+
+  /* 状态色 */
+  --accent-green: #26a69a;
+  --accent-red: #ef5350;
+  --accent-orange: #ff9800;
+  --accent-yellow: #ffeb3b;
+  --accent-cyan: #29b6f6;
+
+  /* 边框色 */
+  --border-color: #363a45;
+  --border-light: #2a2e39;
+  --border-focus: var(--accent-blue);
+
+  /* ========================================
+     2. 涨跌颜色（A股：红涨绿跌）
+     ======================================== */
+  --color-rise: #ef5350;    /* 红色（上涨） */
+  --color-fall: #26a69a;    /* 绿色（下跌） */
+  --color-flat: #787b86;    /* 平盘 */
+
+  /* ========================================
+     3. 状态/语义颜色
+     ======================================== */
+  --color-success: #26a69a;    /* 成功/通过 */
+  --color-error: #ef5350;     /* 失败/错误 */
+  --color-warning: #ff9800;    /* 警告 */
+  --color-info: #29b6f6;      /* 信息 */
+
+  /* 评级颜色（优秀→差） */
+  --rating-excellent: #ef5350;   /* 优秀-红 */
+  --rating-good: #ff9800;         /* 良好-橙 */
+  --rating-average: #ffeb3b;      /* 一般-黄 */
+  --rating-poor: #26a69a;        /* 较差-绿 */
+  --rating-bad: #29b6f6;         /* 差-青 */
+
+  /* 风险等级 */
+  --risk-low: #26a69a;
+  --risk-medium: #ff9800;
+  --risk-high: #ef5350;
+
+  /* ========================================
+     4. 字体系统
+     ======================================== */
+  --font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-family-mono: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+
+  /* 标题字体大小 */
+  --font-size-h1: 28px;
+  --font-size-h2: 24px;
+  --font-size-h3: 20px;
+  --font-size-h4: 18px;
+  --font-size-h5: 16px;
+
+  /* 副标题字体大小 */
+  --font-size-subtitle: 14px;
+
+  /* 正文字体大小 */
+  --font-size-base: 14px;
+  --font-size-sm: 12px;
+  --font-size-xs: 11px;
+
+  /* 字体粗细 */
+  --font-weight-bold: 600;
+  --font-weight-medium: 500;
+  --font-weight-normal: 400;
+
+  /* ========================================
+     5. 间距系统（4px 基准）
+     ======================================== */
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 12px;
+  --spacing-lg: 16px;
+  --spacing-xl: 20px;
+  --spacing-2xl: 24px;
+  --spacing-3xl: 32px;
+
+  /* 组件内边距 */
+  --padding-card: 16px;
+  --padding-button: 10px 20px;
+  --padding-input: 8px 12px;
+
+  /* ========================================
+     6. 圆角系统
+     ======================================== */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-2xl: 16px;
+  --radius-full: 9999px;
+
+  /* ========================================
+     7. 阴影系统
+     ======================================== */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.2);
+  --shadow-md: 0 4px 8px rgba(0, 0, 0, 0.25);
+  --shadow-lg: 0 8px 16px rgba(0, 0, 0, 0.3);
+  --shadow-xl: 0 12px 32px rgba(0, 0, 0, 0.4);
+  --shadow-glow: 0 0 20px rgba(41, 98, 255, 0.3);
+
+  /* ========================================
+     8. 过渡动画
+     ======================================== */
+  --transition-fast: 0.15s ease;
+  --transition-base: 0.2s ease;
+  --transition-slow: 0.3s ease;
+
+  /* ========================================
+     9. 布局尺寸
+     ======================================== */
+  --header-height: 64px;
+  --sidebar-width: 280px;
+  --sidebar-collapsed: 80px;
+  --footer-height: 48px;
+  --tab-height: 40px;
+
+  /* ========================================
+     10. Z-index 层级
+     ======================================== */
+  --z-dropdown: 1000;
+  --z-sticky: 1020;
+  --z-fixed: 1030;
+  --z-modal-backdrop: 1040;
+  --z-modal: 1050;
+  --z-notification: 1060;
+  --z-tooltip: 1070;
+}
+
+/* ========================================
+   亮色主题（可选）
+   ======================================== */
+[data-theme="light"] {
+  --bg-primary: #ffffff;
+  --bg-secondary: #f5f7fa;
+  --bg-tertiary: #e8eaed;
+  --bg-elevated: #ffffff;
+
+  --text-primary: #1a202c;
+  --text-secondary: #4b5563;
+  --text-tertiary: #6b7280;
+
+  --border-color: #e2e8f0;
+  --border-light: #edf2f7;
+}
+
+/* ========================================
+   辅助类：数值颜色
+   ======================================== */
+.text-rise { color: var(--color-rise) !important; }
+.text-fall { color: var(--color-fall) !important; }
+.text-flat { color: var(--color-flat) !important; }
+
+.text-success { color: var(--color-success) !important; }
+.text-error { color: var(--color-error) !important; }
+.text-warning { color: var(--color-warning) !important; }
+.text-info { color: var(--color-info) !important; }
+
+.text-rating-excellent { color: var(--rating-excellent) !important; }
+.text-rating-good { color: var(--rating-good) !important; }
+.text-rating-average { color: var(--rating-average) !important; }
+.text-rating-poor { color: var(--rating-poor) !important; }
+.text-rating-bad { color: var(--rating-bad) !important; }
+
+/* 状态徽章背景 */
+.badge-pending { background: #3d3d00; color: #ffeb3b; }
+.badge-running { background: #0d3d0d; color: #4caf50; }
+.badge-completed { background: #0d2d3d; color: #29b6f6; }
+.badge-failed { background: #3d0d0d; color: #ef5350; }
+.badge-paused { background: #3d2d0d; color: #ff9800; }
+/* 成功 - 红色（A股上涨色） */
+.badge-success { background: rgba(239, 83, 80, 0.2); color: var(--accent-red); }
+/* 失败 - 绿色（A股下跌色） */
+.badge-error { background: rgba(38, 166, 154, 0.2); color: var(--accent-green); }
+.badge-warning { background: rgba(255, 152, 0, 0.2); color: var(--accent-orange); }
+.badge-info { background: rgba(41, 182, 246, 0.2); color: var(--accent-cyan); }

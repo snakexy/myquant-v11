@@ -36,7 +36,7 @@ from .base import V5DataAdapter
 @dataclass
 class ConnectionInfo:
     """连接信息"""
-    api: TdxHq_API
+    api: 'TdxHq_API'  # 使用字符串前向引用，避免导入错误时未定义
     host: str
     port: int
     last_used: float
@@ -54,9 +54,14 @@ class V5PyTdxPoolAdapter(V5DataAdapter):
     """
 
     PERIOD_CATEGORY = {
-        '5min': 0, '15min': 1, '30min': 2, '60min': 3, '1h': 3,
-        'day': 9, '1d': 9, 'week': 5, '1w': 5, 'month': 6, '1M': 6,
-        '1min': 8, '1m': 8,
+        '1m': 8, '1min': 8,
+        '5m': 0, '5min': 0,
+        '15m': 1, '15min': 1,
+        '30m': 2, '30min': 2,
+        '60m': 3, '60min': 3, '1h': 3,
+        '1d': 9, 'day': 9,
+        '1w': 5, 'week': 5, '1W': 5,
+        '1M': 6, 'month': 6, '1mon': 6,
     }
 
     # 默认服务器列表
@@ -306,6 +311,29 @@ class V5PyTdxPoolAdapter(V5DataAdapter):
         """转换周期"""
         return self.PERIOD_CATEGORY.get(period, 9)
 
+    def _normalize_kline_df(self, df: pd.DataFrame, source: str) -> pd.DataFrame:
+        """标准化 K线 DataFrame
+
+        PyTdx返回的列名与标准不同，需要映射:
+        - vol -> volume
+        """
+        if df is None or df.empty:
+            return df
+
+        # 列名映射: PyTdx -> 标准
+        column_mapping = {
+            'vol': 'volume',
+        }
+
+        for old_col, new_col in column_mapping.items():
+            if old_col in df.columns and new_col not in df.columns:
+                df = df.rename(columns={old_col: new_col})
+
+        # 添加数据源标记
+        df['data_source'] = source
+
+        return df
+
     def get_kline(
         self,
         symbols: List[str],
@@ -332,7 +360,11 @@ class V5PyTdxPoolAdapter(V5DataAdapter):
                 market = self._get_market(symbol)
                 code = symbol.replace('.SH', '').replace('.SZ', '').replace('.BJ', '')
 
-                data = conn.api.get_security_bars(category, market, code, 0, count or 100)
+                # PyTdx API有单次请求限制，最多约800条
+                max_bars = 800
+                request_count = min(count, max_bars) if count else 100
+                logger.info(f"[PyTdxPool] {symbol} 请求周期: period={period}, category={category}, count={request_count}")
+                data = conn.api.get_security_bars(category, market, code, 0, request_count)
 
                 if data and len(data) > 0:
                     df = pd.DataFrame(data)
@@ -543,6 +575,49 @@ class V5PyTdxPoolAdapter(V5DataAdapter):
             'amplitude': round(amplitude, 2),  # 振幅（%）
             'data_source': 'pytdx_pool',
         }
+
+    def get_xdxr_info(self, symbol: str) -> List[dict]:
+        """获取除权除息信息（供服务层复权计算使用）
+
+        Args:
+            symbol: 股票代码 (如 600000.SH)
+
+        Returns:
+            除权除息记录列表
+        """
+        if not self._ensure_pool():
+            return []
+
+        try:
+            # 转换市场代码
+            market_code = symbol.split('.')[0]
+            if symbol.endswith('.SH'):
+                market = 1  # 上海
+            elif symbol.endswith('.SZ'):
+                market = 0  # 深圳
+            elif symbol.endswith('.BJ'):
+                market = 2  # 北京
+            else:
+                market = 0
+
+            code = symbol.split('.')[0]
+
+            # 使用主连接获取数据
+            with self._lock:
+                if not self._main_conn:
+                    return []
+                xdxr_data = self._main_conn.api.get_xdxr_info(market, code)
+
+            if xdxr_data:
+                logger.debug(f"[PyTdxPool] {symbol} 获取到 {len(xdxr_data)} 条除权记录")
+            else:
+                logger.debug(f"[PyTdxPool] {symbol} 无除权记录")
+
+            return xdxr_data or []
+
+        except Exception as e:
+            logger.warning(f"[PyTdxPool] 获取 {symbol} 除权信息失败: {e}")
+            return []
 
     def get_pool_stats(self) -> dict:
         """获取连接池统计"""
