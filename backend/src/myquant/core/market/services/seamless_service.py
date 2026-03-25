@@ -94,26 +94,50 @@ class SeamlessKlineService:
         Returns:
             DataFrame with OHLCV columns
         """
-        # ── 简单缓存策略────────────────────────────────────
+        # ── 增量缓存策略────────────────────────────────────
         CACHE_SIZE = 5000
         cache_key = f"kline:{symbol}:{period}:{adjust_type}"
 
         # 检查缓存（仅对分钟线和日线有效）
         use_cache = period in ['1m', '5m', '15m', '30m', '1h', '1d']
-        cached = None
+        cached_data = None
+        cached_last_time = None
         incremental_fetch = False
 
         if use_cache:
-            cached = self._kline_cache.get(cache_key)
-            if cached is not None:
-                logger.debug(f"[K线缓存] 命中: {symbol} {period} {adjust_type}, 缓存{len(cached)}条")
-                return cached.copy()
+            cached_entry = self._kline_cache.get(cache_key)
+            if cached_entry is not None:
+                # 缓存条目格式: {'df': DataFrame, 'last_time': timestamp}
+                if isinstance(cached_entry, dict):
+                    cached_data = cached_entry.get('df')
+                    cached_last_time = cached_entry.get('last_time')
+                else:
+                    # 兼容旧格式（直接是DataFrame）
+                    cached_data = cached_entry
+                    if not cached_data.empty:
+                        cached_last_time = cached_data.iloc[-1]['datetime']
 
-        # 增量获取：暂时禁用
-        start_date_for_fetch = start_date
+                if cached_data is not None and not cached_data.empty:
+                    logger.debug(f"[K线缓存] 命中: {symbol} {period} {adjust_type}, "
+                               f"缓存{len(cached_data)}条, 最后时间={cached_last_time}")
+
+                    # 启用增量获取
+                    incremental_fetch = True
+
+        # 增量获取逻辑
         fetch_count = count
-        incremental_fetch = False
-        cached = None
+        start_date_for_fetch = start_date
+
+        if incremental_fetch and cached_last_time is not None:
+            # 只获取从最后时间戳之后的新数据
+            # 多获取几条以确保覆盖（去重时会处理）
+            fetch_count = count + 10 if count < 100 else count
+            start_date_for_fetch = cached_last_time
+            logger.info(f"[增量获取] {symbol} {period}: 从 {cached_last_time} 开始获取新数据")
+        elif use_cache and cached_data is not None and not cached_data.empty:
+            # 缓存存在但不需要增量（时间戳为空或请求指定了start_date）
+            logger.debug(f"[K线缓存] 直接返回缓存数据")
+            return cached_data.copy()
 
         # 获取历史数据（始终获取不复权原始数据）
         historical = self._get_historical_kline(
@@ -122,6 +146,10 @@ class SeamlessKlineService:
         )
 
         if historical.df.empty:
+            # 如果没有获取到新数据且缓存存在，返回缓存
+            if cached_data is not None and not cached_data.empty:
+                logger.debug(f"[增量获取] 无新数据，返回缓存")
+                return cached_data.copy()
             return historical.df
 
         # 判断是否需要补充实时数据
@@ -155,8 +183,29 @@ class SeamlessKlineService:
         if start_date or end_date:
             historical = historical.slice_by_date(start_date, end_date)
 
-        # 增量合并：暂时禁用
-        # if incremental_fetch and cached is not None...
+        # 增量合并：合并缓存数据和新获取的数据
+        if incremental_fetch and cached_data is not None and not cached_data.empty:
+            if not historical.df.empty:
+                # 合并新旧数据并去重
+                merged_df = pd.concat([cached_data, historical.df], ignore_index=True)
+
+                # 按datetime去重，保留最后出现的（新数据覆盖旧数据）
+                merged_df = merged_df.drop_duplicates(subset=['datetime'], keep='last')
+
+                # 按时间排序
+                merged_df = merged_df.sort_values('datetime').reset_index(drop=True)
+
+                new_data_count = len(historical.df)
+                unique_new_count = len(merged_df) - len(cached_data)
+
+                logger.info(f"[增量合并] {symbol} {period}: 新获取{new_data_count}条, "
+                           f"实际新增{unique_new_count}条, 合并后总计{len(merged_df)}条")
+
+                historical.df = merged_df
+            else:
+                # 没有获取到新数据，使用缓存
+                logger.debug(f"[增量合并] 无新数据，使用缓存")
+                historical.df = cached_data
 
         # 应用复权到数据
         if adjust_type != 'none' and not historical.df.empty:
@@ -164,11 +213,19 @@ class SeamlessKlineService:
                 historical.df, symbol, adjust_type, period
             )
 
-        # 写入缓存（缓存复权后数据）
+        # 写入缓存（缓存复权后数据，包含时间戳）
         if use_cache and not historical.df.empty:
             cache_df = historical.df.tail(CACHE_SIZE).copy() if len(historical.df) > CACHE_SIZE else historical.df.copy()
+            last_time = cache_df.iloc[-1]['datetime']
+
+            # 新缓存格式：包含DataFrame和最后时间戳
+            cache_entry = {
+                'df': cache_df,
+                'last_time': last_time
+            }
+
             ttl = 60 if period in ['1m', '5m', '15m', '30m', '1h'] else 300
-            self._kline_cache.set(cache_key, cache_df, ttl=ttl)
+            self._kline_cache.set(cache_key, cache_entry, ttl=ttl)
             logger.debug(f"[K线缓存] 已缓存: {symbol} {period} {adjust_type}, {len(cache_df)}条")
 
         # 日线特殊处理：标准化时间并过滤周末
@@ -199,7 +256,9 @@ class SeamlessKlineService:
             before_count = len(historical.df)
             historical = historical.filter_by_count(return_count, from_end=True)
             after_count = len(historical.df)
-            logger.info(f"[数量限制] 请求={count}, return_count={return_count}, 限制前={before_count}, 限制后={after_count}")
+            logger.info(f"[数量限制] {symbol} {period}: 请求={count}, return_count={return_count}, 限制前={before_count}, 限制后={after_count}")
+        else:
+            logger.info(f"[数量限制] {symbol} {period}: count为None或0，跳过数量限制，返回全部{len(historical.df)}条")
 
         # 标记正在形成的K线
         historical.df = self._mark_forming_kline(historical.df, period)
@@ -232,21 +291,25 @@ class SeamlessKlineService:
             return df
 
         try:
-            # 混合模式：根据周期选择实际的复权方式
-            if period == '1d':
-                actual_adjust_type = 'front'  # 日线用前复权
-            else:
-                actual_adjust_type = 'front'  # 分钟线也用前复权（暂时禁用front_ratio）
+            # 混合模式：暂时禁用front_ratio，所有周期都用front
+            # TODO: front_ratio算法需要重新修复
+            actual_adjust_type = 'front'  # 所有周期都用前复权
 
             # 如果用户明确请求了等比复权，尊重用户选择
             if adjust_type in ['front_ratio', 'back_ratio']:
                 actual_adjust_type = adjust_type
 
-            logger.debug(f"[复权] {symbol} {period}: 用户请求{adjust_type}, 实际使用{actual_adjust_type}")
+            logger.info(f"[复权] {symbol} {period}: 用户请求{adjust_type}, 实际使用{actual_adjust_type}")
 
             # 使用因子服务获取预计算的因子表并应用
             factor_table = self._factor_service.get_factor_table(symbol, actual_adjust_type)
             if factor_table:
+                # DEBUG: 打印今天的因子
+                from datetime import datetime
+                today = datetime.now().strftime('%Y-%m-%d')
+                today_factor = factor_table.get(today, 'N/A')
+                logger.info(f"[复权DEBUG] 今天({today})的{actual_adjust_type}因子: {today_factor}")
+
                 result = self._factor_service.apply_factors(df, factor_table)
                 logger.info(f"[复权] {symbol} {period} 应用 {actual_adjust_type} 复权完成，"
                            f"共{len(factor_table)}个因子")

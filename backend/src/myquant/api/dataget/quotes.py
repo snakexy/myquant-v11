@@ -36,8 +36,10 @@ class SeamlessKlineRequest(BaseModel):
     """无缝K线请求（批量）"""
     symbols: List[str] = Field(..., description="股票代码列表", min_length=1, max_length=100)
     period: str = Field("1m", description="周期: 1m, 5m, 15m, 30m, 1h, 1d")
+    count: int = Field(100, description="返回数量", ge=1, le=1000)
     end_date: Optional[str] = Field(None, description="结束日期 YYYY-MM-DD")
-    days_back: int = Field(5, description="历史回溯天数", ge=1, le=30)
+    start_date: Optional[str] = Field(None, description="开始日期 YYYY-MM-DD")
+    days_back: int = Field(5, description="历史回溯天数（当count未指定时使用）", ge=1, le=30)
     adjust_type: str = Field("none", description="复权类型: none/front/back/front_ratio/back_ratio")
 
 
@@ -253,8 +255,8 @@ async def get_seamless_kline(request: SeamlessKlineRequest):
                     symbol=symbol,
                     period=request.period,
                     end_date=request.end_date,
-                    count=None,
-                    start_date=None,
+                    count=request.count,  # 使用用户请求的数量
+                    start_date=request.start_date,
                     include_realtime=True,
                     adjust_type=_map_adjust_type(request.adjust_type),
                 )

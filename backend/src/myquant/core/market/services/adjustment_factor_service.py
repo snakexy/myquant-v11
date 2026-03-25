@@ -435,37 +435,60 @@ class AdjustmentFactorService:
             denominator = (1 + songgu + peigu).replace(0, np.nan)
             dividend_records['ratio_factor'] = (1 / denominator).fillna(1.0)
 
-            # 5. 按日期排序并累积（从新到旧）
-            dividend_records = dividend_records.sort_values('date', ascending=False)
+            # 5. 按日期排序（从旧到新，升序）
+            dividend_records = dividend_records.sort_values('date', ascending=True)
+
+            # 6. 从旧到新累积计算
+            # 这样越新的日期累积值越大（累积了更多除权）
             dividend_records['cumulative'] = dividend_records['ratio_factor'].cumprod()
 
-            # 关键修正：前复权因子应该是累积值的倒数
-            # 这样最新价格不变，历史价格按比例放大
-            dividend_records['cumulative'] = 1.0 / dividend_records['cumulative']
+            # 7. 取倒数作为前复权因子
+            # 最新日期的cumulative最大，倒数最小→接近1.0（最新价格不变）
+            # 早期日期的cumulative接近1.0，倒数较大→历史价格放大
+            dividend_records['adjustment_factor'] = 1.0 / dividend_records['cumulative']
 
-            # 6. 动态日期范围
-            start_date = dividend_records['date'].min()
+            # 8. 动态日期范围
+            earliest_ex_date = dividend_records['date'].min()
+            latest_ex_date = dividend_records['date'].max()
+            start_date = earliest_ex_date - pd.Timedelta(days=7)  # 往前推7天
             end_date = pd.Timestamp.now()
 
             daily_df = pd.DataFrame({
                 'date': pd.date_range(start=start_date, end=end_date, freq='D')
             })
 
-            # 7. 向量查找（merge_asof）
-            # direction='backward': 向后查找最近的除权日
+            # 9. 向量化查找（merge_asof with direction='backward'）
+            # 关键理解：
+            # - dividend_records 已按 date 升序排列
+            # - cumulative 已从旧到新累积（越新越大）
+            # - direction='backward': 向后找最近的除权日
+            #   - 除权日当天：找到自己的累积因子
+            #   - 除权日之间的日期：找到上一个除权日的累积因子
+            #   - 最旧除权日之前的日期：找不到 → NaN → 需要特殊处理
+            # merge_asof 要求 left 必须升序
             result_df = pd.merge_asof(
-                daily_df,
-                dividend_records[['date', 'cumulative']],
+                daily_df,  # 默认已升序
+                dividend_records[['date', 'cumulative']],  # 升序
                 on='date',
                 direction='backward'
             )
 
-            # 填充：最新除权日之后的用1.0
-            result_df['cumulative'] = result_df['cumulative'].fillna(1.0)
+            # 10. 特殊处理
+            # 最新除权日之后的日期因子=1.0（最新价格不变）
+            result_df.loc[result_df['date'] > latest_ex_date, 'cumulative'] = 1.0
 
-            # 8. 转为字典
+            # 最旧除权日之前的日期：应该使用最旧除权日的累积因子
+            # 这些日期的 cumulative 是 NaN（找不到过去的除权日）
+            earliest_cumulative = dividend_records.iloc[0]['cumulative']
+            result_df['cumulative'] = result_df['cumulative'].fillna(earliest_cumulative)
+
+            # 11. 取倒数作为前复权因子
+            # 这样最新日期factor=1.0，旧日期factor>1.0（历史价格放大）
+            result_df['adjustment_factor'] = 1.0 / result_df['cumulative']
+
+            # 12. 转为字典
             result_df['date_str'] = result_df['date'].dt.strftime('%Y-%m-%d')
-            return result_df.set_index('date_str')['cumulative'].to_dict()
+            return result_df.set_index('date_str')['adjustment_factor'].to_dict()
 
         except Exception as e:
             logger.warning(f"[FactorCalc] 等比复权向量化计算失败: {e}，回退到循环版本")
