@@ -30,6 +30,7 @@ class CodeTypeFilter:
         'pytdx': {AssetType.STOCK, AssetType.INDEX, AssetType.SECTOR_BLOCK, AssetType.ETF},
         'localdb': {AssetType.STOCK, AssetType.INDEX},
         'tdxlocal': {AssetType.STOCK, AssetType.INDEX, AssetType.SECTOR_BLOCK},
+        'hotdb': {AssetType.STOCK, AssetType.INDEX},  # 热数据库
     }
 
     def __init__(self):

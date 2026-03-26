@@ -23,7 +23,7 @@ interface BatchRequest {
   timestamp: number
 }
 
-type RefreshCallback = (stocks: string[]) => Promise<void>
+type RefreshCallback = (stocks: string[]) => Promise<boolean>  // 返回是否执行了请求
 
 export class RefreshScheduler {
   private tasks: Map<string, RefreshTask> = new Map()
@@ -207,14 +207,14 @@ export class RefreshScheduler {
     this.activeRequests++
     const startTime = Date.now()
 
-    console.log(`[Scheduler] 执行批量请求: ${batch.stocks.length} 只股票`)
-    console.log(`[Scheduler] 涉及分组: ${batch.groupIds.join(', ')}`)
-
     try {
-      await this.refreshCallback(batch.stocks)
+      const executed = await this.refreshCallback(batch.stocks)
 
-      const elapsed = Date.now() - startTime
-      console.log(`[Scheduler] 批量请求完成，耗时: ${elapsed}ms`)
+      if (executed) {
+        const elapsed = Date.now() - startTime
+        console.log(`[Scheduler] 批量请求完成，耗时: ${elapsed}ms`)
+      }
+      // 如果 executed 为 false，说明市场关闭，静默跳过
     } catch (error) {
       console.error('[Scheduler] 批量请求失败:', error)
     } finally {

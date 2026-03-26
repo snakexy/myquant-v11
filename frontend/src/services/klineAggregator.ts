@@ -20,7 +20,7 @@ interface AggregatedBar {
 }
 
 /**
- * 获取时间戳对应的周期开始时间
+ * 获取时间戳对应的周期开始时间（用于内部聚合逻辑）
  */
 function getPeriodStart(timestamp: number, timeframe: Timeframe): number {
   const date = new Date(timestamp * 1000)
@@ -36,7 +36,9 @@ function getPeriodStart(timestamp: number, timeframe: Timeframe): number {
       date.setMinutes(Math.floor(date.getMinutes() / 15) * 15, 0, 0)
       break
     case '30m':
-      date.setMinutes(Math.floor(date.getMinutes() / 30) * 30, 0, 0)
+      // 30分钟：00-29 属于 xx:00 周期，30-59 属于 xx:30 周期
+      const minute = date.getMinutes()
+      date.setMinutes(minute >= 30 ? 30 : 0, 0, 0)
       break
     case '1h':
       date.setMinutes(0, 0, 0)
@@ -58,6 +60,34 @@ function getPeriodStart(timestamp: number, timeframe: Timeframe): number {
   }
 
   return Math.floor(date.getTime() / 1000)
+}
+
+/**
+ * 获取周期显示时间（图表上显示的时间）
+ * 所有周期（除1分钟外）显示在周期结束时间
+ * 如：14:25-14:30 显示在 14:30
+ */
+function getDisplayTime(periodStart: number, timeframe: Timeframe): number {
+  // 1分钟周期直接用开始时间
+  if (timeframe === '1m') {
+    return periodStart
+  }
+
+  // 其他周期：显示在周期结束时间
+  // 简单方法：周期开始 + 周期长度 - 1秒
+  // 这样14:30-15:00显示在14:59:59，TradingView会显示为14:30（可能需要微调）
+  const tfSeconds: Record<Timeframe, number> = {
+    '5m': 300,
+    '15m': 900,
+    '30m': 1800,
+    '1h': 3600,
+    '1d': 86400,
+    '1w': 604800,
+    '1M': 2592000
+  }
+
+  // 直接返回周期结束时间（不减1秒）
+  return periodStart + tfSeconds[timeframe]
 }
 
 /**
@@ -139,6 +169,10 @@ export class KlineAggregator {
       : bar.time
 
     const periodStart = getPeriodStart(timestamp, this.timeframe)
+    const barTime = new Date(timestamp * 1000)
+    const periodTime = new Date(periodStart * 1000)
+    const displayTime = getDisplayTime(periodStart, this.timeframe)
+    const displayTimeDate = new Date(displayTime * 1000)
 
     let isNewBar = false
 
@@ -147,26 +181,32 @@ export class KlineAggregator {
       if (this.currentBar) {
         // 保存上一根完成的bar
         this.bars.set(this.currentBar.timestamp, this.currentBar)
+        console.log(`[KlineAggregator] ${this.timeframe} 完成: ${new Date(this.currentBar.timestamp * 1000).toLocaleTimeString()}`)
       }
 
       // 创建新bar
+      const displayTime = getDisplayTime(periodStart, this.timeframe)
       this.currentBar = {
-        time: periodStart,
+        time: displayTime,      // 图表显示时间
         open: bar.open,
         high: bar.high,
         low: bar.low,
         close: bar.close,
         volume: bar.volume,
-        timestamp: periodStart
+        timestamp: periodStart  // 内部逻辑用（周期开始）
       }
 
       isNewBar = true
+      console.log(`[KlineAggregator] ${this.timeframe} 新周期: 原始=${barTime.toLocaleTimeString()} -> 周期=${periodTime.toLocaleTimeString()} -> 显示=${new Date(displayTime * 1000).toLocaleTimeString()}`)
     } else {
       // 更新当前bar
       this.currentBar.high = Math.max(this.currentBar.high, bar.high)
       this.currentBar.low = Math.min(this.currentBar.low, bar.low)
       this.currentBar.close = bar.close
       this.currentBar.volume += bar.volume
+      if (isRealtime) {
+        console.log(`[KlineAggregator] ${this.timeframe} 更新: 原始=${barTime.toLocaleTimeString()} -> 显示=${displayTimeDate.toLocaleTimeString()}, close=${bar.close}`)
+      }
     }
 
     const result: any = { bars: this.getBars(), isNewBar }
@@ -217,12 +257,16 @@ export class KlineAggregator {
     const sortedTimestamps = Array.from(this.bars.keys()).sort((a, b) => a - b)
     for (const ts of sortedTimestamps) {
       const bar = this.bars.get(ts)
-      if (bar) bars.push({ ...bar })
+      if (bar) {
+        bars.push({ ...bar })
+        console.log(`[KlineAggregator] 已完成K线: ${new Date(bar.time * 1000).toLocaleTimeString()} (timestamp=${new Date(ts * 1000).toLocaleTimeString()})`)
+      }
     }
 
     // 添加当前正在形成的bar
     if (this.currentBar) {
       bars.push({ ...this.currentBar })
+      console.log(`[KlineAggregator] 当前K线: 显示时间=${new Date(this.currentBar.time * 1000).toLocaleTimeString()}, timestamp=${new Date(this.currentBar.timestamp * 1000).toLocaleTimeString()}`)
     }
 
     return bars

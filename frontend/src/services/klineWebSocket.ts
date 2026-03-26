@@ -18,11 +18,12 @@ export type KlineMessageHandler = (data: KlineBar | KlineBar[]) => void
 
 export interface KlineWebSocketConfig {
   onHistory?: (bars: KlineBar[]) => void
-  onBarUpdate?: (bar: KlineBar) => void
-  onBarClose?: (bar: KlineBar) => void
+  onBarUpdate?: (bar: KlineBar, period?: string) => void  // 增加 period 参数
+  onBarClose?: (bar: KlineBar, period?: string) => void  // 增加 period 参数
   onError?: (message: string) => void
   onConnected?: () => void
   onDisconnected?: () => void
+  refreshInterval?: number  // 刷新间隔（秒），根据分组配置（3/5/10/30）
 }
 
 export class KlineWebSocket {
@@ -46,8 +47,11 @@ export class KlineWebSocket {
 
     // 根据当前页面协议选择 ws:// 或 wss://
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const wsUrl = `${protocol}//localhost:8000/ws/kline/${this.symbol}`
-    console.log('[KlineWS] 连接:', wsUrl)
+
+    // 构建 WebSocket URL，添加 refresh_interval 参数
+    const refreshInterval = this.config.refreshInterval ?? 5  // 默认 5 秒
+    const wsUrl = `${protocol}//localhost:8000/ws/kline/${this.symbol}?refresh_interval=${refreshInterval}`
+    console.log('[KlineWS] 连接:', wsUrl, `(刷新间隔: ${refreshInterval}秒)`)
 
     try {
       this.ws = new WebSocket(wsUrl)
@@ -120,13 +124,13 @@ export class KlineWebSocket {
           break
 
         case 'bar_update':
-          console.log('[KlineWS] 📊 Bar 更新:', message.bar)
-          this.config.onBarUpdate?.(message.bar)
+          console.log('[KlineWS] 📊 Bar 更新:', message.bar, 'period:', message.period)
+          this.config.onBarUpdate?.(message.bar, message.period)
           break
 
         case 'bar_close':
-          console.log('[KlineWS] 📈 Bar 收线:', message.bar)
-          this.config.onBarClose?.(message.bar)
+          console.log('[KlineWS] 📈 Bar 收线:', message.bar, 'period:', message.period)
+          this.config.onBarClose?.(message.bar, message.period)
           break
 
         case 'error':

@@ -105,12 +105,32 @@ export const fetchKline = async (
   symbol: string,
   period: string = '1d',
   count: number = 800,
-  adjustType: string = 'qfq'
+  adjustType: string = 'qfq',
+  useCache: boolean = true
 ): Promise<KlineResponse> => {
   const { data } = await v5Api.get<KlineResponse>(`/kline/realtime/${symbol}`, {
-    params: { period, count, adjust_type: adjustType }
+    params: { period, count, adjust_type: adjustType, use_cache: useCache }
   })
   return data
+}
+
+/** 获取后台聚合K线数据（瞬间返回）*/
+export const fetchAggregatedKline = async (
+  symbol: string,
+  period: string = '1d',
+  count: number = 800,
+  adjustType: string = 'qfq'
+): Promise<KlineResponse | null> => {
+  try {
+    const { data } = await v5Api.get<KlineResponse>(`/kline/aggregated/${symbol}`, {
+      params: { period, count, adjust_type: adjustType },
+      timeout: 5000  // 5秒超时（应该瞬间返回）
+    })
+    return data
+  } catch {
+    // 聚合端点失败返回 null，让调用方降级到普通端点
+    return null
+  }
 }
 
 /** 获取单只股票快照 */

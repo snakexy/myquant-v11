@@ -28,6 +28,11 @@ AUTO_SAVE_TO_LOCALDB = True  # 开关
 SAVE_PERIODS = {'1d'}  # 只保存日线数据
 SAVE_ONLINE_SOURCES = {'xtquant', 'pytdx', 'tdxquant'}  # 只保存从在线源获取的数据
 
+# HotDB 自动保存配置
+AUTO_SAVE_TO_HOTDB = True  # 开关
+HOTDB_SAVE_PERIODS = {'1m', '5m', '15m', '30m', '1h', '1d', '1w', '1M'}  # 保存所有周期
+HOTDB_SAVE_ONLINE_SOURCES = {'xtquant', 'pytdx', 'tdxquant'}  # 只保存从在线源获取的数据
+
 
 import pickle
 import os
@@ -58,8 +63,8 @@ class SeamlessKlineService:
         self._xdxr_cache = TTLCache(maxsize=200, ttl=3600)  # 1小时TTL
         # XDXR文件缓存TTL（秒）：1天
         self._xdxr_file_ttl = 24 * 3600
-        # K线数据缓存（TTL 60秒，加速周期切换）
-        self._kline_cache = TTLCache(maxsize=500, ttl=60)
+        # K线数据缓存（TTL 10分钟，加速股票切换）
+        self._kline_cache = TTLCache(maxsize=1000, ttl=600)
         # 复权因子服务（预计算复权因子表，支持混合模式）
         self._factor_service = get_adjustment_factor_service()
         logger.info("[SeamlessKlineService] 初始化完成，混合模式复权已启用，K线缓存已开启")
@@ -78,7 +83,8 @@ class SeamlessKlineService:
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
         include_realtime: bool = True,
-        adjust_type: str = 'none'
+        adjust_type: str = 'none',
+        use_cache: bool = True
     ) -> pd.DataFrame:
         """获取无缝 K线数据
 
@@ -90,6 +96,7 @@ class SeamlessKlineService:
             end_date: 结束日期
             include_realtime: 是否包含实时数据
             adjust_type: 复权类型 (none/front/back)
+            use_cache: 是否使用缓存
 
         Returns:
             DataFrame with OHLCV columns
@@ -98,13 +105,13 @@ class SeamlessKlineService:
         CACHE_SIZE = 5000
         cache_key = f"kline:{symbol}:{period}:{adjust_type}"
 
-        # 检查缓存（仅对分钟线和日线有效）
-        use_cache = period in ['1m', '5m', '15m', '30m', '1h', '1d']
+        # 检查缓存（仅对分钟线和日线有效，且 use_cache=True）
+        use_cache_flag = use_cache and period in ['1m', '5m', '15m', '30m', '1h', '1d']
         cached_data = None
         cached_last_time = None
         incremental_fetch = False
 
-        if use_cache:
+        if use_cache_flag:
             cached_entry = self._kline_cache.get(cache_key)
             if cached_entry is not None:
                 # 缓存条目格式: {'df': DataFrame, 'last_time': timestamp}
@@ -134,7 +141,7 @@ class SeamlessKlineService:
             fetch_count = count + 10 if count < 100 else count
             start_date_for_fetch = cached_last_time
             logger.info(f"[增量获取] {symbol} {period}: 从 {cached_last_time} 开始获取新数据")
-        elif use_cache and cached_data is not None and not cached_data.empty:
+        elif use_cache_flag and cached_data is not None and not cached_data.empty:
             # 缓存存在但不需要增量（时间戳为空或请求指定了start_date）
             logger.debug(f"[K线缓存] 直接返回缓存数据")
             return cached_data.copy()
@@ -503,7 +510,8 @@ class SeamlessKlineService:
         count: int,
         start_date: Optional[str],
         end_date: Optional[str],
-        adjust_type: str
+        adjust_type: str,
+        use_cache: bool = True
     ) -> KlineDataset:
         """获取历史 K线数据
 
@@ -513,37 +521,17 @@ class SeamlessKlineService:
                 - PyTdx 支持原生复权 (front/back/none)
                 - 其他数据源返回不复权数据，由服务层处理
         """
-        # 获取基础数据源链
+        # 从 level_router 获取数据源链（已根据交易时间调整优先级）
+        is_trading = TradingTimeChecker.is_trading_time()
         chain = self._selector.get_fallback_chain_for_code(DataLevel.L3, symbol)
 
-        # 服务层：根据交易时间调整数据源优先级
-        is_trading = TradingTimeChecker.is_trading_time()
+        # level_router 已根据交易时间返回正确的优先级，服务层不再覆盖
+        logger.debug(f"[SeamlessService] {symbol} 数据源链: {chain} (交易时间: {is_trading})")
 
-        if is_trading:
-            # 开盘在线优先: tdxquant → xtquant → pytdx
-            trading_priority = ['tdxquant', 'xtquant', 'pytdx']
-            adjusted_chain = []
-            for s in trading_priority:
-                if s in chain:
-                    adjusted_chain.append(s)
-            # 添加其他不在列表中的源
-            for s in chain:
-                if s not in adjusted_chain:
-                    adjusted_chain.append(s)
-            chain = adjusted_chain
-            logger.debug(f"[服务层] 交易时间，优先级: {chain}")
-        else:
-            # 收盘在线优先: xtquant → pytdx（不使用 tdxquant，也不使用 localdb）
-            # 非交易时间只用在线数据源，确保数据是最新的
-            # LocalDB 可能有过期数据（如缺少最近交易日），必须排除
-            online_sources = ['xtquant', 'pytdx']
-            adjusted_chain = []
-            for s in online_sources:
-                if s in chain:
-                    adjusted_chain.append(s)
-            # 不添加其他源（排除 localdb 和 tdxquant）
-            chain = adjusted_chain
-            logger.debug(f"[服务层] 非交易时间，优先级（仅在线源）: {chain}")
+        # 当 use_cache=false 时，排除 hotdb（强制使用在线源）
+        if not use_cache and 'hotdb' in chain:
+            chain = [s for s in chain if s != 'hotdb']
+            logger.debug(f"[SeamlessService] use_cache=False，排除 hotdb，剩余: {chain}")
 
         adapter = chain[0] if chain else None
 
@@ -578,6 +566,10 @@ class SeamlessKlineService:
                     # 自动保存到LocalDB（如果是从在线源获取的数据）
                     if AUTO_SAVE_TO_LOCALDB and try_adapter in SAVE_ONLINE_SOURCES:
                         self._save_to_localdb(symbol, df, period, try_adapter)
+
+                    # 自动保存到HotDB（如果是从在线源获取的数据）
+                    if AUTO_SAVE_TO_HOTDB and try_adapter in HOTDB_SAVE_ONLINE_SOURCES:
+                        self._save_to_hotdb(symbol, df, period, try_adapter)
 
                     return KlineDataset.from_adapter(df_dict[symbol], try_adapter)
 
@@ -618,13 +610,13 @@ class SeamlessKlineService:
 
         logger.info(f"[补充数据] 开始获取 {symbol} 从 {start_date} 到 {end_date} 的数据")
 
-        # 数据源优先级链（补充数据时跳过 localdb，因为它只有历史数据）
+        # 数据源优先级链（补充数据时跳过 localdb 和 hotdb，因为 hotdb 是缓存，补充数据应从在线源取）
         fallback_chain = self._selector.get_fallback_chain_for_code(DataLevel.L3, symbol)
-        # 移除 localdb；非交易时间也移除 tdxquant（终端未运行）
+        # 移除 localdb 和 hotdb；非交易时间也移除 tdxquant（终端未运行）
         is_trading = TradingTimeChecker.is_trading_time()
         supplement_chain = [
             s for s in fallback_chain
-            if s != 'localdb' and (is_trading or s != 'tdxquant')
+            if s not in ('localdb', 'hotdb') and (is_trading or s != 'tdxquant')
         ]
 
         # 对于日线数据，PyTdx 有最新的交易日数据，优先使用
@@ -692,6 +684,10 @@ class SeamlessKlineService:
                         # 自动保存到LocalDB（如果是从在线源获取的数据）
                         if AUTO_SAVE_TO_LOCALDB and source in SAVE_ONLINE_SOURCES:
                             self._save_to_localdb(symbol, df, period, source)
+
+                        # 自动保存到HotDB（如果是从在线源获取的数据）
+                        if AUTO_SAVE_TO_HOTDB and source in HOTDB_SAVE_ONLINE_SOURCES:
+                            self._save_to_hotdb(symbol, df, period, source)
 
                         return KlineDataset.from_adapter(df, source)
                 else:
@@ -782,6 +778,43 @@ class SeamlessKlineService:
 
         except Exception as e:
             logger.warning(f"[LocalDB] 保存过程出错: {e}")
+
+    def _save_to_hotdb(self, symbol: str, df: pd.DataFrame, period: str, source: str):
+        """保存数据到热数据库（HotDB）
+
+        热数据库用于自选股实时行情加速，数据会频繁更新。
+        日线使用智能合并（追加新日期），分钟线使用覆盖模式。
+
+        Args:
+            symbol: 股票代码
+            df: K线数据DataFrame
+            period: 周期
+            source: 数据源名称
+        """
+        # 检查是否需要保存
+        if not AUTO_SAVE_TO_HOTDB:
+            return
+        if period not in HOTDB_SAVE_PERIODS:
+            return
+        if source not in HOTDB_SAVE_ONLINE_SOURCES:
+            return
+
+        try:
+            # 获取HotDB适配器
+            hotdb = self._get_adapter('hotdb')
+            if not hotdb:
+                logger.debug("[HotDB] 适配器不可用，跳过保存")
+                return
+
+            # 保存数据（HotDB 内部会处理日线追加和分钟线覆盖）
+            success = hotdb.save_kline(symbol, df, period)
+            if success:
+                logger.info(f"[HotDB] 从 {source} 自动保存 {symbol} {period}: {len(df)} 条")
+            else:
+                logger.warning(f"[HotDB] 保存 {symbol} {period} 失败")
+
+        except Exception as e:
+            logger.warning(f"[HotDB] 保存过程出错: {e}")
 
     def _get_adapter(self, name: str):
         """获取或创建适配器（带缓存）"""

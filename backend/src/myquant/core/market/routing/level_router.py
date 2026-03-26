@@ -7,6 +7,7 @@ L0-L5 数据层级路由
 from enum import Enum
 from typing import Dict, List, Optional, Set
 from dataclasses import dataclass
+from loguru import logger
 
 
 class DataLevel(str, Enum):
@@ -60,7 +61,8 @@ class DataLevel(str, Enum):
     @property
     def priority(self) -> int:
         """层级优先级（数字越小优先级越高）"""
-        return [self.L0, self.L1, self.L2, self.L3, self.L4, self.L5].index(self)
+        levels = [self.L0, self.L1, self.L2, self.L3, self.L4, self.L5]
+        return levels.index(self)
 
 
 @dataclass
@@ -81,9 +83,9 @@ class LevelRouter:
     LEVEL_CONFIGS: Dict[DataLevel, LevelConfig] = {
         # L0: 订阅缓存（交易时间）
         DataLevel.L0: LevelConfig(
-            stock_sources=['xtquant', 'tdxquant'],  # XtQuant(300股) + TdxQuant(100股) 双订阅
-            index_sources=[],                        # 指数不支持订阅
-            sector_sources=['tdxquant'],             # 板块仅 TdxQuant 支持
+            stock_sources=['xtquant', 'tdxquant'],  # 双订阅
+            index_sources=[],  # 指数不支持订阅
+            sector_sources=['tdxquant'],  # 板块仅 TdxQuant 支持
         ),
 
         # L1: 实时快照
@@ -95,18 +97,17 @@ class LevelRouter:
 
         # L2: 历史摘要（30天K线摘要）
         DataLevel.L2: LevelConfig(
-            stock_sources=['localdb', 'xtquant', 'pytdx'],
-            index_sources=['localdb', 'xtquant', 'pytdx'],
+            stock_sources=['hotdb', 'localdb', 'xtquant', 'pytdx'],
+            index_sources=['hotdb', 'localdb', 'xtquant', 'pytdx'],
             sector_sources=[],  # 板块不支持历史摘要
         ),
 
         # L3: 完整K线
-        # 优先使用在线数据源（PyTdx/TdxQuant/XtQuant）确保数据完整性和准确性
-        # LocalDB 作为最后的补充（数据可能较旧且成交量缺失）
+        # HotDB (热数据库，盘中实时更新) → LocalDB → 在线源
         DataLevel.L3: LevelConfig(
-            stock_sources=['tdxquant', 'pytdx', 'xtquant'],  # 在线优先：TdxQuant→PyTdx→XtQuant
-            index_sources=['tdxquant', 'pytdx', 'xtquant'],  # 指数同样优先在线
-            sector_sources=['tdxquant', 'pytdx'],  # 板块：TdxQuant（覆盖最全）→PyTdx
+            stock_sources=['hotdb', 'localdb', 'tdxquant', 'pytdx', 'xtquant'],
+            index_sources=['hotdb', 'localdb', 'tdxquant', 'pytdx', 'xtquant'],
+            sector_sources=['tdxquant', 'pytdx'],  # 板块
         ),
 
         # L4: 财务数据
@@ -128,15 +129,24 @@ class LevelRouter:
         self._available_sources: Set[str] = set()
         self._unavailable_sources: Set[str] = set()
 
-    def get_sources(self, level: DataLevel, asset_type: str = 'stock') -> List[str]:
-        """获取指定层级和资产类型的数据源列表
+    def get_sources(
+        self, level: DataLevel, asset_type: str = 'stock',
+        is_trading: bool = True
+    ) -> List[str]:
+        """获取指定层级和资产类型的数据源列表（支持交易时间感知）
 
         Args:
             level: 数据层级
             asset_type: 资产类型 (stock/index/sector)
+            is_trading: 是否在交易时间（用于调整数据源优先级）
 
         Returns:
             数据源名称列表（按优先级排序）
+
+        优先级策略：
+        - HotDB → LocalDB → 在线源（无论盘中盘后）
+        - 盘中排除 tdxquant（如果通达信终端未运行）
+        - 盘后直接排除 tdxquant（需要通达信终端）
         """
         config = self.LEVEL_CONFIGS.get(level)
         if not config:
@@ -150,6 +160,13 @@ class LevelRouter:
             sources = config.sector_sources
         else:
             sources = config.stock_sources
+
+        # 非交易时间排除 TdxQuant（需要通达信终端运行）
+        if not is_trading:
+            sources = [s for s in sources if s != 'tdxquant']
+            logger.debug(
+                f"[LevelRouter] 盘后，排除 TdxQuant: {sources}"
+            )
 
         # 过滤掉不可用的数据源
         return [s for s in sources if s not in self._unavailable_sources]

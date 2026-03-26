@@ -15,6 +15,7 @@ import pandas as pd
 from myquant.core.market.services.kline import (
     get_intraday_kline_service,
     get_seamless_kline_service,
+    get_kline_service,
 )
 
 
@@ -165,7 +166,8 @@ async def get_realtime_kline(
     symbol: str,
     period: str = Query("1d", description="周期: 1m, 5m, 15m, 30m, 1h, 1d"),
     count: int = Query(100, description="返回数量", ge=1, le=1000),
-    adjust_type: str = Query("none", description="复权类型: none/qfq/hfq/qfq_ratio/hfq_ratio")
+    adjust_type: str = Query("none", description="复权类型: none/qfq/hfq/qfq_ratio/hfq_ratio"),
+    use_cache: bool = Query(True, description="是否使用缓存")
 ):
     """获取单只股票K线（历史+实时无缝）
 
@@ -179,7 +181,8 @@ async def get_realtime_kline(
             period=period,
             count=count,
             include_realtime=True,
-            adjust_type=_map_adjust_type(adjust_type)
+            adjust_type=_map_adjust_type(adjust_type),
+            use_cache=use_cache
         )
 
         if df is None or df.empty:
@@ -201,6 +204,85 @@ async def get_realtime_kline(
         raise
     except Exception as e:
         logger.error(f"[V5] 获取K线失败: symbol={symbol}, error={e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/aggregated/{symbol}", response_model=KlineDataResponse)
+async def get_aggregated_kline(
+    symbol: str,
+    period: str = Query("1d", description="周期: 5m, 15m, 30m, 1h, 1d"),
+    count: int = Query(800, description="返回数量", ge=1, le=2000),
+    adjust_type: str = Query("none", description="复权类型: none/qfq/hfq"),
+):
+    """从后台聚合器获取K线数据（瞬间返回）
+
+    优先从 KlineService 的后台聚合器获取数据（已实时更新）。
+    如果聚合器没有数据，降级到 seamless_service。
+    """
+    try:
+        # 优先从后台聚合器获取
+        kline_service = get_kline_service()
+        bars = await run_in_threadpool(
+            kline_service.get_aggregated_bars,
+            symbol=symbol,
+            period=period
+        )
+
+        # 如果聚合器有数据，直接返回
+        if bars:
+            items = [
+                KlineItem(
+                    time=bar['time'],
+                    open=bar['open'],
+                    high=bar['high'],
+                    low=bar['low'],
+                    close=bar['close'],
+                    volume=bar['volume'],
+                    amount=bar.get('amount'),
+                    is_complete=bar.get('is_complete', True),
+                )
+                for bar in bars
+            ]
+            logger.info(f"[V5] aggregated {symbol} {period}: {len(items)} 条 (聚合器)")
+            return KlineDataResponse(
+                symbol=symbol,
+                period=period,
+                data=items,
+                data_source='aggregated',
+                count=len(items),
+                adjust_type=adjust_type,
+            )
+
+        # 降级：从 seamless_service 获取
+        service = get_seamless_kline_service()
+        df = await run_in_threadpool(
+            service.get_kline,
+            symbol=symbol,
+            period=period,
+            count=count,
+            include_realtime=True,
+            adjust_type=_map_adjust_type(adjust_type),
+        )
+
+        if df is None or df.empty:
+            raise HTTPException(status_code=503, detail=f"无法获取 {symbol} 的K线数据")
+
+        items = _df_to_kline_items(df)
+        logger.info(f"[V5] {symbol} {period}: {len(items)} 条 (降级seamless)")
+
+        return KlineDataResponse(
+            symbol=symbol,
+            period=period,
+            data=items,
+            data_source='seamless',
+            count=len(items),
+            adjust_type=adjust_type,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[V5] 获取聚合K线失败: symbol={symbol}, error={e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

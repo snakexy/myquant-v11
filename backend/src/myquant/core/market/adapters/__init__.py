@@ -14,6 +14,7 @@ from .xtquant_adapter import V5XtQuantAdapter, create_xtquant_adapter
 from .tdxquant_adapter import V5TdxQuantAdapter, create_tdxquant_adapter
 from .localdb_adapter import V5LocalDBAdapter, create_localdb_adapter
 from .tdxlocal_adapter import V5TdxLocalAdapter, create_tdxlocal_adapter
+from .hotdb_adapter import V5HotDBAdapter, create_hotdb_adapter
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +32,7 @@ class AdapterFactory:
         'tdxquant': create_tdxquant_adapter,
         'localdb': create_localdb_adapter,
         'tdxlocal': create_tdxlocal_adapter,
+        'hotdb': create_hotdb_adapter,  # 热数据库
     }
 
     # 单例缓存：每个 name 只创建一次实例

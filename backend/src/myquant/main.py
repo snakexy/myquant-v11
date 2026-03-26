@@ -8,6 +8,8 @@ MyQuant v11 - FastAPI 入口
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
+import asyncio
+from loguru import logger
 
 from myquant.api.dataget import (
     quotes_router,
@@ -15,6 +17,7 @@ from myquant.api.dataget import (
     incremental_router,
     conversion_router,
     market_router,
+    hotdata_router,
 )
 from myquant.api.dataget.kline_ws import router as ws_kline_router
 
@@ -24,9 +27,52 @@ async def lifespan(app: FastAPI):
     """应用生命周期管理"""
     # 启动时
     print("MyQuant v11 starting...")
+
+    # 启动后预热 HotDB
+    asyncio.create_task(preheat_hotdb())
+
     yield
+
     # 关闭时
     print("MyQuant v11 stopped")
+
+
+async def preheat_hotdb():
+    """预热 HotDB（后台任务）"""
+    await asyncio.sleep(1)  # 等待服务完全启动
+
+    try:
+        from myquant.core.market.services.hotdb_service import get_hotdb_service
+
+        hotdb_service = get_hotdb_service()
+
+        # 默认预热股票列表
+        default_symbols = [
+            '600000.SH', '000001.SZ', '601628.SH',  # 主要指数股
+            '510300.SH', '159919.SZ',  # ETF
+        ]
+
+        # 预热周期
+        periods = ['1d', '5m', '15m']
+
+        logger.info(f"[预热] 开始预热 HotDB: {len(default_symbols)} 只股票 x {len(periods)} 周期")
+
+        result = hotdb_service.preheat(
+            symbols=default_symbols,
+            periods=periods
+        )
+
+        if result.get('success'):
+            logger.info(
+                f"[预热] 完成: 成功 {result['saved_count']}, "
+                f"跳过 {result['skipped_count']}, "
+                f"失败 {result['failed_count']}"
+            )
+        else:
+            logger.warning(f"[预热] 失败: {result.get('error')}")
+
+    except Exception as e:
+        logger.warning(f"[预热] 预热任务失败: {e}")
 
 
 app = FastAPI(
@@ -51,6 +97,7 @@ app.include_router(market_router,      prefix="/api/market",      tags=["市场"
 app.include_router(monitoring_router,  prefix="/api/monitoring",  tags=["监控"])
 app.include_router(incremental_router, prefix="/api/incremental", tags=["增量更新"])
 app.include_router(conversion_router,  prefix="/api/conversion",  tags=["数据转换"])
+app.include_router(hotdata_router,     prefix="/api/hotdb",       tags=["热数据库"])
 
 # 前端兼容路由别名
 app.include_router(quotes_router,      prefix="/api/v5",          tags=["行情(v5别名)"])
@@ -73,6 +120,7 @@ async def root():
             "monitoring": "/api/monitoring",
             "incremental": "/api/incremental",
             "conversion": "/api/conversion",
+            "hotdb": "/api/hotdb",
         }
     }
 
