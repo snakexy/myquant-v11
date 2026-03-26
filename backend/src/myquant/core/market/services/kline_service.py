@@ -21,7 +21,8 @@ from fastapi import WebSocket
 from loguru import logger
 
 from myquant.core.market.adapters import get_adapter
-from myquant.core.market.services.intraday_service import get_intraday_kline_service
+from myquant.core.market.routing import DataLevel, get_source_selector
+from myquant.core.market.models import KlineDataset
 from myquant.core.market.utils.trading_time_detector import is_trading_time
 
 
@@ -104,6 +105,53 @@ class KlineService:
         self._aggregator = MinuteAggregator()
         self._poll_task: Optional[asyncio.Task] = None
 
+    # ── 数据调配 ─────────────────────────────────
+
+    def _dispatch_kline(
+        self,
+        symbol: str,
+        period: str,
+        count: int,
+    ) -> Optional[KlineDataset]:
+        """V5 双层路由决策树：分析数据类型 → 获取数据源链 → 条件过滤 → fallback 遍历
+
+        这是 KlineService 作为"数据调配大脑"的核心方法。
+        """
+        selector = get_source_selector()
+
+        # Layer 1+2: 获取 fallback chain（已包含 CodeTypeFilter 资产类型识别）
+        chain = selector.get_fallback_chain_for_code(DataLevel.L3, symbol)
+
+        # Layer 3: 条件过滤
+        if not is_trading_time():
+            chain = [s for s in chain if s != 'tdxquant']
+
+        # Layer 4: Fallback 遍历
+        for source in chain:
+            adapter = get_adapter(source)
+            if adapter is None or not adapter.is_available():
+                continue
+
+            try:
+                df_dict = adapter.get_kline(
+                    symbols=[symbol], period=period, count=count
+                )
+                if symbol in df_dict and df_dict[symbol] is not None and not df_dict[symbol].empty:
+                    logger.debug(
+                        "[KlineService] {} {} 命中 {}",
+                        symbol, period, source
+                    )
+                    return KlineDataset.from_adapter(df_dict[symbol], source)
+            except Exception as e:
+                logger.warning(
+                    "[KlineService] {} {} 从 {} 获取失败: {}",
+                    symbol, period, source, e
+                )
+                continue
+
+        logger.warning("[KlineService] {} {} 所有数据源均失败", symbol, period)
+        return None
+
     # ── 连接管理 ──────────────────────────────
 
     async def connect(self, ws: WebSocket, symbol: str):
@@ -138,24 +186,13 @@ class KlineService:
     async def _send_history(self, ws: WebSocket, symbol: str):
         """向单个客户端发送今天历史分钟线
 
-        路由：交易时间 → xtquant(0.90ms)，非交易时间 → pytdx(10-19ms)
-        显式指定 adapter，避免 IntradayKlineService 路由选 tdxquant 后无 fallback
+        使用 V5 双层路由决策树自动选择最佳数据源。
         """
         try:
-            adapter = 'xtquant' if is_trading_time() else 'pytdx'
-            logger.debug("KlineService: {} 历史加载使用 {}", symbol, adapter)
-
-            intraday_svc = get_intraday_kline_service()
-            results = intraday_svc.get_kline(
-                symbols=[symbol],
-                period='1m',
-                count=self.HISTORY_COUNT,
-                use_cache=False,
-                adapter=adapter,
-            )
+            dataset = self._dispatch_kline(symbol, '1m', self.HISTORY_COUNT)
             bars = []
-            if symbol in results:
-                bars = results[symbol].data.to_dict_list()
+            if dataset is not None:
+                bars = dataset.to_dict_list()
 
             await ws.send_text(json.dumps({
                 "type": "history",
@@ -212,33 +249,30 @@ class KlineService:
             logger.info("KlineService: 轮询任务停止")
 
     async def _poll_once(self):
-        """单次轮询所有订阅 symbol"""
+        """单次轮询所有订阅 symbol
+
+        使用 V5 双层路由决策树自动选择最佳数据源。
+        """
         symbols = list(self._clients.keys())
         if not symbols:
             return
 
-        try:
-            xt = get_adapter('xtquant')
-            if xt is None or not xt.is_available():
-                return
-
-            df_dict = xt.get_kline(symbols=symbols, period='1m', count=10)
-
-            for symbol, df in df_dict.items():
-                if df is None or df.empty:
+        for symbol in symbols:
+            try:
+                dataset = self._dispatch_kline(symbol, '1m', 10)
+                if dataset is None:
                     continue
 
-                # 转为 dict 列表
-                from myquant.core.market.models import KlineDataset
-                dataset = KlineDataset.from_adapter(df, 'xtquant')
                 bars = dataset.to_dict_list()
+                if not bars:
+                    continue
 
                 event = self._aggregator.update(symbol, bars)
                 if event:
                     await self._broadcast(symbol, event["event"], event["bar"])
 
-        except Exception as e:
-            logger.warning("KlineService: 轮询拉取失败: {}", e)
+            except Exception as e:
+                logger.warning("[KlineService] {} 轮询失败: {}", symbol, e)
 
     # ── 广播 ─────────────────────────────────
 

@@ -4,7 +4,8 @@ WebSocket K 线推送路由
 
 import asyncio
 import time
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
+from typing import Optional
 from loguru import logger
 from starlette.websockets import WebSocketState
 
@@ -15,7 +16,11 @@ router = APIRouter(tags=["WebSocket K线"])
 
 
 @router.websocket("/kline/{symbol}")
-async def kline_ws(websocket: WebSocket, symbol: str):
+async def kline_ws(
+    websocket: WebSocket,
+    symbol: str,
+    refresh_interval: Optional[int] = Query(None, description="刷新间隔（秒），默认为5秒")
+):
     """
     实时分钟 K 线推送
 
@@ -31,10 +36,15 @@ async def kline_ws(websocket: WebSocket, symbol: str):
       - 客户端收到后应回复 pong
       - 90秒未收到 pong 则断开连接
 
-    示例：ws://localhost:8000/ws/kline/000001.SZ
+    参数：
+      refresh_interval: 刷新间隔（秒），根据分组配置（3/5/10/30）
+
+    示例：ws://localhost:8000/ws/kline/000001.SZ?refresh_interval=3
     """
     await websocket.accept()
     service = get_kline_service()
+
+    # 连接到 KlineService（refresh_interval 暂未使用，轮询间隔固定为1秒）
     await service.connect(websocket, symbol)
 
     # 心跳状态
