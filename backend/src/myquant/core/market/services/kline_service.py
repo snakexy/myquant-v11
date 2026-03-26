@@ -117,6 +117,7 @@ class KlineService:
 
         这是 KlineService 作为"数据调配大脑"的核心方法。
         """
+        logger.info(f"[KlineService._dispatch_kline] symbol={symbol}, period={period}, count={count}")
         selector = get_source_selector()
 
         # Layer 1+2: 获取 fallback chain（已包含 CodeTypeFilter 资产类型识别）
@@ -151,6 +152,131 @@ class KlineService:
 
         logger.warning("[KlineService] {} {} 所有数据源均失败", symbol, period)
         return None
+
+    def get_aggregated_bars(
+        self,
+        symbol: str,
+        period: str,
+        count: int = 800,
+    ) -> Optional[tuple[List[dict], str]]:
+        """获取预聚合的 K 线数据（同步方法，供 API 调用）
+
+        从 HotDB 获取预聚合数据（15m/30m/1h 由 5m 自动聚合生成）。
+        如果 HotDB 没有数据，返回 None 让调用者降级到其他数据源。
+
+        Args:
+            symbol: 股票代码
+            period: 周期（1d, 5m, 15m, 30m, 1h）
+            count: 返回条数
+
+        Returns:
+            (dict list, data_source) 元组: ([{'time': ..., 'open': ..., ...}, ...], 'hotdb')
+            如果 HotDB 无数据则返回 None
+        """
+        hotdb = get_adapter('hotdb')
+        if hotdb is None or not hotdb.is_available():
+            return None
+
+        try:
+            df_dict = hotdb.get_kline(
+                symbols=[symbol],
+                period=period,
+                count=count
+            )
+
+            if symbol in df_dict and df_dict[symbol] is not None and not df_dict[symbol].empty:
+                logger.debug(
+                    "[KlineService] get_aggregated_bars: {} {} 从 HotDB 获取 {} 条",
+                    symbol, period, len(df_dict[symbol])
+                )
+                # 使用 KlineDataset.to_dict_list() 确保时区处理正确
+                from myquant.core.market.models import KlineDataset
+                dataset = KlineDataset(df_dict[symbol], 'hotdb')
+                return dataset.to_dict_list(), 'hotdb'
+
+            return None
+
+        except Exception as e:
+            logger.warning("[KlineService] get_aggregated_bars 失败: {}", e)
+            return None
+
+    def get_kline_bars(
+        self,
+        symbol: str,
+        period: str,
+        count: int = 100,
+    ) -> Optional[tuple[List[dict], str]]:
+        """获取 K 线数据（同步方法，供 API 调用）
+
+        优先从 HotDB 获取数据（预聚合，时区处理正确），
+        如果 HotDB 无数据则使用 V5 双层路由决策树自动选择最佳数据源。
+
+        自动保存：当从在线源（pytdx/xtquant）获取日线数据时，自动保存到 LocalDB。
+
+        Args:
+            symbol: 股票代码
+            period: 周期（1d, 5m, 15m, 30m, 1h, 1m）
+            count: 返回条数
+
+        Returns:
+            (dict list, data_source) 元组: ([{'time': ..., 'open': ..., ...}, ...], 'hotdb'|'localdb'|'pytdx'|'xtquant'|'tdxquant')
+            如果所有数据源均失败则返回 None
+        """
+        logger.info(f"[get_kline_bars] symbol={symbol}, period={period}, count={count}")
+
+        # 优先从 HotDB 获取（时区处理正确）
+        aggregated = self.get_aggregated_bars(symbol, period, count)
+        if aggregated:
+            bars, source = aggregated
+            logger.info(f"[get_kline_bars] 使用 HotDB 聚合数据: {len(bars)} 条")
+            return bars, source
+
+        # HotDB 无数据，使用 fallback 路由
+        dataset = self._dispatch_kline(symbol, period, count)
+        if dataset is None:
+            logger.warning("[get_kline_bars] _dispatch_kline returned None")
+            return None
+
+        logger.info(
+            f"[get_kline_bars] _dispatch_kline 返回: adapter={dataset.adapter}, {len(dataset)} bars"
+        )
+        if len(dataset) > 0:
+            first_dt = dataset.df['datetime'].iloc[0]
+            last_dt = dataset.df['datetime'].iloc[-1]
+            logger.info(f"[get_kline_bars] 数据范围: {first_dt} ~ {last_dt}")
+
+        # 自动保存到 LocalDB（仅日线数据，仅在线源）
+        if period == '1d' and dataset.adapter in ('pytdx', 'pytdx_pool', 'xtquant', 'tdxquant'):
+            self._async_save_to_localdb(symbol, dataset)
+
+        return dataset.to_dict_list(), dataset.adapter
+
+    def _async_save_to_localdb(self, symbol: str, dataset: 'KlineDataset'):
+        """异步保存数据到 LocalDB（不阻塞返回）
+
+        使用线程池在后台保存，避免影响 API 响应速度。
+        """
+        import threading
+        import traceback
+
+        def save_worker():
+            try:
+                localdb = get_adapter('localdb')
+                if localdb and localdb.is_available():
+                    success = localdb.save_kline(symbol, dataset.df, '1d')
+                    if success:
+                        logger.info(
+                            "[KlineService] 自动保存 {} 从 {} 到 LocalDB: {} 条",
+                            symbol, dataset.adapter, len(dataset.df)
+                        )
+                    else:
+                        logger.warning("[KlineService] 保存 {} 到 LocalDB 失败", symbol)
+            except Exception as e:
+                logger.warning("[KlineService] 保存 {} 到 LocalDB 异常: {}", symbol, e)
+
+        # 启动后台线程
+        thread = threading.Thread(target=save_worker, daemon=True)
+        thread.start()
 
     # ── 连接管理 ──────────────────────────────
 

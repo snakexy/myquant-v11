@@ -171,31 +171,41 @@ async def get_realtime_kline(
 ):
     """获取单只股票K线（历史+实时无缝）
 
-    前端主要使用此接口，返回扁平格式（与 v1/quotes/kline 格式兼容）。
+    使用 KlineService V5 双层路由，自动选择最佳数据源并支持 fallback。
     """
     try:
-        service = get_seamless_kline_service()
-        df = await run_in_threadpool(
-            service.get_kline,
+        logger.info(f"[API] 收到请求: symbol={symbol}, period={period}, count={count}")
+        kline_service = get_kline_service()
+        result = await run_in_threadpool(
+            kline_service.get_kline_bars,
             symbol=symbol,
             period=period,
-            count=count,
-            include_realtime=True,
-            adjust_type=_map_adjust_type(adjust_type),
-            use_cache=use_cache
+            count=count
         )
 
-        if df is None or df.empty:
+        if not result:
             raise HTTPException(status_code=503, detail=f"无法获取 {symbol} 的K线数据")
 
-        items = _df_to_kline_items(df)
-        logger.info(f"[V5] {symbol} {period}: {len(items)} 条")
+        bars, source = result
+
+        # Debug: 记录返回的数据
+        if bars and len(bars) > 0:
+            logger.info(f"[API] bars type: {type(bars)}, first bar keys: {list(bars[0].keys()) if bars else 'empty'}")
+            if 'time' in bars[0]:
+                first_time = bars[0]['time']
+                last_time = bars[-1]['time']
+                logger.info(f"[API] get_kline_bars 返回 {len(bars)} 条, 首条: {first_time}, 末条: {last_time}")
+            else:
+                logger.warning(f"[API] bars[0] missing 'time' key! Keys: {list(bars[0].keys())}")
+
+        items = [KlineItem(**bar) for bar in bars]
+        logger.info(f"[V5] {symbol} {period}: {len(items)} 条 (数据源: {source})")
 
         return KlineDataResponse(
             symbol=symbol,
             period=period,
             data=items,
-            data_source='seamless',
+            data_source=source,
             count=len(items),
             adjust_type=adjust_type,
         )
@@ -222,14 +232,15 @@ async def get_aggregated_kline(
     try:
         # 优先从后台聚合器获取
         kline_service = get_kline_service()
-        bars = await run_in_threadpool(
+        result = await run_in_threadpool(
             kline_service.get_aggregated_bars,
             symbol=symbol,
             period=period
         )
 
         # 如果聚合器有数据，直接返回
-        if bars:
+        if result:
+            bars, source = result
             items = [
                 KlineItem(
                     time=bar['time'],
@@ -243,12 +254,12 @@ async def get_aggregated_kline(
                 )
                 for bar in bars
             ]
-            logger.info(f"[V5] aggregated {symbol} {period}: {len(items)} 条 (聚合器)")
+            logger.info(f"[V5] aggregated {symbol} {period}: {len(items)} 条 (数据源: {source})")
             return KlineDataResponse(
                 symbol=symbol,
                 period=period,
                 data=items,
-                data_source='aggregated',
+                data_source=source,
                 count=len(items),
                 adjust_type=adjust_type,
             )

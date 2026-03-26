@@ -224,56 +224,6 @@ async def update_subscriptions(hot_symbols: List[str]):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/kline/{symbol}", response_model=MarketResponse)
-async def get_market_kline(
-    symbol: str,
-    period: str = Query("1m", description="周期: 1m, 5m, 15m, 30m, 1h, 1d"),
-    count: int = Query(100, description="返回数量", ge=1, le=1000),
-    adjust_type: str = Query("qfq", description="复权类型: qfq(前复权)/hfq(后复权)/none(不复权)")
-):
-    """获取K线数据
-
-    委托给KlineService获取
-    """
-    try:
-        logger.info(
-            "获取K线: symbol={}, period={}, count={}, adjust={}",
-            symbol, period, count, adjust_type
-        )
-
-        service = get_seamless_kline_service()
-
-        kline_df = service.get_kline(
-            symbol=symbol,
-            period=period,
-            count=count,
-            adjust_type=adjust_type
-        )
-
-        if kline_df is None or kline_df.empty:
-            return MarketResponse(
-                code=404,
-                data=None,
-                message=f"未找到股票 {symbol} 的K线数据"
-            )
-
-        # 将DataFrame转换为字典列表，以便JSON序列化
-        kline_data = kline_df.to_dict(orient='records')
-
-        data = {
-            'symbol': symbol,
-            'period': period,
-            'kline': kline_data,
-            'count': len(kline_data)
-        }
-
-        return MarketResponse(data=data)
-
-    except Exception as e:
-        logger.error("获取K线失败: symbol={}, error={}", symbol, e)
-        raise HTTPException(status_code=500, detail=str(e))
-
-
 @router.get("/status", response_model=MarketResponse)
 async def get_market_status():
     """获取实时行情服务状态
