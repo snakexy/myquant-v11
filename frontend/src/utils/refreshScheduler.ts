@@ -179,7 +179,10 @@ export class RefreshScheduler {
       this.pendingBatch.groupIds.push(task.groupId)
     }
 
-    console.log(`[Scheduler] 批量队列: ${this.pendingBatch.stocks.length} 只股票, ${this.pendingBatch.groupIds.length} 个分组`)
+    // 只在首次添加时打印，避免刷屏
+    if (this.pendingBatch.stocks.length === task.stocks.length) {
+      console.log(`[Scheduler] 批量队列: ${this.pendingBatch.stocks.length} 只股票, ${this.pendingBatch.groupIds.length} 个分组`)
+    }
   }
 
   /**
