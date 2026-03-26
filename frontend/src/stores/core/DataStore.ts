@@ -567,11 +567,20 @@ export const useDataStore = defineStore('data', () => {
   /**
    * 从自选股移除
    */
-  const removeFromWatchlist = (symbol: string) => {
+  const removeFromWatchlist = async (symbol: string) => {
     const index = watchlist.value.findIndex(item => item.symbol === symbol)
     if (index > -1) {
       watchlist.value.splice(index, 1)
       saveWatchlist()
+
+      // 同时删除 HotDB 中的数据
+      try {
+        await fetch(`/api/hotdb/symbols/${symbol}`, { method: 'DELETE' })
+        console.log(`[DataStore] 已删除 ${symbol} 的 HotDB 数据`)
+      } catch (err) {
+        console.warn(`[DataStore] 删除 ${symbol} 的 HotDB 数据失败:`, err)
+        // 不影响移除自选的操作，只记录警告
+      }
     }
   }
 
