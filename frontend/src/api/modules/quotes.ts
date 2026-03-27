@@ -132,3 +132,29 @@ export const fetchMarketStatus = async (): Promise<MarketStatus> => {
   const { data } = await rawApi.get<MarketStatus>('/quotes/market/status')
   return data
 }
+
+/** 预热 HotDB - 从 LocalDB 加载数据到 HotDB */
+export const preheatHotDB = async (symbols: string[], periods?: string[]): Promise<{
+  success: boolean
+  total_symbols: number
+  total_periods: number
+  saved_count: number
+  skipped_count: number
+  failed_count: number
+}> => {
+  const { data } = await v5Api.post<{
+    success: boolean
+    total_symbols: number
+    total_periods: number
+    saved_count: number
+    skipped_count: number
+    failed_count: number
+  }>('/hotdata/preheat', { symbols, periods })
+  return data
+}
+
+/** 删除 HotDB 中的股票数据 */
+export const deleteHotDBSymbol = async (symbol: string): Promise<{success: boolean; message?: string}> => {
+  const { data } = await rawApi.delete<{success: boolean; message?: string}>(`/v5/hotdata/symbols/${symbol}`)
+  return data
+}

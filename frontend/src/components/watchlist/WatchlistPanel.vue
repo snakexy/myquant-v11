@@ -124,7 +124,7 @@
         :key="item.symbol"
         :class="['stock-item', { selected: selectedStock === item.symbol }]"
         @click="selectStock(item.symbol)"
-        @contextmenu.prevent="handleRemoveStock(item.symbol)"
+        @contextmenu.prevent="showStockMenu($event, item.symbol)"
       >
         <!-- 股票信息（左列） -->
         <div class="stock-info">
@@ -158,6 +158,21 @@
         <div class="delete-hint" @click.stop="handleRemoveStock(item.symbol)">×</div>
       </div>
 
+      <!-- 股票右键菜单 -->
+      <div
+        v-if="stockMenuVisible"
+        class="context-menu stock-context-menu"
+        :style="{ left: stockMenuX + 'px', top: stockMenuY + 'px' }"
+        @click="hideStockMenu"
+      >
+        <div class="menu-item" @click.stop="handleRefreshStock">
+          <span>{{ isZh ? '重新下载数据' : 'Refresh Data' }}</span>
+        </div>
+        <div class="menu-item danger" @click.stop="handleRemoveStockFromMenu">
+          <span>{{ isZh ? '删除自选' : 'Remove' }}</span>
+        </div>
+      </div>
+
       <!-- 空状态 -->
       <div v-if="displayList.length === 0" class="empty-state">
         <div class="empty-text">{{ isZh ? '暂无自选股' : 'No stocks' }}</div>
@@ -174,6 +189,7 @@ import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useDataStore } from '@/stores/core/DataStore'
 import StockSearchBox from './StockSearchBox.vue'
 import SchedulerMonitorPanel from '../monitor/SchedulerMonitorPanel.vue'
+import { deleteHotDBSymbol, preheatHotDB } from '@/api/modules/quotes'
 
 interface Props {
   selectedStock?: string
@@ -197,6 +213,12 @@ const groupMenuVisible = ref(false)
 const groupMenuX = ref(0)
 const groupMenuY = ref(0)
 const selectedGroupForMenu = ref<any>(null)
+
+// 股票右键菜单
+const stockMenuVisible = ref(false)
+const stockMenuX = ref(0)
+const stockMenuY = ref(0)
+const selectedStockForMenu = ref<string>('')
 
 // 重命名对话框
 const renameDialogVisible = ref(false)
@@ -379,7 +401,7 @@ const deleteGroup = () => {
 }
 
 // 添加股票（从搜索框）- 添加到当前激活分组
-const handleAddStock = (symbol: string, name: string) => {
+const handleAddStock = async (symbol: string, name: string) => {
   const currentGroup = dataStore.activeGroup
   if (currentGroup) {
     dataStore.addToGroup(currentGroup.id, symbol, name)
@@ -389,15 +411,101 @@ const handleAddStock = (symbol: string, name: string) => {
     dataStore.setActiveGroup(newGroup.id)
     dataStore.addToGroup(newGroup.id, symbol, name)
   }
+
+  // 自动预热该股票数据到 HotDB
+  try {
+    console.log(`[handleAddStock] 预热 ${symbol} 到 HotDB`)
+    const result = await preheatHotDB([symbol])
+    if (result.success) {
+      console.log(`[handleAddStock] ${symbol} 预热成功: 保存 ${result.saved_count} 条数据`)
+    } else {
+      console.warn(`[handleAddStock] ${symbol} 预热失败`)
+    }
+  } catch (error) {
+    console.error(`[handleAddStock] ${symbol} 预热出错:`, error)
+  }
+
   // 自动选中新添加的股票
   selectStock(symbol)
 }
 
-// 删除股票 - 从当前激活分组删除
-const handleRemoveStock = (symbol: string) => {
+// 显示股票右键菜单
+const showStockMenu = (event: MouseEvent, symbol: string) => {
+  stockMenuX.value = event.clientX
+  stockMenuY.value = event.clientY
+  selectedStockForMenu.value = symbol
+  stockMenuVisible.value = true
+}
+
+// 隐藏股票右键菜单
+const hideStockMenu = () => {
+  stockMenuVisible.value = false
+  selectedStockForMenu.value = ''
+}
+
+// 重新下载单只股票数据
+const handleRefreshStock = async () => {
+  if (!selectedStockForMenu.value) return
+
+  const symbol = selectedStockForMenu.value
+  hideStockMenu()
+
+  try {
+    // 调用批量更新 API，只更新这只股票
+    const response = await fetch('/api/v5/hotdata/update-localdb', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        symbols: [symbol],
+        periods: ['1d', '5m'],
+        source: 'pytdx'
+      })
+    })
+
+    if (response.ok) {
+      const data = await response.json()
+      if (data.success) {
+        // 使用 Element Plus 消息提示
+        const { ElMessage } = await import('element-plus')
+        ElMessage.success(`${symbol} 正在后台下载中...`)
+
+        // 刷新行情数据
+        setTimeout(() => {
+          dataStore.fetchQuotes([symbol])
+        }, 2000)
+      }
+    }
+  } catch (error) {
+    console.error('[刷新股票] 失败:', error)
+  }
+}
+
+// 从菜单删除股票
+const handleRemoveStockFromMenu = () => {
+  if (selectedStockForMenu.value) {
+    handleRemoveStock(selectedStockForMenu.value)
+    hideStockMenu()
+  }
+}
+
+// 删除股票 - 从当前激活分组删除，同时清理 HotDB 数据
+const handleRemoveStock = async (symbol: string) => {
   const currentGroup = dataStore.activeGroup
   if (currentGroup) {
+    // 先从分组列表中删除
     dataStore.removeFromGroup(currentGroup.id, symbol)
+
+    // 然后异步删除 HotDB 中的数据
+    try {
+      const result = await deleteHotDBSymbol(symbol)
+      if (result.success) {
+        console.log(`[handleRemoveStock] 已删除 HotDB 中的 ${symbol} 数据`)
+      } else {
+        console.warn(`[handleRemoveStock] 删除 HotDB 失败: ${result.message}`)
+      }
+    } catch (error) {
+      console.error(`[handleRemoveStock] 删除 HotDB 出错:`, error)
+    }
   }
 }
 
@@ -459,6 +567,9 @@ const sparklinePoints = (data: Array<{time: Date, close: number}>): string => {
 const handleClickOutside = () => {
   if (groupMenuVisible.value) {
     hideGroupMenu()
+  }
+  if (stockMenuVisible.value) {
+    hideStockMenu()
   }
 }
 

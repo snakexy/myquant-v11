@@ -5,6 +5,18 @@ MyQuant v11 - FastAPI 入口
     uvicorn backend.src.myquant.main:app --reload --port 8000
 """
 
+# HotDB 预热功能已集成
+
+import sys
+from pathlib import Path
+
+# 确保 src 目录在 Python 路径中（修复 uvicorn.exe 启动时的路径问题）
+_current_file = Path(__file__).resolve()
+src_dir = _current_file.parent.parent
+if str(src_dir) not in sys.path:
+    sys.path.insert(0, str(src_dir))
+    print(f"[DEBUG] Added to sys.path: {src_dir}")
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
@@ -16,7 +28,9 @@ from myquant.api.dataget import (
     conversion_router,
     market_router,
 )
+from myquant.api.dataget import hotdata_router
 from myquant.api.dataget.kline_ws import router as ws_kline_router
+from myquant.api.dataget.batch_update_ws import router as ws_batch_update_router
 
 
 @asynccontextmanager
@@ -24,6 +38,12 @@ async def lifespan(app: FastAPI):
     """应用生命周期管理"""
     # 启动时
     print("MyQuant v11 starting...")
+    # 调试：检查适配器注册
+    from myquant.core.market.adapters import AdapterFactory
+    print(f"已注册适配器: {AdapterFactory.list_adapters()}")
+    from myquant.core.market.adapters import get_adapter
+    hotdb = get_adapter('hotdb')
+    print(f"HotDB 适配器: {hotdb}")
     yield
     # 关闭时
     print("MyQuant v11 stopped")
@@ -51,13 +71,14 @@ app.include_router(market_router,      prefix="/api/market",      tags=["市场"
 app.include_router(monitoring_router,  prefix="/api/monitoring",  tags=["监控"])
 app.include_router(incremental_router, prefix="/api/incremental", tags=["增量更新"])
 app.include_router(conversion_router,  prefix="/api/conversion",  tags=["数据转换"])
-
+app.include_router(hotdata_router,     prefix="/api/v5/hotdata", tags=["热数据库"])
 # 前端兼容路由别名
 app.include_router(quotes_router,      prefix="/api/v5",          tags=["行情(v5别名)"])
 app.include_router(market_router,      prefix="/api/v1/quotes",   tags=["市场(v1别名)"])
 
 # WebSocket 路由
 app.include_router(ws_kline_router, prefix="/ws")
+app.include_router(ws_batch_update_router, prefix="/ws")
 
 
 @app.get("/", tags=["根"])

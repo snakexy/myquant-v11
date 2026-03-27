@@ -29,7 +29,12 @@ class HotDBService:
     def _get_hotdb_adapter(self):
         """获取 HotDB 适配器（延迟加载）"""
         if self._hotdb is None:
+            print(f"[DEBUG] 正在获取 hotdb 适配器...")
+            from myquant.core.market.adapters import AdapterFactory
+            print(f"[DEBUG] 已注册适配器: {AdapterFactory.list_adapters()}")
             self._hotdb = get_adapter('hotdb')
+            print(f"[DEBUG] get_adapter('hotdb') 返回: {self._hotdb}")
+            print(f"[DEBUG] 返回类型: {type(self._hotdb)}")
         return self._hotdb
 
     def _get_localdb_adapter(self):
@@ -47,13 +52,18 @@ class HotDBService:
 
         Args:
             symbols: 股票代码列表
-            periods: 周期列表（如 ['1d', '5m', '15m']），默认为 ['1d', '5m', '15m', '1m']
+            periods: 周期列表，默认为 ['1d', '5m']
 
         Returns:
             预热结果统计
+
+        注意：
+            - HotDB 存储策略：从 LocalDB 获取 1d 和 5m 原始数据
+            - 5m 数据会自动聚合生成 15m/30m/1h
+            - 1m 数据单独处理（在线获取，只保留 7 天窗口期）
         """
         if periods is None:
-            periods = ['1d', '5m', '15m', '1m']
+            periods = ['1d', '5m']  # 预热日线和5分钟数据
 
         hotdb = self._get_hotdb_adapter()
         localdb = self._get_localdb_adapter()
@@ -491,18 +501,22 @@ class HotDBService:
             return False
 
     def _complete_from_online(
-        self, symbol: str, period: str
+        self, symbol: str, period: str,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None
     ) -> Optional[pd.DataFrame]:
-        """从在线源补全数据（使用路由系统）
+        """从在线源获取数据并保存到 HotDB（智能增量模式）
 
-        检查 HotDB 最后日期 vs 今天，缺少的从在线源获取
+        精确请求缺失部分，自动追加保存
 
         Args:
             symbol: 股票代码
             period: 周期
+            start_date: 开始日期（增量更新时指定）
+            end_date: 结束日期（增量更新时指定）
 
         Returns:
-            补全后的数据，失败返回 None
+            获取的数据，失败返回 None
         """
         try:
             selector = get_source_selector()
@@ -521,15 +535,35 @@ class HotDBService:
                     adapter = get_adapter(source_name)
                     if adapter and adapter.is_available():
                         logger.info(f"[HotDB] 通过 {source_name} 获取 {symbol} {period}")
-                        df_dict = adapter.get_kline(
-                            symbols=[symbol],
-                            period=period,
-                            count=1000
-                        )
+
+                        # 构建请求参数（智能增量模式：精确请求缺失部分）
+                        get_kline_kwargs = {
+                            'symbols': [symbol],
+                            'period': period,
+                        }
+
+                        # 如果指定了日期范围，只使用日期范围（不传 count）
+                        if start_date:
+                            get_kline_kwargs['start_date'] = start_date
+                        if end_date:
+                            get_kline_kwargs['end_date'] = end_date
+
+                        # 如果没有日期范围，才使用 count（兜底）
+                        if not start_date and not end_date:
+                            get_kline_kwargs['count'] = 10000
+
+                        df_dict = adapter.get_kline(**get_kline_kwargs)
 
                         if symbol in df_dict and df_dict[symbol] is not None and not df_dict[symbol].empty:
-                            logger.info(f"[HotDB] 在线补全 {symbol} {period}: {len(df_dict[symbol])} 条 (来源: {source_name})")
-                            return df_dict[symbol]
+                            df = df_dict[symbol]
+                            logger.info(f"[HotDB] 在线获取 {symbol} {period}: {len(df)} 条 (来源: {source_name})")
+
+                            # 保存到 HotDB（追加模式）
+                            hotdb = self._get_hotdb_adapter()
+                            if hotdb:
+                                hotdb.save_kline(symbol, df, period)
+
+                            return df
                 except Exception as e:
                     logger.debug(f"[HotDB] {source_name} 获取失败: {e}")
                     continue
@@ -539,6 +573,189 @@ class HotDBService:
 
         except Exception as e:
             logger.warning(f"[HotDB] 在线补全 {symbol} {period} 失败: {e}")
+            return None
+
+    def smart_update(self, symbol: str, period: str) -> Dict[str, Any]:
+        """智能增量更新（核心入口）
+
+        完整流程：
+        1. HotDB 有数据 → detect_gap → 有缺口则补全 → 无缺口直接返回
+        2. HotDB 无数据 → ensure_hotdb_data → 再检查缺口
+
+        Args:
+            symbol: 股票代码
+            period: 周期
+
+        Returns:
+            dict: {success, has_data, has_gap, df, ...}
+        """
+        try:
+            hotdb = self._get_hotdb_adapter()
+            if not hotdb or not hotdb.is_available():
+                return {'success': False, 'error': 'HotDB 不可用', 'has_data': False}
+
+            # 1. 检查 HotDB 是否有数据
+            info = hotdb.get_data_info(symbol, period)
+
+            if not info or not info.get('has_data'):
+                # HotDB 无数据，尝试从 LocalDB 复制
+                logger.info(f"[HotDB] {symbol} {period} 无数据，尝试从 LocalDB 复制")
+                copied = self.ensure_hotdb_data(symbol, period)
+
+                if copied:
+                    # 复制成功，再次检查缺口
+                    info = hotdb.get_data_info(symbol, period)
+                else:
+                    # LocalDB 也无数据，返回需要在线获取
+                    return {
+                        'success': True,
+                        'has_data': False,
+                        'has_gap': True,
+                        'reason': 'no_data_in_hotdb_or_localdb',
+                        'symbol': symbol,
+                        'period': period
+                    }
+
+            # 2. 检测缺口
+            gap_info = hotdb.detect_gap(symbol, period)
+
+            if not gap_info:
+                return {'success': False, 'error': '缺口检测失败', 'has_data': info.get('has_data', False)}
+
+            if not gap_info['has_gap']:
+                # 无缺口，返回现有数据
+                df_dict = hotdb.get_kline(
+                    symbols=[symbol],
+                    period=period,
+                    count=10000,
+                    allow_stale=True
+                )
+
+                df = df_dict.get(symbol)
+                return {
+                    'success': True,
+                    'has_data': True,
+                    'has_gap': False,
+                    'reason': gap_info.get('reason'),
+                    'df': df,
+                    'latest': gap_info.get('latest'),
+                    'symbol': symbol,
+                    'period': period,
+                    'should_update_localdb': False  # 无缺口，不需要更新
+                }
+
+            # 3. 有缺口，在线获取缺失部分
+            logger.info(
+                f"[HotDB] {symbol} {period} 有缺口: {gap_info.get('reason')}, "
+                f"最新 {gap_info.get('latest')}"
+            )
+
+            # 计算缺失的日期范围
+            missing_start = gap_info.get('missing_start')
+            missing_end = gap_info.get('missing_end')
+
+            start_date_str = missing_start.strftime('%Y%m%d') if missing_start else None
+            end_date_str = missing_end.strftime('%Y%m%d') if missing_end else None
+
+            # 在线获取缺失部分
+            df_new = self._complete_from_online(
+                symbol, period,
+                start_date=start_date_str,
+                end_date=end_date_str
+            )
+
+            if df_new is None or df_new.empty:
+                # 在线获取失败，返回现有数据
+                df_dict = hotdb.get_kline(
+                    symbols=[symbol],
+                    period=period,
+                    count=10000,
+                    allow_stale=True
+                )
+                df = df_dict.get(symbol)
+
+                return {
+                    'success': True,
+                    'has_data': True,
+                    'has_gap': True,  # 仍然有缺口（在线获取失败）
+                    'reason': 'online_fetch_failed',
+                    'df': df,
+                    'latest': gap_info.get('latest'),
+                    'symbol': symbol,
+                    'period': period,
+                    'should_update_localdb': gap_info.get('is_large_gap', False)  # 大缺口时提醒
+                }
+
+            # 4. 返回完整数据（从 HotDB 读取，已自动追加）
+            df_dict = hotdb.get_kline(
+                symbols=[symbol],
+                period=period,
+                count=10000,
+                allow_stale=True
+            )
+            df = df_dict.get(symbol)
+
+            return {
+                'success': True,
+                'has_data': True,
+                'has_gap': False,  # 已补全
+                'reason': 'incremental_update_success',
+                'df': df,
+                'latest': df['datetime'].iloc[-1] if df is not None and not df.empty else None,
+                'symbol': symbol,
+                'period': period,
+                'added_count': len(df_new),
+                'should_update_localdb': gap_info.get('is_large_gap', False)  # 大缺口时提醒
+            }
+
+        except Exception as e:
+            logger.warning(f"[HotDB] {symbol} {period} 智能增量更新失败: {e}")
+            return {'success': False, 'error': str(e), 'has_data': False}
+
+    def get_kline_with_auto_update(
+        self,
+        symbol: str,
+        period: str,
+        count: Optional[int] = None,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None
+    ) -> Optional[pd.DataFrame]:
+        """获取 K 线数据（带自动增量更新）
+
+        供 SeamlessKlineService 调用的统一接口。
+
+        Args:
+            symbol: 股票代码
+            period: 周期
+            count: 返回数量
+            start_date: 开始日期
+            end_date: 结束日期
+
+        Returns:
+            DataFrame 或 None
+        """
+        try:
+            result = self.smart_update(symbol, period)
+
+            if not result.get('success'):
+                return None
+
+            df = result.get('df')
+            if df is None or df.empty:
+                return None
+
+            # 应用过滤条件
+            if start_date:
+                df = df[df['datetime'] >= pd.Timestamp(start_date)]
+            if end_date:
+                df = df[df['datetime'] <= pd.Timestamp(end_date)]
+            if count and len(df) > count:
+                df = df.tail(count)
+
+            return df
+
+        except Exception as e:
+            logger.warning(f"[HotDB] 获取 {symbol} {period} K线失败: {e}")
             return None
 
     def _is_symbol_ready(self, symbol: str) -> bool:

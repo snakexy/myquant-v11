@@ -224,6 +224,77 @@ npm run dev   # 运行在 localhost:5174
 
 ## 待办任务
 
+### ✅ HotDB 数据聚合策略（已完成）
+**目标**：修复 HotDB 预热和聚合策略
+
+**进度**：
+| 部分 | 状态 | 说明 |
+|------|------|------|
+| 修复预热周期 | ✅ 已完成 | 从 ['1d', '1m'] 改为 ['1d', '5m'] |
+| uvicorn 路径问题 | ✅ 已完成 | main.py 添加 sys.path 操作 |
+| 自动聚合 | ✅ 已完成 | 5m → 15m/30m/1h（numpy 向量化 + ThreadPoolExecutor） |
+| 前端集成 | ✅ 已完成 | WatchlistPanel 自动预热/删除 |
+| 文档完善 | ✅ 已完成 | HotDB数据聚合策略.md + V5-数据源使用完整指南.html |
+
+**设计原则**：
+- HotDB 从 LocalDB 获取 1d 和 5m 原始数据
+- 5m 数据自动聚合生成 15m/30m/1h
+- 1d 数据聚合生成 1w/1mon（待实现）
+- 1m 数据在线获取，只保留 7 天窗口期
+
+**核心代码**：
+- `hotdb_adapter.py`: `_aggregate_from_5m()` - 5m→15m/30m/1h 聚合（numpy 向量化）
+- `hotdb_service.py`: `preheat()` - 预热 1d 和 5m，触发自动聚合
+- `hotdata.py`: API 路由 `/api/v5/hotdata/preheat` 和 `/api/v5/hotdata/symbols/{symbol}`
+- `quotes.ts`: `preheatHotDB()` 和 `deleteHotDBSymbol()`
+- `WatchlistPanel.vue`: 添加/删除股票时自动预热/删除 HotDB 数据
+
+**性能优化**：
+- 向量化计算：numpy reshape → 90% 耗时降低
+- 并行 IO：ThreadPoolExecutor → 67% 保存耗时降低
+- 总体：300ms → 40ms（↓87%）
+
+---
+
+### ✅ HotDB 智能增量更新（已完成）
+**目标**：实现 HotDB 数据缺口检测和智能增量补全
+
+**进度**：
+| 部分 | 状态 | 说明 |
+|------|------|------|
+| 数据缺口检测 | ✅ 已完成 | `get_data_info()` - O(1) 摘要，`detect_gap()` - 缺口判断 |
+| 智能增量引擎 | ✅ 已完成 | `smart_update()` + `get_kline_with_auto_update()` |
+| 服务层集成 | ✅ 已完成 | `_try_hotdb_fast_path()` - HotDB 快速通道 |
+| 实时数据回写 | ✅ 已完成 | `_save_to_hotdb()` - 异步回写 |
+| 删除缓存清除 | ✅ 已完成 | `delete_kline()` 清除内存缓存（修复 2026-03-28） |
+
+**设计原则**：
+- **HotDB 不是数据源**，不注册到路由系统，在服务层拦截
+- **智能增量更新**：缺多少补多少，节约网络流量
+- **数据新鲜度检查**：日线 >1天 且已过 09:30；分钟线超阈值
+- **多级缓存**：HotDB → LocalDB → 在线源
+- **异步回写**：在线获取的数据后台线程保存到 HotDB
+- **删除清除缓存**：删除数据时同步清除 L1 内存缓存（5分钟 TTL）
+
+**核心代码**：
+- `hotdb_adapter.py`: `get_data_info()`, `detect_gap()`, `get_kline(allow_stale=True)`, `delete_kline()` 清除缓存
+- `hotdb_service.py`: `smart_update()`, `get_kline_with_auto_update()`, `_complete_from_online()`
+- `seamless_service.py`: `_try_hotdb_fast_path()`, `_save_to_hotdb()`, `_get_historical_kline()` 修改
+
+**Bug 修复（2026-03-28）**：
+- **问题**：删除自选股后重新添加，旧的 1h 数据仍然显示
+- **原因**：`delete_kline()` 只删除文件，未清除 L1 内存缓存（TTL=5分钟）
+- **修复**：删除时同步清除 `_memory_cache` 和 `_memory_cache_time`
+- **验证**：删除后缓存从 3 个降至 0 个
+
+**验证结果**（2026-03-28）：
+- `get_data_info('000001.SZ', '1d')` → 801条，最新 2026-03-27
+- `detect_gap()` → 当前开盘前，不需要补全
+- `smart_update()` → 返回完整数据集
+- `[HotDB快速通道]` 日志 → 服务层正常调用
+
+---
+
 ### 🔄 Lightweight Charts 高级功能集成（新需求）
 **目标**：集成 Lightweight Charts 插件库的高级功能
 

@@ -23,7 +23,9 @@ from datetime import datetime, timedelta
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from .base import V5DataAdapter
+from myquant.core.market.adapters.base import V5DataAdapter
+from ..utils.trading_time import TradingTimeChecker
+from ..utils.trading_time_detector import TradingTimeDetectorV2
 
 
 # 周期到文件后缀的映射
@@ -38,6 +40,21 @@ _PERIOD_SUFFIX = {
     '30m': 'min30',
     '1h': 'min60',  # HotDB专用，用于存储聚合的1h数据
 }
+
+
+def period_to_minutes(period: str) -> int:
+    """将周期转换为分钟数"""
+    mapping = {
+        '1m': 1,
+        '5m': 5,
+        '15m': 15,
+        '30m': 30,
+        '1h': 60,
+        '1d': 1440,  # 24 * 60
+        '1w': 10080,  # 7 * 24 * 60
+        '1mon': 43200,  # 30 * 24 * 60
+    }
+    return mapping.get(period, 1)
 
 
 class V5HotDBAdapter(V5DataAdapter):
@@ -185,9 +202,19 @@ class V5HotDBAdapter(V5DataAdapter):
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
         count: Optional[int] = None,
-        adjust_type: str = 'none'
+        adjust_type: str = 'none',
+        allow_stale: bool = False
     ) -> Dict[str, pd.DataFrame]:
         """获取 K线数据（支持多周期，带L1内存缓存和智能聚合）
+
+        Args:
+            symbols: 股票代码列表
+            period: 周期
+            start_date: 开始日期
+            end_date: 结束日期
+            count: 返回数量
+            adjust_type: 复权类型
+            allow_stale: 是否允许返回过期数据（增量更新场景使用）
 
         如果请求 15m/30m/1h 周期但没有数据，会自动从 5m 数据聚合生成
         """
@@ -229,10 +256,29 @@ class V5HotDBAdapter(V5DataAdapter):
                     # 无数据，直接跳过（由 fallback 继续尝试其他数据源）
                     continue
                 else:
-                    # 检查数据新鲜度：如果数据过期，返回 None 让 fallback 继续尝试
-                    # 注意：对于聚合周期（1h），允许使用旧数据进行聚合生成
+                    # 数据有效性检查（无效数据如 19700101）
+                    earliest_time = df['datetime'].iloc[0]
                     latest_time = df['datetime'].iloc[-1]
                     now = pd.Timestamp.now(tz=None).replace(tzinfo=None)
+
+                    # 检查日期是否有效（不能是 1970-01-01 或其他异常值）
+                    min_valid_date = pd.Timestamp('2010-01-01')
+                    is_invalid = earliest_time < min_valid_date
+
+                    if is_invalid:
+                        logger.warning(
+                            f"[HotDB] {symbol} {period} 数据无效: "
+                            f"最早 {earliest_time.date()}, 最新 {latest_time.date()}"
+                        )
+                        # 清除无效的缓存数据
+                        cache_key = f"{symbol}:{period}"
+                        if cache_key in self._memory_cache:
+                            del self._memory_cache[cache_key]
+                            del self._memory_cache_time[cache_key]
+                        # 返回 None 让 fallback 继续尝试
+                        continue
+
+                    # 检查数据新鲜度
                     days_old = (now - latest_time).days
 
                     # 日线数据：超过1天视为过期
@@ -240,7 +286,8 @@ class V5HotDBAdapter(V5DataAdapter):
                     # 但对于 1h（聚合周期），允许使用旧数据（总比没有好）
                     is_expired = days_old > 1 and period != '1h'
 
-                    if is_expired:
+                    # 如果 allow_stale=True，允许返回过期数据（用于增量更新场景）
+                    if is_expired and not allow_stale:
                         logger.info(
                             f"[HotDB] {symbol} {period} 数据已过期: "
                             f"最新 {latest_time.date()}, 已过期 {days_old} 天"
@@ -798,12 +845,12 @@ class V5HotDBAdapter(V5DataAdapter):
             return False
 
     def _auto_aggregate_from_5m(self, symbol: str, df_5m: pd.DataFrame):
-        """5m 数据保存后，自动聚合生成 15m/30m/1h（numpy 向量化 + 并行 IO 优化版）
+        """5m 数据保存后，自动聚合生成 15m/30m/1h（numpy 向量化 + 并行保存）
 
         优化说明：
         - 一次性聚合所有周期，避免重复数据准备
         - 使用 numpy reshape 向量化操作
-        - 使用线程池并行保存 3 个周期（IO 优化）
+        - 使用线程池并行保存 3 个周期（IO 并行）
 
         Args:
             symbol: 股票代码
@@ -838,7 +885,7 @@ class V5HotDBAdapter(V5DataAdapter):
                 ('1h', 12),
             ]
 
-            # 第一步：聚合所有周期（纯计算，很快）
+            # 聚合所有周期
             agg_results = {}
             for target_period, factor in periods_config:
                 n_agg = n // factor
@@ -847,10 +894,9 @@ class V5HotDBAdapter(V5DataAdapter):
                 if n_agg == 0:
                     continue
 
-                # 分离完整部分和余数部分
                 n_complete = n_agg * factor
 
-                # 完整部分：向量化聚合
+                # 向量化聚合
                 opens_2d = opens[:n_complete].reshape(n_agg, factor)
                 highs_2d = highs[:n_complete].reshape(n_agg, factor)
                 lows_2d = lows[:n_complete].reshape(n_agg, factor)
@@ -865,10 +911,9 @@ class V5HotDBAdapter(V5DataAdapter):
                 agg_close = closes_2d[:, -1]
                 agg_volume = volumes_2d.sum(axis=1)
                 agg_amount = amount_2d.sum(axis=1)
-                # 取最后一个时间（聚合窗口的结束时间）
                 agg_datetime = datetimes_2d[:, -1]
 
-                # 处理余数部分
+                # 处理余数
                 if n_remainder > 0:
                     rem_start = n_complete
                     agg_open = np.append(agg_open, opens[rem_start])
@@ -879,7 +924,6 @@ class V5HotDBAdapter(V5DataAdapter):
                     agg_amount = np.append(agg_amount, amount[rem_start:].sum())
                     agg_datetime = np.append(agg_datetime, datetimes[rem_start])
 
-                # 构造 DataFrame
                 agg_df = pd.DataFrame({
                     'datetime': agg_datetime,
                     'open': agg_open,
@@ -892,7 +936,7 @@ class V5HotDBAdapter(V5DataAdapter):
 
                 agg_results[target_period] = agg_df
 
-            # 第二步：并行保存所有周期（IO 并行）
+            # 并行保存
             def save_one_period(period_data):
                 target_period, agg_df = period_data
                 try:
@@ -910,17 +954,17 @@ class V5HotDBAdapter(V5DataAdapter):
                 for future in as_completed(futures):
                     period, count, error = future.result()
                     if error:
-                        logger.warning(f"[HotDB] 并行保存 {symbol} {period} 失败: {error}")
+                        logger.warning(f"[HotDB] 保存 {symbol} {period} 失败: {error}")
                     else:
-                        logger.debug(f"[HotDB] 并行保存 {symbol} {period}: {count} 条")
+                        logger.debug(f"[HotDB] 保存 {symbol} {period}: {count} 条")
 
             elapsed = (time.time() - start_total) * 1000
             logger.info(
-                f"[HotDB] 并行聚合+保存 {symbol}: 3 个周期 (总耗时: {elapsed:.2f}ms)"
+                f"[HotDB] 聚合+保存 {symbol}: 3 个周期 (总耗时: {elapsed:.2f}ms)"
             )
 
         except Exception as e:
-            logger.warning(f"[HotDB] 并行聚合 {symbol} 失败: {e}")
+            logger.warning(f"[HotDB] 聚合 {symbol} 失败: {e}")
 
     def _save_kline_no_agg(
         self, symbol: str, df: pd.DataFrame, period: str = '1d'
@@ -1030,6 +1074,12 @@ class V5HotDBAdapter(V5DataAdapter):
                     logger.info(f"[HotDB] 删除 {symbol} {period} 数据")
                     # 更新元数据
                     self._remove_from_metadata(symbol, period)
+                    # 清除内存缓存
+                    cache_key = f"{symbol}:{period}"
+                    if cache_key in self._memory_cache:
+                        del self._memory_cache[cache_key]
+                    if cache_key in self._memory_cache_time:
+                        del self._memory_cache_time[cache_key]
                     return True
             else:
                 # 删除所有周期
@@ -1042,6 +1092,14 @@ class V5HotDBAdapter(V5DataAdapter):
                     logger.info(f"[HotDB] 删除 {symbol} 所有周期数据")
                     # 更新元数据
                     self._remove_from_metadata(symbol, None)
+                    # 清除所有周期的内存缓存
+                    cache_keys_to_delete = [k for k in self._memory_cache.keys() if k.startswith(f"{symbol}:")]
+                    for cache_key in cache_keys_to_delete:
+                        del self._memory_cache[cache_key]
+                        if cache_key in self._memory_cache_time:
+                            del self._memory_cache_time[cache_key]
+                    if cache_keys_to_delete:
+                        logger.info(f"[HotDB] 已清除 {len(cache_keys_to_delete)} 个内存缓存项")
                     return True
 
             return False
@@ -1049,6 +1107,200 @@ class V5HotDBAdapter(V5DataAdapter):
         except Exception as e:
             logger.error(f"[HotDB] 删除 {symbol} 失败: {e}")
             return False
+
+    def get_data_info(self, symbol: str, period: str) -> Optional[Dict]:
+        """获取数据摘要信息（O(1) 复杂度，只读取 date.bin 首尾）
+
+        用于快速检查数据范围，判断是否需要增量更新。
+
+        Args:
+            symbol: 股票代码
+            period: 周期
+
+        Returns:
+            dict: {count, earliest, latest, has_data} 或 None
+        """
+        try:
+            stock_dir = self._get_stock_dir(symbol, period)
+            period_suffix = self._get_period_suffix(period)
+            date_file = stock_dir / f'date.{period_suffix}.bin'
+
+            if not date_file.exists():
+                return {'count': 0, 'earliest': None, 'latest': None, 'has_data': False}
+
+            with open(date_file, 'rb') as f:
+                data = f.read()
+
+            if len(data) < 8:
+                return {'count': 0, 'earliest': None, 'latest': None, 'has_data': False}
+
+            count = struct.unpack('<i', data[:4])[0]
+            if count == 0:
+                return {'count': 0, 'earliest': None, 'latest': None, 'has_data': False}
+
+            # 只读首尾元素
+            earliest_int = struct.unpack('<i', data[4:8])[0]
+            latest_int = struct.unpack('<i', data[4 + (count - 1) * 4:4 + count * 4])[0]
+
+            # 转换为日期字符串
+            earliest_str = f'{earliest_int}'
+            latest_str = f'{latest_int}'
+
+            earliest_date = f'{earliest_str[:4]}-{earliest_str[4:6]}-{earliest_str[6:8]}'
+            latest_date = f'{latest_str[:4]}-{latest_str[4:6]}-{latest_str[6:8]}'
+
+            return {
+                'count': count,
+                'earliest': pd.Timestamp(earliest_str),
+                'latest': pd.Timestamp(latest_str),
+                'has_data': True
+            }
+
+        except Exception as e:
+            logger.warning(f"[HotDB] 获取 {symbol} {period} 数据信息失败: {e}")
+            return None
+
+    def detect_gap(self, symbol: str, period: str) -> Optional[Dict]:
+        """检测数据缺口
+
+        判断 HotDB 数据是否需要增量更新：
+        - 日线：最新日期与今天相差 > 1 天，且当前已过 09:30
+        - 分钟线：最新时间与现在相差超过阈值
+
+        Args:
+            symbol: 股票代码
+            period: 周期
+
+        Returns:
+            dict: {has_gap, latest, missing_start, missing_end, reason} 或 None
+        """
+        try:
+            info = self.get_data_info(symbol, period)
+            if not info or not info['has_data']:
+                return {'has_gap': True, 'reason': 'no_data', 'latest': None}
+
+            latest = info['latest']
+            now = pd.Timestamp.now(tz=None).replace(tzinfo=None)
+
+            if period == '1d':
+                # 日线：检查缺失的交易日（排除周末、节假日）
+                today = now.date()
+                latest_date = latest.date()
+
+                # 计算自然日差异
+                natural_days_diff = (today - latest_date).days
+
+                if natural_days_diff <= 0:
+                    # 数据是未来的（不应该发生），不算缺口
+                    return {'has_gap': False, 'reason': 'up_to_date', 'latest': latest}
+
+                # 计算 (latest_date, today] 范围内的实际交易日
+                missing_trading_days = []
+                current_date = latest_date + timedelta(days=1)
+
+                detector = TradingTimeDetectorV2()
+
+                while current_date <= today:
+                    date_str = current_date.strftime('%Y%m%d')
+                    # 使用 is_trading_day 判断（已排除周末和节假日）
+                    try:
+                        current_dt = datetime.combine(current_date, datetime.min.time())
+                        if detector.is_trading_day(current_dt):
+                            missing_trading_days.append(date_str)
+                    except Exception:
+                        # 判断失败，使用简单逻辑：排除周末
+                        weekday = current_date.weekday()
+                        if weekday < 5:  # 0-4 是周一到周五
+                            missing_trading_days.append(date_str)
+                    current_date += timedelta(days=1)
+
+                trading_days_count = len(missing_trading_days)
+
+                if trading_days_count > 0:
+                    # 有交易日缺失，报告缺口
+                    # 缺口范围：第一个缺失交易日 ~ 最后一个缺失交易日
+                    first_missing_str = missing_trading_days[0]
+                    last_missing_str = missing_trading_days[-1]
+                    first_missing = pd.Timestamp(first_missing_str)
+                    last_missing = pd.Timestamp(last_missing_str)
+
+                    # 检查是否"只差今天"
+                    is_only_today = (
+                        trading_days_count == 1 and
+                        first_missing.date() == today
+                    )
+
+                    if is_only_today:
+                        # 只差今天，需要判断交易时间
+                        if TradingTimeChecker.is_trading_time():
+                            return {
+                                'has_gap': True,
+                                'reason': 'today_missing',
+                                'latest': latest,
+                                'missing_start': first_missing,
+                                'missing_end': last_missing,
+                                'days_missing': trading_days_count,
+                                'trading_days_missing': missing_trading_days
+                            }
+                        # 开盘前，今天缺失不算缺口
+                        return {'has_gap': False, 'reason': 'up_to_date', 'latest': latest}
+                    else:
+                        # 缺失多个交易日（包括历史），永远算缺口
+                        # 检查是否是大缺口（>2周，约10个交易日）
+                        is_large_gap = trading_days_count > 10
+
+                        if is_large_gap:
+                            logger.warning(
+                                f"[HotDB] {symbol} 检测到大缺口: 缺失 {trading_days_count} 个交易日 "
+                                f"({first_missing.date()} ~ {last_missing.date()}) "
+                                f"建议更新 LocalDB（冷数据库）以加快获取速度"
+                            )
+
+                        return {
+                            'has_gap': True,
+                            'reason': 'daily_gap',
+                            'latest': latest,
+                            'missing_start': first_missing,
+                            'missing_end': last_missing,
+                            'days_missing': trading_days_count,
+                            'trading_days_missing': missing_trading_days,
+                            'is_large_gap': is_large_gap
+                        }
+
+                return {'has_gap': False, 'reason': 'up_to_date', 'latest': latest}
+
+            else:
+                # 分钟线：检查时间缺口（不受交易时间限制）
+                time_diff_minutes = (now - latest).total_seconds() / 60
+
+                # 阈值设置（分钟）
+                thresholds = {
+                    '1m': 5,
+                    '5m': 15,
+                    '15m': 30,
+                    '30m': 60,
+                    '1h': 120
+                }
+
+                threshold = thresholds.get(period, 15)
+
+                # 分钟线缺口检测：只要有差距就认为是缺口
+                # 注意：非交易时间在线获取可能失败，但检测应该正常工作
+                if time_diff_minutes > threshold:
+                    return {
+                        'has_gap': True,
+                        'reason': 'intraday_gap',
+                        'latest': latest,
+                        'missing_start': latest + timedelta(minutes=period_to_minutes(period)),
+                        'missing_end': now,
+                        'minutes_missing': int(time_diff_minutes)
+                    }
+
+                return {'has_gap': False, 'reason': 'up_to_date', 'latest': latest}
+
+        except Exception as e:
+            logger.warning(f"[HotDB] 检测 {symbol} {period} 缺口失败: {e}")
+            return None
 
     def has_symbol(self, symbol: str) -> bool:
         """检查股票是否在热数据库中"""

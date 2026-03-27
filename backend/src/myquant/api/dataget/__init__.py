@@ -14,6 +14,7 @@ from .monitoring import router as monitoring_router
 from .incremental import router as incremental_router
 from .conversion import router as conversion_router
 from .market import router as market_router
+from .hotdata import router as hotdata_router
 
 
 __all__ = [
@@ -22,4 +23,5 @@ __all__ = [
     'incremental_router',
     'conversion_router',
     'market_router',
+    'hotdata_router',
 ]

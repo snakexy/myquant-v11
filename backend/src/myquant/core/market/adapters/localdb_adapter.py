@@ -83,6 +83,29 @@ class V5LocalDBAdapter(V5DataAdapter):
         code = symbol.replace('.SH', '').replace('.SZ', '').replace('.BJ', '')
         return f"{self._exchange(symbol)}{code}"
 
+    def _get_period_dir(self, period: str) -> str:
+        """获取周期对应的目录名"""
+        period_map = {
+            '1d': 'day',
+            '1w': 'week',
+            '1mon': 'month',
+            '1m': 'min1',
+            '5m': 'min5',
+            '15m': 'min15',
+            '30m': 'min30',
+            '1h': 'min60',
+        }
+        return period_map.get(period, 'day')
+
+    def _get_period_suffix(self, period: str) -> str:
+        """获取周期对应的文件后缀"""
+        return self._get_period_dir(period)
+
+    def _dir_name(self, symbol: str) -> str:
+        """600000.SH -> sh600000"""
+        code = symbol.replace('.SH', '').replace('.SZ', '').replace('.BJ', '')
+        return f"{self._exchange(symbol)}{code}"
+
     def get_kline(
         self,
         symbols: List[str],
@@ -92,39 +115,61 @@ class V5LocalDBAdapter(V5DataAdapter):
         count: Optional[int] = None,
         adjust_type: str = 'none'  # 参数保留（兼容性），本地文件始终是不复权数据
     ) -> Dict[str, pd.DataFrame]:
-        """获取 K线数据（仅支持日线）
+        """获取 K线数据（支持多周期）
 
         注意：本地文件存储的是不复权原始数据，复权由服务层统一处理。
         """
         if not self._ready:
             return {}
 
+        # 获取周期目录和文件后缀
+        period_dir = self._get_period_dir(period)
+        period_suffix = self._get_period_suffix(period)
+        is_minute = period in ['1m', '5m', '15m', '30m', '1h']
+
         result = {}
         for symbol in symbols:
             try:
-                stock_dir = self._data_dir / self._exchange(symbol) / 'day' / self._dir_name(symbol)
+                stock_dir = self._data_dir / self._exchange(symbol) / period_dir / self._dir_name(symbol)
                 if not stock_dir.exists():
                     continue
 
-                dates = self._read_dates(stock_dir / 'date.day.bin')
-                closes = self._read_floats(stock_dir / 'close.day.bin')
+                dates = self._read_dates(stock_dir / f'date.{period_suffix}.bin')
+                closes = self._read_floats(stock_dir / f'close.{period_suffix}.bin')
                 if not dates or not closes:
                     continue
 
                 n = min(len(dates), len(closes))
-                opens = self._read_floats(stock_dir / 'open.day.bin') or [0] * n
-                highs = self._read_floats(stock_dir / 'high.day.bin') or [0] * n
-                lows = self._read_floats(stock_dir / 'low.day.bin') or [0] * n
-                volumes = self._read_floats(stock_dir / 'volume.day.bin') or [0] * n
-                amounts = self._read_floats(stock_dir / 'amount.day.bin') or [0] * n
+                opens = self._read_floats(stock_dir / f'open.{period_suffix}.bin') or [0] * n
+                highs = self._read_floats(stock_dir / f'high.{period_suffix}.bin') or [0] * n
+                lows = self._read_floats(stock_dir / f'low.{period_suffix}.bin') or [0] * n
+                volumes = self._read_floats(stock_dir / f'volume.{period_suffix}.bin') or [0] * n
+                amounts = self._read_floats(stock_dir / f'amount.{period_suffix}.bin') or [0] * n
 
-                rows = [{
-                    'datetime': pd.Timestamp(f'{dates[i][:4]}-{dates[i][4:6]}-{dates[i][6:8]}'),
-                    'open': opens[i], 'high': highs[i], 'low': lows[i],
-                    'close': closes[i],
-                    'volume': volumes[i] if volumes else 0,  # volume.day.bin 存储成交量（手）
-                    'amount': amounts[i] if amounts else 0,  # amount.day.bin 存储成交额（元）
-                } for i in range(n)]
+                # 分钟线需要读取时间信息
+                times = None
+                if is_minute:
+                    times = self._read_dates(stock_dir / f'time.{period_suffix}.bin')
+
+                rows = []
+                for i in range(n):
+                    # 构造 datetime
+                    date_str = f'{dates[i][:4]}-{dates[i][4:6]}-{dates[i][6:8]}'
+                    if is_minute and times and i < len(times):
+                        # 分钟线：拼接日期和时间
+                        time_str = f'{times[i]:06d}'
+                        datetime_str = f'{date_str} {time_str[:2]}:{time_str[2:4]}:{time_str[4:6]}'
+                    else:
+                        # 日线：只有日期
+                        datetime_str = date_str
+
+                    rows.append({
+                        'datetime': pd.Timestamp(datetime_str),
+                        'open': opens[i], 'high': highs[i], 'low': lows[i],
+                        'close': closes[i],
+                        'volume': volumes[i] if volumes else 0,
+                        'amount': amounts[i] if amounts else 0,
+                    })
 
                 df = pd.DataFrame(rows)
                 if start_date:
@@ -148,27 +193,27 @@ class V5LocalDBAdapter(V5DataAdapter):
 
 
     def save_kline(self, symbol: str, df: pd.DataFrame, period: str = '1d') -> bool:
-        """保存K线数据到本地bin文件（仅支持日线）
+        """保存K线数据到本地bin文件（支持多周期）
 
         Args:
             symbol: 股票代码 (如 600519.SH)
             df: DataFrame with columns [datetime, open, high, low, close, volume, amount]
-            period: 周期，仅支持 '1d' (日线)
+            period: 周期 (1d/1w/1mon/1m/5m/15m/30m/1h)
 
         Returns:
             是否保存成功
         """
-        if period != '1d':
-            logger.debug(f"LocalDB 仅支持日线数据存储，跳过 {period}")
-            return False
-
         if df is None or df.empty:
             logger.warning(f"保存 {symbol} 数据为空，跳过")
             return False
 
         try:
+            # 获取周期目录和文件后缀
+            period_dir = self._get_period_dir(period)
+            period_suffix = self._get_period_suffix(period)
+
             # 确保目录存在
-            stock_dir = self._data_dir / self._exchange(symbol) / 'day' / self._dir_name(symbol)
+            stock_dir = self._data_dir / self._exchange(symbol) / period_dir / self._dir_name(symbol)
             stock_dir.mkdir(parents=True, exist_ok=True)
 
             # 准备数据
@@ -195,13 +240,19 @@ class V5LocalDBAdapter(V5DataAdapter):
             amounts = df.get('amount', pd.Series([0] * len(df))).astype(float).tolist()
 
             # 写入bin文件
-            self._write_ints(stock_dir / 'date.day.bin', dates)
-            self._write_floats(stock_dir / 'open.day.bin', opens)
-            self._write_floats(stock_dir / 'high.day.bin', highs)
-            self._write_floats(stock_dir / 'low.day.bin', lows)
-            self._write_floats(stock_dir / 'close.day.bin', closes)
-            self._write_floats(stock_dir / 'volume.day.bin', volumes)
-            self._write_floats(stock_dir / 'amount.day.bin', amounts)
+            self._write_ints(stock_dir / f'date.{period_suffix}.bin', dates)
+            self._write_floats(stock_dir / f'open.{period_suffix}.bin', opens)
+            self._write_floats(stock_dir / f'high.{period_suffix}.bin', highs)
+            self._write_floats(stock_dir / f'low.{period_suffix}.bin', lows)
+            self._write_floats(stock_dir / f'close.{period_suffix}.bin', closes)
+            self._write_floats(stock_dir / f'volume.{period_suffix}.bin', volumes)
+            self._write_floats(stock_dir / f'amount.{period_suffix}.bin', amounts)
+
+            # 分钟线需要额外保存时间信息
+            if period in ['1m', '5m', '15m', '30m', '1h']:
+                times = df['datetime'].dt.strftime('%H%M%S').astype(int).tolist()
+                self._write_ints(stock_dir / f'time.{period_suffix}.bin', times)
+                logger.debug(f"[LocalDB] 保存时间信息: {len(times)} 条 ({period})")
 
             logger.info(f"[LocalDB] 保存 {symbol} {period}: {len(df)} 条数据到 {stock_dir}")
             return True

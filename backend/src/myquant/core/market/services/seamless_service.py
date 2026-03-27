@@ -513,6 +513,15 @@ class SeamlessKlineService:
                 - PyTdx 支持原生复权 (front/back/none)
                 - 其他数据源返回不复权数据，由服务层处理
         """
+        # ── HotDB 快速通道（增量更新模式）────────────────────────────
+        hotdb_result = self._try_hotdb_fast_path(
+            symbol, period, count, start_date, end_date
+        )
+        if hotdb_result and not hotdb_result.df.empty:
+            logger.info(f"[HotDB快速通道] {symbol} {period} 返回 {len(hotdb_result.df)} 条")
+            return hotdb_result
+
+        # ── 原有路由链────────────────────────────────────────────
         # 获取基础数据源链
         chain = self._selector.get_fallback_chain_for_code(DataLevel.L3, symbol)
 
@@ -693,6 +702,9 @@ class SeamlessKlineService:
                         if AUTO_SAVE_TO_LOCALDB and source in SAVE_ONLINE_SOURCES:
                             self._save_to_localdb(symbol, df, period, source)
 
+                        # 回写到 HotDB（异步模式，加速下次访问）
+                        self._save_to_hotdb(symbol, df, period)
+
                         return KlineDataset.from_adapter(df, source)
                 else:
                     logger.debug(f"[补充数据] {source} 没有返回 {symbol} 的数据")
@@ -788,6 +800,86 @@ class SeamlessKlineService:
         if name not in self._adapter_cache:
             self._adapter_cache[name] = get_adapter(name)
         return self._adapter_cache[name]
+
+    def _try_hotdb_fast_path(
+        self,
+        symbol: str,
+        period: str,
+        count: Optional[int],
+        start_date: Optional[str],
+        end_date: Optional[str]
+    ) -> Optional[KlineDataset]:
+        """尝试 HotDB 快速通道（增量更新模式）
+
+        HotDB 有数据且无缺口 → 直接返回（<1ms）
+        HotDB 有数据但有缺口 → 智能增量补全后返回
+        HotDB 无数据 → 返回 None，降级到原有路由链
+
+        Args:
+            symbol: 股票代码
+            period: 周期
+            count: 返回数量
+            start_date: 开始日期
+            end_date: 结束日期
+
+        Returns:
+            KlineDataset 或 None
+        """
+        try:
+            # 延迟导入避免循环依赖
+            from myquant.core.market.services.hotdb_service import get_hotdb_service
+
+            hotdb_service = get_hotdb_service()
+            df = hotdb_service.get_kline_with_auto_update(
+                symbol=symbol,
+                period=period,
+                count=count,
+                start_date=start_date,
+                end_date=end_date
+            )
+
+            if df is None or df.empty:
+                logger.debug(f"[HotDB快速通道] {symbol} {period} 无数据，降级到路由链")
+                return None
+
+            logger.info(f"[HotDB快速通道] {symbol} {period} 命中，返回 {len(df)} 条数据")
+            return KlineDataset.from_adapter(df, 'hotdb')
+
+        except Exception as e:
+            logger.warning(f"[HotDB快速通道] {symbol} {period} 失败: {e}，降级到路由链")
+            return None
+
+    def _save_to_hotdb(self, symbol: str, df: pd.DataFrame, period: str):
+        """将实时数据回写到 HotDB（异步模式）
+
+        在获取实时数据后，延迟写入 HotDB 以加速下次访问
+
+        Args:
+            symbol: 股票代码
+            df: K线数据
+            period: 周期
+        """
+        try:
+            # 延迟导入避免循环依赖
+            from myquant.core.market.services.hotdb_service import get_hotdb_service
+            import threading
+
+            def async_save():
+                try:
+                    hotdb_service = get_hotdb_service()
+                    hotdb = hotdb_service._get_hotdb_adapter()
+                    if hotdb:
+                        hotdb.save_kline(symbol, df, period)
+                        logger.debug(f"[HotDB回写] {symbol} {period} 保存 {len(df)} 条")
+                except Exception as e:
+                    logger.warning(f"[HotDB回写] {symbol} {period} 失败: {e}")
+
+            # 启动后台线程保存（不阻塞主流程）
+            thread = threading.Thread(target=async_save, daemon=True)
+            thread.start()
+
+        except Exception as e:
+            logger.warning(f"[HotDB回写] 启动异步保存失败: {e}")
 
     def _mark_forming_kline(self, df: pd.DataFrame, period: str) -> pd.DataFrame:
         """标记正在形成的K线
