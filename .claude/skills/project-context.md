@@ -224,6 +224,33 @@ npm run dev   # 运行在 localhost:5174
 
 ## 待办任务
 
+### 🔄 Lightweight Charts 高级功能集成（新需求）
+**目标**：集成 Lightweight Charts 插件库的高级功能
+
+**优先级 P0（最实用）**：
+1. **user-price-lines** - 用户自定义价格线（支撑/阻力位标记）
+2. **user-price-alerts** - 价格提醒功能（突破价格线时通知）
+3. **session-highlighting** - 交易时段高亮（9:30-15:00 显示，盘前盘后灰色）
+4. **expiring-price-alerts** - 过期价格提醒
+
+**优先级 P1（增强交互）**：
+5. **trend-line** - 趋势线绘制工具
+6. **vertical-line** - 垂直线标记（重要事件点）
+7. **rectangle-drawing-tool** - 矩形框选工具（形态分析）
+8. **highlight-bar-crosshair** - 十字线高亮增强
+
+**优先级 P2（高级图表）**：
+9. **heatmap-series** - 热力图（板块热度、资金流向）
+10. **stacked-area-series** - 堆叠面积图（多股对比）
+11. **stacked-bars-series** - 堆叠柱状图
+12. **box-whisker-series** - 箱线图（价格分布）
+
+**实现参考**：
+- 插件源码：`frontend/external/lightweight-charts/plugin-examples/src/plugins/`
+- 指标源码：`frontend/external/lightweight-charts/indicator-examples/src/indicators/`
+
+---
+
 ### ✅ L0 WebSocket K线实时订阅（已完成）
 **目标**：将 RealtimeQuotes.vue 的 K 线数据从 HTTP 轮询改为 WebSocket 订阅
 
