@@ -5,11 +5,58 @@
     <div class="main-container">
       <div class="content-area">
         <!-- 左侧股票列表 -->
-        <WatchlistPanel
-          :selected-stock="selectedStock"
-          :mini-charts-data="miniChartsData"
-          @select-stock="selectStock"
-        />
+        <div class="panel watchlist-panel">
+          <div class="panel-header">
+            <span>{{ isZh ? '自选列表' : 'Watchlist' }}</span>
+            <div class="panel-actions">
+              <button class="panel-btn" @click="showAddStock = true" :title="isZh ? '添加股票' : 'Add'">+</button>
+            </div>
+          </div>
+
+          <!-- 搜索框 -->
+          <div class="search-section">
+            <input
+              v-model="searchSymbol"
+              type="text"
+              :placeholder="isZh ? '输入代码 (如 600000.SH)' : 'Symbol (e.g. 600000.SH)'"
+              class="search-input"
+              @keyup.enter="addStock"
+            />
+            <button @click="addStock" class="add-btn">{{ isZh ? '添加' : 'Add' }}</button>
+          </div>
+
+          <div class="stock-list">
+            <div
+              v-for="stock in watchlist"
+              :key="stock.code"
+              :class="['stock-item', { selected: selectedStock === stock.code }]"
+              @click="selectStock(stock.code)"
+            >
+              <div class="stock-info">
+                <div class="stock-code">{{ stock.code }}</div>
+                <div class="stock-name">{{ stock.name }}</div>
+              </div>
+              <svg v-if="miniChartsData[stock.code]" class="mini-chart" viewBox="0 0 120 28" preserveAspectRatio="none">
+                <polyline
+                  :points="sparklinePoints(miniChartsData[stock.code])"
+                  fill="none"
+                  :stroke="stock.change >= 0 ? '#ef5350' : '#26a69a'"
+                  stroke-width="1.5"
+                  stroke-linejoin="round"
+                />
+              </svg>
+              <div v-else class="mini-chart"></div>
+              <div class="stock-right">
+                <div :class="['stock-price', stock.change >= 0 ? 'positive' : 'negative']">
+                  {{ stock.price }}
+                </div>
+                <div :class="['stock-change', stock.change >= 0 ? 'positive' : 'negative']">
+                  {{ stock.change >= 0 ? '+' : '' }}{{ stock.change }}%
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
 
         <!-- 中间图表区域 -->
         <div class="chart-area">
@@ -66,10 +113,6 @@
         <div class="panel info-panel">
           <div class="panel-header">
             <span>{{ isZh ? '行情详情' : 'Quote' }}</span>
-            <div class="stock-info-header">
-              <span class="stock-name-header">{{ currentStockNameForPanel }}</span>
-              <span class="stock-code-header">{{ selectedStock }}</span>
-            </div>
           </div>
 
           <div class="trade-section">
@@ -226,15 +269,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, computed, nextTick, watch } from 'vue'
+import { ref, onMounted, onBeforeUnmount, computed, nextTick } from 'vue'
 import { createChart, CrosshairMode, CandlestickSeries, HistogramSeries } from 'lightweight-charts'
 import GlobalNavBar from '@/components/GlobalNavBar.vue'
-import WatchlistPanel from '@/components/watchlist/WatchlistPanel.vue'
 import { useAppStore } from '@/stores/core/AppStore'
-import { useDataStore } from '@/stores/core/DataStore'
 import {
   fetchKline,
-  fetchAggregatedKline,
   fetchSnapshot,
   fetchSnapshotBatch,
   fetchMarketStatus,
@@ -243,7 +283,7 @@ import {
   type MarketStatus
 } from '@/api/modules/quotes'
 import { createKlineWebSocket, type KlineBar } from '@/services/klineWebSocket'
-import { initScheduler, getScheduler, type RefreshScheduler } from '@/utils/refreshScheduler'
+import { createKlineAggregator, type Timeframe } from '@/services/klineAggregator'
 
 // 类型定义
 type ChartApi = any
@@ -287,16 +327,14 @@ const timeframes = computed(() => [
 ])
 
 // 状态
-const selectedStock = ref('')  // 初始为空，在 onMounted 中从分组获取
+const searchSymbol = ref('')
+const selectedStock = ref('600000.SH')
 const currentTimeframe = ref('1d')
 const appStore = useAppStore()
-const dataStore = useDataStore()
 const isZh = computed(() => appStore.language === 'zh')
 
-// 智能刷新调度器
-let scheduler: RefreshScheduler | null = null
-
 const loading = ref(false)
+const showAddStock = ref(false)
 const adjustType = ref('qfq')
 
 // 后端 change_pct 字段兼容工具（pytdx 返回 change_pct，部分接口返回 change_percent）
@@ -337,7 +375,13 @@ const currentQuote = ref<QuoteData>({
   data_source: 'unknown'
 })
 
-// 自选股列表现在使用 DataStore (dataStore.watchlist)
+// 自选股列表
+const watchlist = ref([
+  { code: '600000.SH', name: '浦发银行', price: '--', change: 0 },
+  { code: '000001.SZ', name: '平安银行', price: '--', change: 0 },
+  { code: '600519.SH', name: '贵州茅台', price: '--', change: 0 },
+  { code: '000858.SZ', name: '五粮液', price: '--', change: 0 }
+])
 
 // 五档盘口数据（从API获取）
 const asks = ref([
@@ -367,6 +411,7 @@ let chartResizeObserver: ResizeObserver | null = null
 
 // WebSocket 实例（1分钟线实时推送）
 let klineWs: any = null  // KlineWebSocket
+let aggregator: any = null  // Kline聚合器（所有周期都用WS，前端聚合）
 const wsConnected = ref(false)
 
 // 十字光标悬停的 bar 数据
@@ -374,22 +419,8 @@ const hoverBar = ref<{ time: string; open: number; high: number; low: number; cl
 
 // 当前股票名称
 const currentStockName = computed(() => {
-  const stock = dataStore.watchlist.find(s => s.symbol === selectedStock.value)
-  return stock ? `${stock.name} (${stock.symbol})` : selectedStock.value
-})
-
-// 当前股票名称（用于面板标题，响应式）
-const currentStockNameForPanel = computed(() => {
-  // 优先从 watchlist 获取
-  const stock = dataStore.watchlist.find(s => s.symbol === selectedStock.value)
-  if (stock) return stock.name
-
-  // 其次从实时行情获取
-  const quote = dataStore.quotes[selectedStock.value]
-  if (quote && quote.name) return quote.name
-
-  // 最后返回代码
-  return selectedStock.value
+  const stock = watchlist.value.find(s => s.code === selectedStock.value)
+  return stock ? `${stock.name} (${stock.code})` : selectedStock.value
 })
 
 // 格式化成交量
@@ -407,7 +438,7 @@ const miniChartsData = ref<Record<string, Array<{time: Date, close: number}>>>({
 let preloadAbortController: AbortController | null = null
 
 const preloadWatchlistKlines = async () => {
-  const otherStocks = dataStore.watchlist.filter(s => s.symbol !== selectedStock.value)
+  const otherStocks = watchlist.value.filter(s => s.code !== selectedStock.value)
   if (otherStocks.length === 0) return
 
   // 要预加载的周期（当前周期 + 常用周期）
@@ -438,7 +469,7 @@ const preloadWatchlistKlines = async () => {
 
       try {
         // 低优先级获取，只缓存不显示（count=300足够近期使用）
-        await fetchKline(stock.symbol, period, 300, adjustType.value)
+        await fetchKline(stock.code, period, 300, adjustType.value)
         completed++
 
         // 每完成5个打印一次日志
@@ -447,7 +478,7 @@ const preloadWatchlistKlines = async () => {
         }
       } catch (e) {
         // 静默失败，不影响用户体验
-        console.debug(`[Preload] ${stock.symbol} ${period} 预加载失败`)
+        console.debug(`[Preload] ${stock.code} ${period} 预加载失败`)
       }
     }
   }
@@ -457,17 +488,9 @@ const preloadWatchlistKlines = async () => {
 
 // 迷你折线图：获取自选股的当天 1 分钟收盘价
 const loadMiniCharts = async () => {
-  // 从所有分组中收集股票（去重）
-  const allStocks = new Map<string, string>()
-  for (const group of dataStore.watchlistGroups) {
-    for (const stock of group.stocks) {
-      allStocks.set(stock.symbol, stock.name)
-    }
-  }
-
-  const tasks = Array.from(allStocks.entries()).map(async ([symbol, name]) => {
+  const tasks = watchlist.value.map(async (stock) => {
     try {
-      const res = await fetchKline(symbol, '1m', 240, 'none')  // 1分钟，全天240根
+      const res = await fetchKline(stock.code, '1m', 240, 'none')  // 1分钟，全天240根
       if (res.data && res.data.length >= 5) {
         // 转换为带时间戳的数据，并按时间排序
         const barsWithTime = res.data
@@ -484,9 +507,9 @@ const loadMiniCharts = async () => {
 
         // 只保留当天开盘之后的数据
         const todayBars = barsWithTime.filter(b => b.time >= dayOpen)
-        miniChartsData.value[symbol] = todayBars
+        miniChartsData.value[stock.code] = todayBars
       } else {
-        miniChartsData.value[symbol] = []
+        miniChartsData.value[stock.code] = []
       }
     } catch {}
   })
@@ -715,52 +738,37 @@ const initChart = () => {
   })
 }
 
-// 加载K线数据（优先从后台聚合器获取）
+// 加载K线数据（优化版：优先加载K线，其他数据延后）
 const isInitialLoad = ref(true)  // 标记是否为初始加载
 
 const loadKlineData = async () => {
   if (!selectedStock.value) return
-  if (!chart || !candleSeries) return  // 图表未初始化，跳过
 
   loading.value = true
   let lastBarsCount = 0  // 记录本次加载的 bar 数量，供 setVisibleLogicalRange 使用
 
   try {
-    // 优先从后台聚合端点获取（瞬间返回）
-    // 聚合端点支持: 5m, 15m, 30m, 1h, 1d
-    const isSupportedPeriod = ['5m', '15m', '30m', '1h', '1d'].includes(currentTimeframe.value)
-    let klineRes: any = null
-
-    if (isSupportedPeriod) {
-      try {
-        console.log(`[RealtimeQuotes] 尝试从聚合端点获取: ${selectedStock.value} ${currentTimeframe.value}`)
-        klineRes = await fetchAggregatedKline(selectedStock.value, currentTimeframe.value, 800, adjustType.value)
-        if (klineRes && klineRes.data && klineRes.data.length > 0) {
-          console.log(`[RealtimeQuotes] 聚合端点成功: ${klineRes.data.length} 根 (数据源: ${klineRes.data_source})`)
-        }
-      } catch (e) {
-        console.log(`[RealtimeQuotes] 聚合端点失败，降级到普通端点`)
-      }
-    }
-
-    // 降级：从普通端点获取
-    if (!klineRes || !klineRes.data || klineRes.data.length === 0) {
-      // 对于日线，强制不使用缓存（hotdb可能有旧数据）
-      const useCache = currentTimeframe.value !== '1d'
-      klineRes = await fetchKline(selectedStock.value, currentTimeframe.value, 800, adjustType.value, useCache)
-      console.log(`[RealtimeQuotes] 普通端点: ${klineRes.data?.length || 0} 根 (数据源: ${klineRes.data_source})`)
-    }
+    // 第一步：优先只加载K线数据（最核心的）
+    const klineRes = await fetchKline(selectedStock.value, currentTimeframe.value, 800, adjustType.value)
 
     // 处理K线数据
     if (klineRes.data && klineRes.data.length > 0) {
       const isDaily = currentTimeframe.value === '1d' || currentTimeframe.value === '1w'
       const klineDataWithSeconds = klineRes.data
         .map((item: KlineItem) => {
-          const ts = Number(item.time)
-          const timeValue = Math.floor(ts / 1000)
+          // 后端返回秒级时间戳（UTC时间）
+          // 加8小时让显示变成北京时间
+          let timeValue: number
+          if (typeof item.time === 'string') {
+            timeValue = Math.floor(new Date(item.time).getTime() / 1000)
+          } else {
+            timeValue = Number(item.time)
+          }
+
+          const adjustedTime = timeValue + 8 * 3600
 
           return {
-            time: timeValue,
+            time: adjustedTime,
             open: Number(item.open),
             high: Number(item.high),
             low: Number(item.low),
@@ -780,138 +788,16 @@ const loadKlineData = async () => {
           ).sort((a, b) => a.time - b.time)
         : klineDataWithSeconds.sort((a, b) => (a.time as number) - (b.time as number))
 
-      // 【关键】对于日线，检查最后一根是否是今天且收盘价是旧的
-      let finalData = deduped
-      if (isDaily && deduped.length > 0) {
-        const lastBar = deduped[deduped.length - 1]
-        const lastDate = new Date(lastBar.time * 1000)
-        const today = new Date()
-        today.setHours(0, 0, 0, 0)
+      candleSeries?.setData(deduped)
+      lastBarsCount = deduped.length
 
-        const isToday = (
-          lastDate.getFullYear() === today.getFullYear() &&
-          lastDate.getMonth() === today.getMonth() &&
-          lastDate.getDate() === today.getDate()
-        )
-
-        console.log(`[RealtimeQuotes] 日线最后一根: ${lastDate.toLocaleDateString()}, close=${lastBar.close}, isToday=${isToday}`)
-
-        // 如果最后一根是今天，用1分钟数据验证收盘价是否最新
-        if (isToday) {
-          try {
-            // 获取最新的1分钟数据（5根足够），强制不使用缓存
-            console.log(`[RealtimeQuotes] 开始获取1分钟数据验证日线...`)
-            const oneMinRes = await fetchKline(selectedStock.value, '1m', 5, adjustType.value, false)
-
-            console.log(`[RealtimeQuotes] 1分钟数据: ${oneMinRes.data?.length || 0} 根`)
-
-            if (oneMinRes.data && oneMinRes.data.length > 0) {
-              const lastOneMin = oneMinRes.data[oneMinRes.data.length - 1]
-              const oneMinClose = Number(lastOneMin.close)
-              const dailyClose = Number(lastBar.close)
-
-              console.log(`[RealtimeQuotes] 1分钟最新收盘: ${oneMinClose}, 日线收盘: ${dailyClose}, 差异: ${Math.abs(oneMinClose - dailyClose)}`)
-
-              // 如果收盘价差异 > 0.01，说明日线数据是旧的
-              if (Math.abs(oneMinClose - dailyClose) > 0.01) {
-                console.log(`[RealtimeQuotes] 检测到日线数据过期 (${dailyClose} → ${oneMinClose})，重新获取全部日K线`)
-
-                // 重新获取全部日K线（800根），强制不使用缓存
-                const freshRes = await fetchKline(selectedStock.value, '1d', 800, adjustType.value, false)
-
-                if (freshRes.data && freshRes.data.length > 0) {
-                  console.log(`[RealtimeQuotes] 重新获取到 ${freshRes.data.length} 根日K线，最新收盘: ${freshRes.data[freshRes.data.length - 1].close}`)
-
-                  // 直接使用新获取的全部数据
-                  finalData = freshRes.data
-                    .map((item: KlineItem) => {
-                      const ts = Number(item.time)
-                      return {
-                        time: Math.floor(ts / 1000),
-                        open: Number(item.open),
-                        high: Number(item.high),
-                        low: Number(item.low),
-                        close: Number(item.close),
-                        volume: Number(item.volume)
-                      }
-                    })
-                    .filter((item): item is { time: number; open: number; high: number; low: number; close: number; volume: number } => item !== null)
-
-                  // 日线去重
-                  if (isDaily) {
-                    finalData = Array.from(
-                      finalData.reduce((map, item) => {
-                        map.set(item.time, item)
-                        return map
-                      }, new Map<number, typeof finalData[0]>()).values()
-                    ).sort((a, b) => a.time - b.time)
-                  }
-                }
-              } else {
-                console.log('[RealtimeQuotes] 日线数据是最新的，无需更新')
-              }
-            }
-          } catch (err) {
-            console.warn('[RealtimeQuotes] 验证日K线新鲜度失败:', err)
-          }
-        }
-      }
-
-      candleSeries?.setData(finalData)
-      lastBarsCount = finalData.length
-
-      // 成交量数据与 finalData K线保持一致的时间戳
-      const volumeData = finalData.map(d => ({
+      // 成交量数据与 deduped K线保持一致的时间戳
+      const volumeData = deduped.map(d => ({
         time: d.time,
         value: d.volume,
         color: d.close >= d.open ? '#ef535080' : '#26a69a80'
       }))
       volumeSeries?.setData(volumeData)
-
-      // 【强制修复】对于日线，强制用1分钟最新价格更新收盘价
-      if (isDaily && finalData.length > 0) {
-        const lastBar = finalData[finalData.length - 1]
-        const lastDate = new Date(lastBar.time * 1000)
-        const today = new Date()
-        today.setHours(0, 0, 0, 0)
-
-        const isToday = (
-          lastDate.getFullYear() === today.getFullYear() &&
-          lastDate.getMonth() === today.getMonth() &&
-          lastDate.getDate() === today.getDate()
-        )
-
-        if (isToday) {
-          try {
-            // 获取1分钟最新价格
-            const oneMinRes = await fetchKline(selectedStock.value, '1m', 5, adjustType.value, false)
-
-            if (oneMinRes.data && oneMinRes.data.length > 0) {
-              const lastOneMin = oneMinRes.data[oneMinRes.data.length - 1]
-              const newClose = Number(lastOneMin.close)
-              const oldClose = Number(lastBar.close)
-
-              console.log(`[RealtimeQuotes] 强制更新日线收盘价: ${oldClose} → ${newClose}`)
-
-              // 更新最后一根的收盘价
-              finalData[finalData.length - 1].close = newClose
-              // 更新最高/最低价（如果需要）
-              if (newClose > finalData[finalData.length - 1].high) {
-                finalData[finalData.length - 1].high = newClose
-              }
-              if (newClose < finalData[finalData.length - 1].low) {
-                finalData[finalData.length - 1].low = newClose
-              }
-
-              // 重新设置图表数据
-              candleSeries?.setData(finalData)
-              console.log('[RealtimeQuotes] 日线收盘价已强制更新')
-            }
-          } catch (err) {
-            console.warn('[RealtimeQuotes] 强制更新失败:', err)
-          }
-        }
-      }
 
       // K线加载完成，立即结束loading（提升用户体验）
       loading.value = false
@@ -936,7 +822,7 @@ const loadKlineData = async () => {
     // 第二步：后台加载其他数据（不阻塞K线显示）
     setTimeout(async () => {
       try {
-        const allSymbols = dataStore.watchlist.map(s => s.symbol)
+        const allSymbols = watchlist.value.map(s => s.code)
         const indexSymbols = indices.value.map(i => i.code)
 
         // 并行加载快照、自选股、指数
@@ -949,26 +835,16 @@ const loadKlineData = async () => {
         // 更新当前股票快照（右侧详情面板）
         updateQuoteFromSnapshot(snapshotRes)
 
-        // 批量更新所有自选股的价格到 DataStore
+        // 批量更新所有自选股的价格
         if (batchRes.data && batchRes.data.length > 0) {
-          // 转换 QuoteSnapshot 到 Quote 格式
-          const quotes = batchRes.data.map((q: any) => ({
-            symbol: q.symbol || q.code,
-            name: q.name,
-            price: q.price,
-            change: q.change,
-            change_percent: q.change_percent ?? q.change_pct ?? 0,
-            open: q.open,
-            high: q.high,
-            low: q.low,
-            close: q.prev_close,
-            volume: q.volume,
-            amount: q.amount,
-            timestamp: q.timestamp || Date.now()
-          }))
-          console.log('[RealtimeQuotes] Updating DataStore quotes:', quotes)
-          dataStore.updateQuotes(quotes)
-          console.log('[RealtimeQuotes] After update, dataStore.quotes:', Object.keys(dataStore.quotes))
+          const quoteMap = new Map(batchRes.data.map((q: any) => [q.symbol || q.code, q]))
+          for (const stock of watchlist.value) {
+            const quote = quoteMap.get(stock.code)
+            if (quote) {
+              stock.price = quote.price ? Number(quote.price).toFixed(2) : '--'
+              stock.change = getChangePct(quote)
+            }
+          }
         }
 
         // 更新指数
@@ -1030,94 +906,46 @@ const onWsHistory = (bars: KlineBar[]) => {
   }
 }
 
-/** 处理 WebSocket bar_update 消息（直接使用后台聚合结果） */
-const onWsBarUpdate = (bar: any, period?: string) => {
-  if (!candleSeries || !volumeSeries) return
+/** 处理 WebSocket bar_update 消息（更新最后一根 K线） */
+const onWsBarUpdate = (bar: KlineBar) => {
+  if (!candleSeries || !volumeSeries || !aggregator) return
 
-  // 收盘后不更新
-  const isOpen = marketStatusCache.value?.is_open ?? false
-  if (!isOpen && currentTimeframe.value !== '1m') {
-    return
-  }
+  // 日线及以上周期：检查是否是当天数据
+  const isDailyOrAbove = ['1d', '1w', '1M'].includes(currentTimeframe.value)
 
   // 转换后端数据格式
   const timeField = (bar as any).datetime || bar.time
-  let timestamp: number
+  const timestamp = new Date(timeField).getTime() / 1000
+  if (isNaN(timestamp)) return
 
-  if (typeof timeField === 'number') {
-    timestamp = timeField
-  } else if (typeof timeField === 'string') {
-    // 处理 "2026-03-26 14:35:00" 格式
-    const parts = timeField.split(' ')
-    if (parts.length === 2) {
-      const datePart = parts[0].replace(/-/g, '/')
-      const dateTimeStr = `${datePart} ${parts[1]}`
-      timestamp = Math.floor(new Date(dateTimeStr).getTime() / 1000)
-    } else {
-      timestamp = Math.floor(new Date(timeField).getTime() / 1000)
+  // 日线周期：只更新当天的最后一根K线，不处理历史数据
+  if (isDailyOrAbove) {
+    const now = new Date()
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime() / 1000
+
+    // 只处理当天的数据（用于更新最后一根K线的收盘价）
+    if (timestamp >= today) {
+      const chartBar = {
+        time: today,
+        open: Number(bar.open),
+        high: Number(bar.high),
+        low: Number(bar.low),
+        close: Number(bar.close),
+        volume: Number(bar.volume)
+      }
+      candleSeries.update(chartBar)
+      volumeSeries.update({
+        time: today,
+        value: chartBar.volume,
+        color: chartBar.close >= chartBar.open ? '#ef535080' : '#26a69a80'
+      })
+      console.log('[RealtimeQuotes] 日线更新:', chartBar)
     }
-  } else {
-    timestamp = Math.floor(new Date(String(timeField)).getTime() / 1000)
-  }
-
-  if (isNaN(timestamp)) {
-    console.error('[RealtimeQuotes] 无效的时间戳:', timeField)
     return
   }
 
-  // 如果后端返回的是已聚合的数据（period 存在且匹配），直接更新图表
-  if (period && period === currentTimeframe.value) {
-    const chartBar = {
-      time: timestamp,
-      open: Number(bar.open),
-      high: Number(bar.high),
-      low: Number(bar.low),
-      close: Number(bar.close),
-      volume: Number(bar.volume)
-    }
-
-    candleSeries.update(chartBar)
-    volumeSeries.update({
-      time: chartBar.time,
-      value: chartBar.volume,
-      color: chartBar.close >= chartBar.open ? '#ef535080' : '#26a69a80'
-    })
-    console.log(`[RealtimeQuotes] ${currentTimeframe.value} 后端聚合更新:`, chartBar)
-    return
-  }
-
-  // 1分钟周期：直接更新
-  if (currentTimeframe.value === '1m') {
-    const oneMinuteBar = {
-      time: timestamp,
-      open: Number(bar.open),
-      high: Number(bar.high),
-      low: Number(bar.low),
-      close: Number(bar.close),
-      volume: Number(bar.volume)
-    }
-
-    candleSeries.update(oneMinuteBar)
-    volumeSeries.update({
-      time: oneMinuteBar.time,
-      value: oneMinuteBar.volume,
-      color: oneMinuteBar.close >= oneMinuteBar.open ? '#ef535080' : '#26a69a80'
-    })
-    console.log('[RealtimeQuotes] 1分钟线更新:', oneMinuteBar)
-    return
-  }
-
-  // 其他周期：后端有推送但 period 不匹配，忽略（等待匹配周期的推送）
-  if (period) {
-    console.log(`[RealtimeQuotes] 忽略不匹配周期推送: ws.period=${period}, current=${currentTimeframe.value}`)
-    return
-  }
-
-  // 降级：没有 period 字段（旧格式），使用前端聚合器
-  console.log(`[RealtimeQuotes] 使用前端聚合器降级: ${currentTimeframe.value}`)
-  if (!aggregator) return
-
-  const oneMinuteBar = {
+  // 分钟线周期：正常聚合
+  const convertedBar: KlineBar = {
     time: timestamp,
     open: Number(bar.open),
     high: Number(bar.high),
@@ -1126,73 +954,35 @@ const onWsBarUpdate = (bar: any, period?: string) => {
     volume: Number(bar.volume)
   }
 
-  try {
-    const result = aggregator.aggregateBar(oneMinuteBar, true)
+  const result = aggregator.aggregateBar(convertedBar, true)
 
-    if (result.update || result.close) {
-      const updateBar = result.update || result.close
-      if (updateBar) {
-        const chartBar = {
-          time: Math.floor(Number(updateBar.time)),
-          open: Number(updateBar.open),
-          high: Number(updateBar.high),
-          low: Number(updateBar.low),
-          close: Number(updateBar.close),
-          volume: Number(updateBar.volume)
-        }
-
-        candleSeries.update(chartBar)
-        volumeSeries.update({
-          time: chartBar.time,
-          value: chartBar.volume,
-          color: chartBar.close >= chartBar.open ? '#ef535080' : '#26a69a80'
-        })
-        console.log(`[RealtimeQuotes] ${currentTimeframe.value} 前端聚合更新:`, chartBar)
-      }
-    }
-  } catch (error) {
-    console.error('[RealtimeQuotes] 前端聚合错误:', error)
-  }
-}
-
-/** 处理 WebSocket bar_close 消息（新一根K线开始） */
-const onWsBarClose = (bar: any, period?: string) => {
-  if (!candleSeries || !volumeSeries) return
-
-  // 检查 period 是否匹配当前周期
-  if (period && period !== currentTimeframe.value) {
-    return
-  }
-
-  // 如果后端返回的是已聚合的数据，直接更新图表
-  if (period === currentTimeframe.value) {
-    const timeField = (bar as any).datetime || bar.time
-    const timestamp = new Date(timeField).getTime() / 1000
-
-    if (isNaN(timestamp)) return
-
-    const chartBar = {
-      time: Math.floor(timestamp),
-      open: Number(bar.open),
-      high: Number(bar.high),
-      low: Number(bar.low),
-      close: Number(bar.close),
-      volume: Number(bar.volume)
-    }
-
+  // 更新图表
+  if (result.update) {
+    const chartBar = result.update
     candleSeries.update(chartBar)
     volumeSeries.update({
       time: chartBar.time,
       value: chartBar.volume,
       color: chartBar.close >= chartBar.open ? '#ef535080' : '#26a69a80'
     })
-    console.log(`[RealtimeQuotes] ${currentTimeframe.value} 后端聚合收线:`, chartBar)
+    console.log('[RealtimeQuotes] K线更新:', chartBar)
+  }
+}
+
+/** 处理 WebSocket bar_close 消息（上一根收线，新一根开始） */
+const onWsBarClose = (bar: KlineBar) => {
+  if (!candleSeries || !volumeSeries) return
+
+  // 日线及以上周期：不处理收线消息（因为历史数据已通过HTTP加载）
+  const isDailyOrAbove = ['1d', '1w', '1M'].includes(currentTimeframe.value)
+  if (isDailyOrAbove) {
     return
   }
 
-  // 兼容旧逻辑：通过前端聚合器
+  // 分钟线周期：正常处理
   if (!aggregator) return
 
+  // 转换后端数据格式
   const timeField = (bar as any).datetime || bar.time
   const timestamp = new Date(timeField).getTime() / 1000
   if (isNaN(timestamp)) return
@@ -1295,48 +1085,27 @@ const refreshSnapshots = async () => {
   if (!selectedStock.value) return
 
   try {
-    // 获取所有分组的所有股票（热数据库：所有列表里的股票都在后台更新）
-    const allSymbols = dataStore.watchlistGroups.flatMap(g => g.stocks.map(s => s.symbol))
-
-    // 确保当前选中的股票也在获取列表中
-    if (selectedStock.value && !allSymbols.includes(selectedStock.value)) {
-      allSymbols.unshift(selectedStock.value)
-    }
+    const allSymbols = watchlist.value.map(s => s.code)
     const indexSymbols = indices.value.map(i => i.code)
-    console.log('[RealtimeQuotes] Fetching snapshots for allSymbols:', allSymbols)
     const [snapshotRes, batchRes, indexRes] = await Promise.all([
       fetchSnapshot(selectedStock.value),
       fetchSnapshotBatch(allSymbols),
       fetchSnapshotBatch(indexSymbols),
     ])
 
-    console.log('[RealtimeQuotes] batchRes:', batchRes)
-    console.log('[RealtimeQuotes] batchRes.data:', batchRes.data)
-    console.log('[RealtimeQuotes] batchRes.data length:', batchRes.data?.length)
-
     // 更新当前股票快照（API 直接返回 QuoteSnapshot，无需解包）
     updateQuoteFromSnapshot(snapshotRes)
 
-    // 批量更新所有自选股的价格到 DataStore
+    // 批量更新所有自选股的价格
     if (batchRes.data && batchRes.data.length > 0) {
-      // 转换 QuoteSnapshot 到 Quote 格式
-      const quotes = batchRes.data.map((q: any) => ({
-        symbol: q.symbol || q.code,
-        name: q.name,
-        price: q.price,
-        change: q.change,
-        change_percent: q.change_percent ?? q.change_pct ?? 0,
-        open: q.open,
-        high: q.high,
-        low: q.low,
-        close: q.prev_close,
-        volume: q.volume,
-        amount: q.amount,
-        timestamp: q.timestamp || Date.now()
-      }))
-      console.log('[RealtimeQuotes] Updating DataStore quotes:', quotes)
-      dataStore.updateQuotes(quotes)
-      console.log('[RealtimeQuotes] After update, dataStore.quotes keys:', Object.keys(dataStore.quotes))
+      const quoteMap = new Map(batchRes.data.map((q: any) => [q.symbol || q.code, q]))
+      for (const stock of watchlist.value) {
+        const quote = quoteMap.get(stock.code)
+        if (quote) {
+          stock.price = quote.price ? Number(quote.price).toFixed(2) : '--'
+          stock.change = getChangePct(quote)
+        }
+      }
     }
 
     // 更新指数
@@ -1387,9 +1156,14 @@ const formatOrderSize = (size: number): string => {
 const connectKlineWs = () => {
   if (!selectedStock.value) return
 
-  // 如果已连接且股票没变，不需要重新连接
+  // 如果已连接且股票没变，只更新聚合器周期
   if (klineWs && klineWs.isConnected() && selectedStock.value === (klineWs as any).symbol) {
-    console.log('[RealtimeQuotes] WS 已连接，股票未变')
+    console.log('[RealtimeQuotes] WS 已连接，更新聚合器周期:', currentTimeframe.value)
+    if (aggregator) {
+      aggregator.setTimeframe(currentTimeframe.value as Timeframe)
+    } else {
+      aggregator = createKlineAggregator(currentTimeframe.value as Timeframe)
+    }
     return
   }
 
@@ -1397,16 +1171,10 @@ const connectKlineWs = () => {
 
   console.log('[RealtimeQuotes] 连接 WS:', selectedStock.value, '周期:', currentTimeframe.value)
 
-  // 获取当前选中股票所在分组的刷新间隔（毫秒 → 秒）
-  let refreshInterval = 5  // 默认 5 秒
-  const activeGroup = dataStore.watchlistGroups.find(g => g.id === dataStore.activeGroupId)
-  if (activeGroup && activeGroup.refreshInterval) {
-    refreshInterval = activeGroup.refreshInterval / 1000  // 毫秒转秒
-    console.log('[RealtimeQuotes] 使用分组刷新间隔:', refreshInterval, '秒')
-  }
+  // 初始化聚合器
+  aggregator = createKlineAggregator(currentTimeframe.value as Timeframe)
 
   klineWs = createKlineWebSocket(selectedStock.value, {
-    refreshInterval,
     onConnected: () => {
       wsConnected.value = true
       console.log('[RealtimeQuotes] WS 已连接')
@@ -1435,6 +1203,9 @@ const disconnectKlineWs = () => {
     klineWs = null
     wsConnected.value = false
   }
+  // 清空聚合器
+  aggregator?.clear()
+  aggregator = null
 }
 
 // ─────────────────────────────────────────────
@@ -1457,18 +1228,26 @@ const selectStock = (code: string) => {
 }
 
 // 切换周期
-const changeTimeframe = async (tf: string) => {
+const changeTimeframe = (tf: string) => {
   if (currentTimeframe.value === tf) return  // 周期没变，不处理
 
   console.log('[RealtimeQuotes] 切换周期:', currentTimeframe.value, '->', tf)
   currentTimeframe.value = tf
   isInitialLoad.value = true  // 切换周期时重新适应显示范围
 
-  // 直接加载对应周期的历史数据
-  console.log('[RealtimeQuotes] 加载周期数据:', tf)
-  await loadKlineData()
+  // 清空旧聚合器，创建新聚合器（确保干净的聚合状态）
+  if (aggregator) {
+    aggregator.clear()
+  }
+  aggregator = createKlineAggregator(tf as Timeframe)
+  console.log('[RealtimeQuotes] 新建聚合器:', tf)
 
-  // WebSocket 保持连接（后端会自动按周期推送聚合数据）
+  // 切换周期时，用 HTTP API 加载历史数据（WebSocket 只推1分钟线，需要聚合）
+  console.log('[RealtimeQuotes] 切换周期，加载历史数据:', tf)
+  loadKlineData()
+
+  // WebSocket 保持连接（始终推1分钟线），无需重连
+  // 聚合器会自动将1分钟线聚合到目标周期
 }
 
 // 切换复权类型
@@ -1479,6 +1258,20 @@ const changeAdjustType = (type: string) => {
 }
 
 // 添加股票
+const addStock = () => {
+  const code = searchSymbol.value.trim().toUpperCase()
+  if (code && !watchlist.value.find(s => s.code === code)) {
+    watchlist.value.push({
+      code,
+      name: code,
+      price: '--',
+      change: 0
+    })
+    searchSymbol.value = ''
+    selectStock(code)
+  }
+}
+
 // 市场状态缓存
 const marketStatusCache = ref<MarketStatus | null>(null)
 
@@ -1498,214 +1291,42 @@ const startRealtimeUpdate = async () => {
   // 每30秒更新一次市场状态
   statusTimer = window.setInterval(updateStatus, 30000)
 
-  // 初始化智能刷新调度器
-  scheduler = initScheduler(async (stocks: string[]) => {
+  // 主刷新循环
+  updateTimer = window.setInterval(async () => {
+    if (!selectedStock.value) return
+
     const status = marketStatusCache.value
     const isOpen = status?.is_open ?? false
 
     // 收盘后不刷新
     if (!isOpen) {
-      return false
+      return
     }
 
-    // 批量刷新指定股票的快照数据
-    if (stocks.length > 0) {
-      try {
-        console.log(`[RealtimeQuotes] 调度器刷新 ${stocks.length} 只股票`)
-        const batchRes = await fetchSnapshotBatch(stocks)
-        if (batchRes.data && batchRes.data.length > 0) {
-          const quotes = batchRes.data.map((q: any) => ({
-            symbol: q.symbol || q.code,
-            name: q.name,
-            price: q.price,
-            change: q.change,
-            change_percent: q.change_percent ?? q.change_pct ?? 0,
-            open: q.open,
-            high: q.high,
-            low: q.low,
-            close: q.prev_close,
-            volume: q.volume,
-            amount: q.amount,
-            timestamp: q.timestamp || Date.now()
-          }))
-          dataStore.updateQuotes(quotes)
-        }
-        return true
-      } catch (error) {
-        console.error('[RealtimeQuotes] 调度器刷新失败:', error)
-        return false
-      }
+    // 交易中：根据连接状态决定刷新方式
+    if (wsConnected.value) {
+      // WebSocket 已连接：只刷新快照（K线由 WS 推送）
+      refreshSnapshots()
+    } else {
+      // WebSocket 未连接：用 HTTP 加载 K线
+      loadKlineData()
     }
-    return false
-  })
-
-  // 为每个分组注册刷新任务
-  const registerGroups = () => {
-    if (!scheduler) return
-
-    // 清除旧任务
-    for (const group of dataStore.watchlistGroups) {
-      scheduler.unregister(group.id)
-    }
-
-    // 注册新任务
-    for (const group of dataStore.watchlistGroups) {
-      if (group.stocks.length > 0) {
-        scheduler.register({
-          groupId: group.id,
-          groupName: group.name,
-          stocks: group.stocks.map(s => s.symbol),
-          interval: group.refreshInterval,
-          priority: group.refreshInterval < 5000 ? 1 : 2,
-          lastRefresh: 0
-        })
-      }
-    }
-
-    console.log(`[RealtimeQuotes] 已注册 ${dataStore.watchlistGroups.length} 个分组到调度器`)
-  }
-
-  // 初始注册
-  registerGroups()
-
-  // 监听分组变化，重新注册
-  watch(() => dataStore.watchlistGroups, () => {
-    registerGroups()
-  }, { deep: true })
-
-  // 当前选中股票的K线刷新（独立于分组调度器）
-  // 根据分组刷新间隔动态设置
-  const setupUpdateTimer = () => {
-    if (updateTimer) {
-      clearInterval(updateTimer)
-    }
-
-    // 获取当前分组的刷新间隔（毫秒）
-    let interval = 5000  // 默认 5 秒
-    const activeGroup = dataStore.watchlistGroups.find(g => g.id === dataStore.activeGroupId)
-    if (activeGroup && activeGroup.refreshInterval) {
-      interval = activeGroup.refreshInterval
-      console.log('[RealtimeQuotes] 快照刷新间隔:', interval, 'ms')
-    }
-
-    updateTimer = window.setInterval(async () => {
-      if (!selectedStock.value) {
-        console.log('[RealtimeQuotes] 定时器跳过: 无选中股票')
-        return
-      }
-
-      const status = marketStatusCache.value
-      const isOpen = status?.is_open ?? false
-
-      console.log(`[RealtimeQuotes] 定时器检查: 股票=${selectedStock.value}, 周期=${currentTimeframe.value}, 开盘=${isOpen}, WS连接=${wsConnected.value}, 市场状态=${JSON.stringify(status)}`)
-
-      // 如果市场状态为空，重新获取
-      if (!status) {
-        console.log('[RealtimeQuotes] 市场状态为空，重新获取')
-        try {
-          const newStatus = await fetchMarketStatus()
-          marketStatusCache.value = newStatus
-          if (newStatus?.is_open) {
-            console.log('[RealtimeQuotes] 重新获取后开盘，继续刷新')
-          } else {
-            console.log('[RealtimeQuotes] 重新获取后仍收盘，跳过')
-            return
-          }
-        } catch (error) {
-          console.error('[RealtimeQuotes] 获取市场状态失败:', error)
-          return
-        }
-      } else if (!isOpen) {
-        console.log('[RealtimeQuotes] 定时器跳过: 市场未开盘')
-        return
-      }
-
-      // 刷新当前选中股票的数据
-      if (wsConnected.value && currentTimeframe.value === '1m') {
-        // 1分钟周期 + WebSocket 已连接：K线由 WS 推送，只需刷新快照
-        console.log('[RealtimeQuotes] 定时刷新快照')
-        refreshSnapshots()
-      } else {
-        // 其他情况：用 HTTP 加载 K线（包括非1分钟周期或 WebSocket 未连接）
-        console.log(`[RealtimeQuotes] 定时刷新 K线: ${currentTimeframe.value} (${selectedStock.value})`)
-        loadKlineData()
-      }
-    }, interval)
-  }
-
-  setupUpdateTimer()
+  }, 5000)  // 固定5秒检查一次，实际是否刷新由市场状态决定
 }
 
 onMounted(() => {
   nextTick(() => {
     initChart()
     loadMiniCharts()
-
-    // 数据预热：启动时预加载标记为预热的分组数据
-    dataStore.preheatData(async (symbols) => {
-      if (symbols.length > 0) {
-        try {
-          const batchRes = await fetchSnapshotBatch(symbols)
-          if (batchRes.data && batchRes.data.length > 0) {
-            const quotes = batchRes.data.map((q: any) => ({
-              symbol: q.symbol || q.code,
-              name: q.name,
-              price: q.price,
-              change: q.change,
-              change_percent: q.change_percent ?? q.change_pct ?? 0,
-              open: q.open,
-              high: q.high,
-              low: q.low,
-              close: q.prev_close,
-              volume: q.volume,
-              amount: q.amount,
-              timestamp: q.timestamp || Date.now()
-            }))
-            dataStore.updateQuotes(quotes)
-            console.log(`[RealtimeQuotes] 预热完成: ${symbols.length} 只股票`)
-          }
-        } catch (error) {
-          console.error('[RealtimeQuotes] 预热失败:', error)
-        }
-      }
-    })
-
     startRealtimeUpdate()
-
     // 连接 WebSocket 并加载历史数据（所有周期：HTTP加载历史，WS实时更新）
     connectKlineWs()
-
-    // 立即加载一次快照数据
-    refreshSnapshots()
-
-    // 等待数据加载后，初始化选中股票
-    setTimeout(() => {
-      if (!selectedStock.value) {
-        const activeGroup = dataStore.activeGroup
-        let targetSymbol = ''
-
-        if (activeGroup && activeGroup.stocks.length > 0) {
-          targetSymbol = activeGroup.stocks[0].symbol
-        } else if (dataStore.watchlistGroups.length > 0 && dataStore.watchlistGroups[0].stocks.length > 0) {
-          targetSymbol = dataStore.watchlistGroups[0].stocks[0].symbol
-        }
-
-        if (targetSymbol) {
-          console.log('[RealtimeQuotes] 初始化选中股票:', targetSymbol)
-          selectStock(targetSymbol)
-        }
-      }
-    }, 200)
   })
 })
 
 onBeforeUnmount(() => {
   if (updateTimer) clearInterval(updateTimer)
   if (statusTimer) clearInterval(statusTimer)
-  if (scheduler) {
-    scheduler.destroy()
-    scheduler = null
-  }
   disconnectKlineWs()  // 断开 WebSocket
   chartResizeObserver?.disconnect()
   if (chart) chart.remove()
@@ -1759,24 +1380,6 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: space-between;
   border-bottom: 1px solid #2a2e39;
-}
-
-.stock-info-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.stock-name-header {
-  font-size: 13px;
-  font-weight: 500;
-  color: #d1d4dc;
-}
-
-.stock-code-header {
-  font-size: 11px;
-  font-weight: 400;
-  color: #787b86;
 }
 
 .panel-actions {

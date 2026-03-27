@@ -13,6 +13,7 @@ import pandas as pd
 import time
 
 from myquant.core.market.adapters import get_adapter
+from myquant.core.market.routing import get_source_selector, DataLevel
 
 
 class HotDBService:
@@ -99,9 +100,10 @@ class HotDBService:
                             results['saved_count'] += 1
                             symbol_result['periods'][period] = {
                                 'status': 'success',
-                                'count': len(df)
+                                'count': len(df),
+                                'source': 'localdb'
                             }
-                            logger.info(f"[HotDB] 预热 {symbol} {period}: {len(df)} 条")
+                            logger.info(f"[HotDB] 预热 {symbol} {period}: {len(df)} 条 (LocalDB)")
                         else:
                             results['failed_count'] += 1
                             symbol_result['periods'][period] = {
@@ -109,12 +111,55 @@ class HotDBService:
                                 'error': '保存失败'
                             }
                     else:
-                        results['skipped_count'] += 1
-                        symbol_result['periods'][period] = {
-                            'status': 'skipped',
-                            'reason': 'LocalDB 无数据'
-                        }
-                        logger.debug(f"[HotDB] 跳过 {symbol} {period}: LocalDB 无数据")
+                        # LocalDB 无数据，尝试从在线源获取（使用路由）
+                        logger.debug(f"[HotDB] LocalDB 无 {symbol} {period} 数据，尝试在线获取")
+
+                        # 获取在线数据源的 fallback chain
+                        selector = get_source_selector()
+                        if selector:
+                            chain = selector.get_fallback_chain_for_code(DataLevel.L3, symbol)
+                            online_sources = [s for s in chain if s not in ('hotdb', 'localdb')]
+
+                            for source_name in online_sources:
+                                try:
+                                    online_adapter = get_adapter(source_name)
+                                    if online_adapter and online_adapter.is_available():
+                                        df_dict_online = online_adapter.get_kline(
+                                            symbols=[symbol],
+                                            period=period,
+                                            count=10000
+                                        )
+
+                                        if symbol in df_dict_online and not df_dict_online[symbol].empty:
+                                            df = df_dict_online[symbol]
+                                            success = hotdb.save_kline(symbol, df, period)
+
+                                            if success:
+                                                results['saved_count'] += 1
+                                                symbol_result['periods'][period] = {
+                                                    'status': 'success',
+                                                    'count': len(df),
+                                                    'source': source_name
+                                                }
+                                                logger.info(f"[HotDB] 预热 {symbol} {period}: {len(df)} 条 (在线: {source_name})")
+                                                break  # 成功获取，跳出循环
+                                except Exception as e:
+                                    logger.debug(f"[HotDB] {source_name} 获取失败: {e}")
+                                    continue
+
+                            # 如果所有在线源都失败，记录跳过
+                            if period not in symbol_result['periods'] or symbol_result['periods'][period].get('status') != 'success':
+                                results['skipped_count'] += 1
+                                symbol_result['periods'][period] = {
+                                    'status': 'skipped',
+                                    'reason': '所有在线源均无数据'
+                                }
+                        else:
+                            results['skipped_count'] += 1
+                            symbol_result['periods'][period] = {
+                                'status': 'skipped',
+                                'reason': '路由选择器不可用'
+                            }
 
                 except Exception as e:
                     results['failed_count'] += 1
@@ -445,6 +490,96 @@ class HotDBService:
             logger.warning(f"[HotDB] 聚合 {symbol} 5m → {target_period} 失败: {e}")
             return False
 
+    def _complete_from_online(
+        self, symbol: str, period: str
+    ) -> Optional[pd.DataFrame]:
+        """从在线源补全数据（使用路由系统）
+
+        检查 HotDB 最后日期 vs 今天，缺少的从在线源获取
+
+        Args:
+            symbol: 股票代码
+            period: 周期
+
+        Returns:
+            补全后的数据，失败返回 None
+        """
+        try:
+            selector = get_source_selector()
+            if not selector:
+                logger.warning(f"[HotDB] 路由选择器不可用，无法在线补全")
+                return None
+
+            # 获取在线数据源的 fallback chain
+            chain = selector.get_fallback_chain_for_code(DataLevel.L3, symbol)
+
+            # 遍历在线源（跳过 hotdb 和 localdb）
+            online_sources = [s for s in chain if s not in ('hotdb', 'localdb')]
+
+            for source_name in online_sources:
+                try:
+                    adapter = get_adapter(source_name)
+                    if adapter and adapter.is_available():
+                        logger.info(f"[HotDB] 通过 {source_name} 获取 {symbol} {period}")
+                        df_dict = adapter.get_kline(
+                            symbols=[symbol],
+                            period=period,
+                            count=1000
+                        )
+
+                        if symbol in df_dict and df_dict[symbol] is not None and not df_dict[symbol].empty:
+                            logger.info(f"[HotDB] 在线补全 {symbol} {period}: {len(df_dict[symbol])} 条 (来源: {source_name})")
+                            return df_dict[symbol]
+                except Exception as e:
+                    logger.debug(f"[HotDB] {source_name} 获取失败: {e}")
+                    continue
+
+            logger.warning(f"[HotDB] 所有在线源均无 {symbol} {period} 数据")
+            return None
+
+        except Exception as e:
+            logger.warning(f"[HotDB] 在线补全 {symbol} {period} 失败: {e}")
+            return None
+
+    def _is_symbol_ready(self, symbol: str) -> bool:
+        """检查股票是否已转存到 HotDB
+
+        Args:
+            symbol: 股票代码
+
+        Returns:
+            True: 已转存，False: 未转存
+        """
+        hotdb = self._get_hotdb_adapter()
+        if not hotdb:
+            return False
+        # 代理调用适配器的内部方法
+        key = f"{symbol}_ready"
+        metadata = hotdb._metadata.get(key, {})
+        return metadata.get('ready', False)
+
+    def _mark_symbol_ready(self, symbol: str):
+        """标记股票已转存到 HotDB
+
+        Args:
+            symbol: 股票代码
+        """
+        hotdb = self._get_hotdb_adapter()
+        if not hotdb:
+            return
+        # 代理调用适配器的内部方法
+        try:
+            key = f"{symbol}_ready"
+            hotdb._metadata[key] = {
+                'symbol': symbol,
+                'ready': True,
+                'timestamp': datetime.now().isoformat()
+            }
+            hotdb._save_metadata()
+            logger.debug(f"[HotDB] 标记已转存: {symbol}")
+        except Exception as e:
+            logger.warning(f"[HotDB] 标记 {symbol} 失败: {e}")
+
     def ensure_symbol(self, symbol: str) -> Dict[str, Any]:
         """确保股票在 HotDB 中（自选板块调用）
 
@@ -462,6 +597,7 @@ class HotDBService:
             操作结果
         """
         hotdb = self._get_hotdb_adapter()
+        localdb = self._get_localdb_adapter()
 
         if not hotdb or not hotdb.is_available():
             return {
@@ -471,21 +607,57 @@ class HotDBService:
             }
 
         try:
-            # 调用适配器的 ensure_symbol_in_hotdb 方法
-            success = hotdb.ensure_symbol_in_hotdb(symbol)
-
-            if success:
+            # 1. 检查是否已转存
+            if self._is_symbol_ready(symbol):
+                logger.debug(f"[HotDB] {symbol} 已转存，跳过")
                 return {
                     'success': True,
                     'symbol': symbol,
-                    'message': '数据已在 HotDB 中或转存成功'
+                    'message': '数据已在 HotDB 中'
                 }
-            else:
+
+            # 2. 检查 LocalDB 是否可用
+            if not localdb or not localdb.is_available():
+                logger.warning(f"[HotDB] LocalDB 不可用，无法转存 {symbol}")
                 return {
                     'success': False,
-                    'error': '转存失败',
+                    'error': 'LocalDB 不可用',
                     'symbol': symbol
                 }
+
+            logger.info(f"[HotDB] 开始转存 {symbol} 从 LocalDB")
+
+            # 3. 从 LocalDB 复制 1d 数据
+            try:
+                result = localdb.get_kline(symbols=[symbol], period='1d', count=5000)
+                if symbol in result and not result[symbol].empty:
+                    hotdb.save_kline(symbol, result[symbol], '1d')
+                    logger.info(f"[HotDB] 转存 {symbol} 1d: {len(result[symbol])} 条")
+                else:
+                    logger.warning(f"[HotDB] LocalDB 中 {symbol} 无 1d 数据")
+            except Exception as e:
+                logger.warning(f"[HotDB] 转存 {symbol} 1d 失败: {e}")
+
+            # 4. 从 LocalDB 复制 5m 数据（会自动触发聚合）
+            try:
+                result = localdb.get_kline(symbols=[symbol], period='5m', count=5000)
+                if symbol in result and not result[symbol].empty:
+                    hotdb.save_kline(symbol, result[symbol], '5m')
+                    logger.info(f"[HotDB] 转存 {symbol} 5m: {len(result[symbol])} 条")
+                else:
+                    logger.warning(f"[HotDB] LocalDB 中 {symbol} 无 5m 数据")
+            except Exception as e:
+                logger.warning(f"[HotDB] 转存 {symbol} 5m 失败: {e}")
+
+            # 5. 标记为已转存
+            self._mark_symbol_ready(symbol)
+
+            logger.info(f"[HotDB] {symbol} 转存完成")
+            return {
+                'success': True,
+                'symbol': symbol,
+                'message': '转存成功'
+            }
 
         except Exception as e:
             logger.error(f"[HotDB] 确保 {symbol} 在 HotDB 中失败: {e}")

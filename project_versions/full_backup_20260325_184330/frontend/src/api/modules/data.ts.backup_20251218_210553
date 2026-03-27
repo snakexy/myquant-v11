@@ -1,0 +1,312 @@
+import { apiRequest } from '../index'
+
+// 数据相关API接口
+
+// 获取股票列表
+export const getStockList = async (params?: {
+  page?: number
+  size?: number
+  market?: string
+  sector?: string
+}) => {
+  // 开发环境且启用Mock时使用Mock数据
+  if (import.meta.env.DEV && import.meta.env.VITE_ENABLE_MOCK === 'true') {
+    const { mockService } = await import('../mockService')
+    return mockService.getStockList(params)
+  }
+
+  // 使用实际的API端点
+  return apiRequest.get('/data/stocks/list', {
+    params: {
+      page: params?.page || 1,
+      size: params?.size || 10,
+      market: params?.market,
+      sector: params?.sector
+    }
+  })
+}
+
+// 获取股票详情 - 暂时使用适配器从股票列表中获取
+export const getStockDetail = async (code: string) => {
+  // 开发环境且启用Mock时使用Mock数据
+  if (import.meta.env.DEV && import.meta.env.VITE_ENABLE_MOCK === 'true') {
+    const { mockService } = await import('../mockService')
+    return mockService.getStockDetail(code)
+  }
+
+  // 从股票详情API获取数据
+  try {
+    // 确保股票代码格式正确
+    let formattedCode = code
+    if (!code.endsWith('.SZ') && !code.endsWith('.SH')) {
+      if (code.startsWith('6')) {
+        formattedCode = `${code}.SH`
+      } else {
+        formattedCode = `${code}.SZ`
+      }
+    }
+
+    const response = await apiRequest.get(`/data/stocks/${formattedCode}/info`)
+
+    if (response.success && response.data) {
+      return {
+        success: true,
+        data: response.data
+      }
+    } else {
+      // 返回错误信息而不是默认的模拟数据
+      return {
+        success: false,
+        message: '无法获取股票详情',
+        data: null
+      }
+    }
+  } catch (error) {
+    return {
+      success: false,
+      message: '获取股票详情失败'
+    }
+  }
+}
+
+// 获取股票历史数据
+export const getStockHistory = async (code: string, params: {
+  startDate: string
+  endDate: string
+  frequency: 'daily' | 'weekly' | 'monthly'
+}) => {
+  // 开发环境且启用Mock时使用Mock数据
+  if (import.meta.env.DEV && import.meta.env.VITE_ENABLE_MOCK === 'true') {
+    const { mockService } = await import('../mockService')
+    return mockService.getStockHistory(code, params)
+  }
+
+  // 确保股票代码格式正确
+  let formattedCode = code
+  if (!code.endsWith('.SZ') && !code.endsWith('.SH')) {
+    if (code.startsWith('6')) {
+      formattedCode = `${code}.SH`
+    } else {
+      formattedCode = `${code}.SZ`
+    }
+  }
+
+  try {
+    // 调用真实的后端API
+    const response = await apiRequest.post('/data/stocks/history', {
+      symbol: formattedCode,
+      start_date: params.startDate,
+      end_date: params.endDate,
+      frequency: params.frequency
+    })
+
+    if (response.success && response.data) {
+      return {
+        success: true,
+        data: response.data
+      }
+    } else {
+      return {
+        success: false,
+        message: response.message || '获取历史数据失败'
+      }
+    }
+  } catch (error) {
+    console.error('获取股票历史数据失败:', error)
+    return {
+      success: false,
+      message: '获取历史数据失败'
+    }
+  }
+}
+
+
+// 获取实时股票数据
+export const getRealtimeData = async (codes: string[]) => {
+  // 开发环境且启用Mock时使用Mock数据
+  if (import.meta.env.DEV && import.meta.env.VITE_ENABLE_MOCK === 'true') {
+    const { mockService } = await import('../mockService')
+    return mockService.getRealtimeData(codes)
+  }
+
+  // 调用真实API获取实时数据
+  try {
+    const response = await apiRequest.post('/data/stocks/realtime', {
+      codes: codes
+    })
+
+    if (response.success) {
+      return {
+        success: true,
+        data: response.data
+      }
+    } else {
+      throw new Error(response.message || '获取实时数据失败')
+    }
+  } catch (error) {
+    console.error('获取实时数据失败:', error)
+
+    // 降级处理：返回错误信息而不是随机数据
+    console.error('实时数据API调用失败:', error)
+    return {
+      success: false,
+      data: [],
+      error: error.message
+    }
+  }
+}
+
+// 获取技术指标 - 获取真实数据
+export const getIndicators = async (code: string, indicators: string[]) => {
+  // 开发环境且启用Mock时使用Mock数据
+  if (import.meta.env.DEV && import.meta.env.VITE_ENABLE_MOCK === 'true') {
+    const { mockService } = await import('../mockService')
+    return mockService.getIndicators(code, indicators)
+  }
+
+  try {
+    // 调用真实API获取技术指标数据
+    const response = await apiRequest.post('/data/stocks/indicators', {
+      symbol: code,
+      indicators: indicators
+    })
+
+    if (response.success && response.data) {
+      return {
+        success: true,
+        data: response.data
+      }
+    } else {
+      // 如果后端暂不支持技术指标，返回基本信息而不是随机数据
+      console.warn(`技术指标API暂不可用 (${code}):`, response.message)
+      return {
+        success: false,
+        message: '技术指标功能暂不可用',
+        data: {}
+      }
+    }
+  } catch (error) {
+    console.error('获取技术指标失败:', error)
+    // 返回错误信息而不是随机数据
+    return {
+      success: false,
+      message: '技术指标API调用失败',
+      data: {}
+    }
+  }
+}
+
+// 获取股票筛选结果
+export const filterStocks = (filters: {
+  indicators?: Record<string, any>
+  sector?: string[]
+  market?: string[]
+  priceRange?: {
+    min: number
+    max: number
+  }
+  marketCapRange?: {
+    min: number
+    max: number
+  }
+}) => {
+  return apiRequest.post('/data/stocks/filter', filters)
+}
+
+// 获取板块信息
+export const getSectors = () => {
+  return apiRequest.get('/data/sectors/list')
+}
+
+// 获取热门股票
+export const getHotStocks = (limit?: number) => {
+  return apiRequest.get('/data/stocks/hot', { params: { limit } } as any)
+}
+
+// 获取股票搜索结果
+export const searchStocks = (keyword: string, limit?: number) => {
+  return apiRequest.get('/data/stocks/search', {
+    params: { keyword, limit } as any
+  })
+}
+
+// 获取数据质量指标
+export const getDataQuality = () => {
+  return apiRequest.get('/data-management/data-quality')
+}
+
+// 获取数据源状态
+export const getDataSources = () => {
+  return apiRequest.get('/data-management/sources/list')
+}
+
+// 同步数据
+export const syncData = (source: string, params?: {
+  symbols?: string[]
+  startDate?: string
+  endDate?: string
+}) => {
+  return apiRequest.post(`/data-management/sync/${source}`, params)
+}
+
+// 导出数据
+export const exportData = (params: {
+  codes: string[]
+  fields: string[]
+  format: 'csv' | 'excel' | 'json'
+  startDate?: string
+  endDate?: string
+}) => {
+  return apiRequest.post('/data/export', params)
+}
+
+// 类型定义
+export interface StockInfo {
+  code: string
+  name: string
+  market: 'SZ' | 'SH'
+  sector: string
+  industry: string
+  currentPrice: number
+  changePercent: number
+  volume: number
+  marketCap: number
+  pe: number
+  pb: number
+  roe: number
+  lastUpdate: string
+}
+
+export interface IndicatorData {
+  code: string
+  name: string
+  values: Record<string, number>
+  timestamp: string
+}
+
+export interface RealtimeData {
+  code: string
+  name: string
+  price: number
+  change: number
+  changePercent: number
+  volume: number
+  timestamp: string
+}
+
+export interface DataQuality {
+  completeness: number
+  accuracy: number
+  timeliness: number
+  consistency: number
+  lastUpdate: string
+}
+
+export interface DataSource {
+  id: string
+  name: string
+  status: 'connected' | 'disconnected' | 'error'
+  lastUpdate: string | null
+  latency?: number
+  errorCount?: number
+}

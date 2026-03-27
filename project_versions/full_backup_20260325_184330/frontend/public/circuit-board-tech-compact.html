@@ -1,0 +1,904 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>科技紧凑型总体架构电路板系统</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', 'Roboto', 'Helvetica Neue', sans-serif;
+            background: #000511;
+            color: #e0e6ed;
+            overflow: hidden;
+        }
+        
+        .demo-container {
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .demo-header {
+            background: linear-gradient(135deg, #001e3c 0%, #0f3460 100%);
+            border-bottom: 1px solid #00ff88;
+            padding: 8px;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0, 255, 136, 0.2);
+        }
+        
+        .demo-title {
+            color: #00ff88;
+            font-size: 18px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            text-shadow: 0 0 20px rgba(0, 255, 136, 0.5);
+        }
+        
+        .demo-content {
+            flex: 1;
+            position: relative;
+            overflow: auto;
+            background: radial-gradient(circle at center, #001e3c 0%, #000511 100%);
+        }
+        
+        .circuit-board-tech {
+            width: 1800px;
+            height: 1000px;
+            position: relative;
+            margin: 0 auto;
+            background: #000511;
+        }
+        
+        .tech-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+        
+        .connections-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 5;
+        }
+        
+        .tech-nodes {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 10;
+        }
+        
+        .tech-node {
+            position: absolute;
+            background: linear-gradient(135deg, #0f3460 0%, #001e3c 100%);
+            border: 1px solid #00ff88;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 4px;
+            min-width: 60px;
+            min-height: 40px;
+            box-shadow: 0 0 10px rgba(0, 255, 136, 0.1);
+            overflow: hidden;
+            font-size: 9px;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            opacity: 0.8;
+        }
+        
+        .tech-node:hover {
+            border-color: #00ff88;
+            box-shadow: 0 0 20px rgba(0, 255, 136, 0.4);
+            transform: scale(1.1);
+            z-index: 20;
+            opacity: 1;
+        }
+        
+        .tech-node.active {
+            background: linear-gradient(135deg, #00ff88 0%, #00cc6a 100%);
+            border-color: #00ff88;
+            color: #000511;
+            box-shadow: 0 0 25px rgba(0, 255, 136, 0.6);
+            animation: techNodeActive 1.5s infinite;
+            opacity: 1;
+        }
+        
+        .tech-node-icon {
+            font-size: 12px;
+            margin-right: 4px;
+            filter: drop-shadow(0 0 3px currentColor);
+        }
+        
+        .tech-node-label {
+            font-size: 8px;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+        
+        .preview-controls {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: linear-gradient(135deg, #001e3c 0%, #0f3460 100%);
+            border: 1px solid #00ff88;
+            border-radius: 6px;
+            padding: 12px;
+            min-width: 180px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+        }
+        
+        .preview-controls h3 {
+            color: #00ff88;
+            margin-bottom: 12px;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .control-button {
+            width: 100%;
+            background: linear-gradient(135deg, #0f3460 0%, #001e3c 100%);
+            border: 1px solid #00ff88;
+            color: #e0e6ed;
+            padding: 6px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-size: 10px;
+            margin-bottom: 6px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .control-button:hover {
+            background: linear-gradient(135deg, #00ff88 0%, #00cc6a 100%);
+            color: #000511;
+            border-color: #00ff88;
+            box-shadow: 0 0 15px rgba(0, 255, 136, 0.4);
+        }
+        
+        .control-button:last-child {
+            margin-bottom: 0;
+        }
+        
+        .demo-footer {
+            background: linear-gradient(135deg, #0f3460 0%, #001e3c 100%);
+            border-top: 1px solid #00ff88;
+            padding: 6px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 10px;
+            box-shadow: 0 -2px 10px rgba(0, 255, 136, 0.2);
+        }
+        
+        .status-info {
+            display: flex;
+            gap: 15px;
+        }
+        
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            color: #e0e6ed;
+            font-weight: 500;
+        }
+        
+        .status-item span:first-child {
+            color: #00ff88;
+        }
+        
+        .layer-indicator {
+            position: absolute;
+            left: 10px;
+            color: #00ff88;
+            font-size: 8px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            opacity: 0.7;
+            text-shadow: 0 0 5px rgba(0, 255, 136, 0.5);
+        }
+        
+        .connection-line {
+            stroke: #00ff88;
+            stroke-width: 0.5;
+            fill: none;
+            opacity: 0.3;
+            transition: all 0.2s ease;
+        }
+        
+        .connection-line.active {
+            stroke: #00ff88;
+            stroke-width: 1.5;
+            opacity: 1;
+            filter: drop-shadow(0 0 3px #00ff88);
+            animation: connectionPulse 2s infinite;
+        }
+        
+        @keyframes techNodeActive {
+            0%, 100% {
+                box-shadow: 0 0 25px rgba(0, 255, 136, 0.6);
+            }
+            50% {
+                box-shadow: 0 0 35px rgba(0, 255, 136, 0.8);
+            }
+        }
+        
+        @keyframes connectionPulse {
+            0%, 100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.6;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <div class="demo-container">
+            <div class="demo-header">
+                <h1 class="demo-title">🚀 科技紧凑型总体架构电路板系统</h1>
+            </div>
+            
+            <div class="demo-content">
+                <div class="circuit-board-tech">
+                    <canvas class="tech-canvas" ref="canvas"></canvas>
+                    
+                    <!-- 连接线层 -->
+                    <svg class="connections-layer" ref="connectionsSvg">
+                        <defs>
+                            <filter id="techGlow">
+                                <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
+                                <feMerge>
+                                    <feMergeNode in="coloredBlur"/>
+                                    <feMergeNode in="SourceGraphic"/>
+                                </feMerge>
+                            </filter>
+                        </defs>
+                    </svg>
+                    
+                    <!-- 层级指示器 -->
+                    <div class="layer-indicator" style="top: 20px;">数据中枢层</div>
+                    <div class="layer-indicator" style="top: 160px;">QLib核心层</div>
+                    <div class="layer-indicator" style="top: 300px;">业务逻辑层</div>
+                    <div class="layer-indicator" style="top: 440px;">AI策略层</div>
+                    <div class="layer-indicator" style="top: 580px;">实盘交易层</div>
+                    <div class="layer-indicator" style="top: 720px;">实验管理层</div>
+                    <div class="layer-indicator" style="top: 860px;">前端展示层</div>
+                    
+                    <!-- 紧凑型节点布局 -->
+                    <div class="tech-nodes">
+                        <!-- 数据中枢层 - 紧凑布局 -->
+                        <div class="tech-node" style="left: 100px; top: 40px;" @click="toggleNode('DH1')">
+                            <span class="tech-node-icon">📊</span>
+                            <span class="tech-node-label">数据核心</span>
+                        </div>
+                        <div class="tech-node" style="left: 180px; top: 40px;" @click="toggleNode('DH2')">
+                            <span class="tech-node-icon">⚙️</span>
+                            <span class="tech-node-label">数据处理</span>
+                        </div>
+                        <div class="tech-node" style="left: 260px; top: 40px;" @click="toggleNode('DH3')">
+                            <span class="tech-node-icon">💾</span>
+                            <span class="tech-node-label">存储管理</span>
+                        </div>
+                        <div class="tech-node" style="left: 340px; top: 40px;" @click="toggleNode('DH4')">
+                            <span class="tech-node-icon">✅</span>
+                            <span class="tech-node-label">质量验证</span>
+                        </div>
+                        <div class="tech-node" style="left: 420px; top: 40px;" @click="toggleNode('DH5')">
+                            <span class="tech-node-icon">🔄</span>
+                            <span class="tech-node-label">数据同步</span>
+                        </div>
+                        <div class="tech-node" style="left: 500px; top: 40px;" @click="toggleNode('DH6')">
+                            <span class="tech-node-icon">💾</span>
+                            <span class="tech-node-label">备份系统</span>
+                        </div>
+                        <div class="tech-node" style="left: 580px; top: 40px;" @click="toggleNode('DH7')">
+                            <span class="tech-node-icon">🧹</span>
+                            <span class="tech-node-label">数据清洗</span>
+                        </div>
+                        <div class="tech-node" style="left: 660px; top: 40px;" @click="toggleNode('DH8')">
+                            <span class="tech-node-icon">✔️</span>
+                            <span class="tech-node-label">验证系统</span>
+                        </div>
+                        <div class="tech-node" style="left: 740px; top: 40px;" @click="toggleNode('DP1')">
+                            <span class="tech-node-icon">🔍</span>
+                            <span class="tech-node-label">预处理</span>
+                        </div>
+                        <div class="tech-node" style="left: 820px; top: 40px;" @click="toggleNode('DP2')">
+                            <span class="tech-node-icon">📊</span>
+                            <span class="tech-node-label">特征工程</span>
+                        </div>
+                        <div class="tech-node" style="left: 900px; top: 40px;" @click="toggleNode('DP3')">
+                            <span class="tech-node-icon">🔄</span>
+                            <span class="tech-node-label">数据变换</span>
+                        </div>
+                        <div class="tech-node" style="left: 980px; top: 40px;" @click="toggleNode('DP4')">
+                            <span class="tech-node-icon">📦</span>
+                            <span class="tech-node-label">数据聚合</span>
+                        </div>
+                        
+                        <!-- QLib核心层 - 紧凑布局 -->
+                        <div class="tech-node" style="left: 100px; top: 180px;" @click="toggleNode('QL1')">
+                            <span class="tech-node-icon">🔷</span>
+                            <span class="tech-node-label">QLib核心</span>
+                        </div>
+                        <div class="tech-node" style="left: 180px; top: 180px;" @click="toggleNode('QL2')">
+                            <span class="tech-node-icon">🔌</span>
+                            <span class="tech-node-label">数据接口</span>
+                        </div>
+                        <div class="tech-node" style="left: 260px; top: 180px;" @click="toggleNode('QL3')">
+                            <span class="tech-node-icon">🚀</span>
+                            <span class="tech-node-label">策略引擎</span>
+                        </div>
+                        <div class="tech-node" style="left: 340px; top: 180px;" @click="toggleNode('QL4')">
+                            <span class="tech-node-icon">📈</span>
+                            <span class="tech-node-label">回测系统</span>
+                        </div>
+                        <div class="tech-node" style="left: 420px; top: 180px;" @click="toggleNode('QL5')">
+                            <span class="tech-node-icon">🛡️</span>
+                            <span class="tech-node-label">风险管理</span>
+                        </div>
+                        <div class="tech-node" style="left: 500px; top: 180px;" @click="toggleNode('QL6')">
+                            <span class="tech-node-icon">📊</span>
+                            <span class="tech-node-label">性能监控</span>
+                        </div>
+                        <div class="tech-node" style="left: 580px; top: 180px;" @click="toggleNode('QL7')">
+                            <span class="tech-node-icon">📝</span>
+                            <span class="tech-node-label">日志系统</span>
+                        </div>
+                        <div class="tech-node" style="left: 660px; top: 180px;" @click="toggleNode('QL8')">
+                            <span class="tech-node-icon">⚙️</span>
+                            <span class="tech-node-label">配置管理</span>
+                        </div>
+                        <div class="tech-node" style="left: 740px; top: 180px;" @click="toggleNode('QL9')">
+                            <span class="tech-node-icon">💾</span>
+                            <span class="tech-node-label">缓存系统</span>
+                        </div>
+                        <div class="tech-node" style="left: 820px; top: 180px;" @click="toggleNode('QL10')">
+                            <span class="tech-node-icon">📨</span>
+                            <span class="tech-node-label">消息队列</span>
+                        </div>
+                        
+                        <!-- 业务逻辑层 - 紧凑布局 -->
+                        <div class="tech-node" style="left: 100px; top: 320px;" @click="toggleNode('BL1')">
+                            <span class="tech-node-icon">🗺️</span>
+                            <span class="tech-node-label">业务逻辑</span>
+                        </div>
+                        <div class="tech-node" style="left: 180px; top: 320px;" @click="toggleNode('BL2')">
+                            <span class="tech-node-icon">📊</span>
+                            <span class="tech-node-label">数据分析</span>
+                        </div>
+                        <div class="tech-node" style="left: 260px; top: 320px;" @click="toggleNode('BL3')">
+                            <span class="tech-node-icon">📈</span>
+                            <span class="tech-node-label">报表生成</span>
+                        </div>
+                        <div class="tech-node" style="left: 340px; top: 320px;" @click="toggleNode('BL4')">
+                            <span class="tech-node-icon">🔔</span>
+                            <span class="tech-node-label">通知系统</span>
+                        </div>
+                        <div class="tech-node" style="left: 420px; top: 320px;" @click="toggleNode('BL5')">
+                            <span class="tech-node-icon">🔑</span>
+                            <span class="tech-node-label">权限管理</span>
+                        </div>
+                        <div class="tech-node" style="left: 500px; top: 320px;" @click="toggleNode('BL6')">
+                            <span class="tech-node-icon">👥</span>
+                            <span class="tech-node-label">用户管理</span>
+                        </div>
+                        <div class="tech-node" style="left: 580px; top: 320px;" @click="toggleNode('BL7')">
+                            <span class="tech-node-icon">⏰</span>
+                            <span class="tech-node-label">任务调度</span>
+                        </div>
+                        <div class="tech-node" style="left: 660px; top: 320px;" @click="toggleNode('BL8')">
+                            <span class="tech-node-icon">⚡</span>
+                            <span class="tech-node-label">事件处理</span>
+                        </div>
+                        
+                        <!-- AI策略层 - 紧凑布局 -->
+                        <div class="tech-node" style="left: 100px; top: 460px;" @click="toggleNode('AI1')">
+                            <span class="tech-node-icon">🧠</span>
+                            <span class="tech-node-label">AI引擎</span>
+                        </div>
+                        <div class="tech-node" style="left: 180px; top: 460px;" @click="toggleNode('AI2')">
+                            <span class="tech-node-icon">🤖</span>
+                            <span class="tech-node-label">机器学习</span>
+                        </div>
+                        <div class="tech-node" style="left: 260px; top: 460px;" @click="toggleNode('AI3')">
+                            <span class="tech-node-icon">🕸️</span>
+                            <span class="tech-node-label">深度学习</span>
+                        </div>
+                        <div class="tech-node" style="left: 340px; top: 460px;" @click="toggleNode('AI4')">
+                            <span class="tech-node-icon">🎓</span>
+                            <span class="tech-node-label">模型训练</span>
+                        </div>
+                        <div class="tech-node" style="left: 420px; top: 460px;" @click="toggleNode('AI5')">
+                            <span class="tech-node-icon">📋</span>
+                            <span class="tech-node-label">模型评估</span>
+                        </div>
+                        <div class="tech-node" style="left: 500px; top: 460px;" @click="toggleNode('AI6')">
+                            <span class="tech-node-icon">📤</span>
+                            <span class="tech-node-label">模型部署</span>
+                        </div>
+                        <div class="tech-node" style="left: 580px; top: 460px;" @click="toggleNode('AI7')">
+                            <span class="tech-node-icon">🔮</span>
+                            <span class="tech-node-label">预测引擎</span>
+                        </div>
+                        <div class="tech-node" style="left: 660px; top: 460px;" @click="toggleNode('AI8')">
+                            <span class="tech-node-icon">💡</span>
+                            <span class="tech-node-label">推荐系统</span>
+                        </div>
+                        <div class="tech-node" style="left: 740px; top: 460px;" @click="toggleNode('AI9')">
+                            <span class="tech-node-icon">⚙️</span>
+                            <span class="tech-node-label">优化算法</span>
+                        </div>
+                        <div class="tech-node" style="left: 820px; top: 460px;" @click="toggleNode('AI10')">
+                            <span class="tech-node-icon">🔍</span>
+                            <span class="tech-node-label">特征选择</span>
+                        </div>
+                        
+                        <!-- 实盘交易层 - 紧凑布局 -->
+                        <div class="tech-node" style="left: 100px; top: 600px;" @click="toggleNode('LT1')">
+                            <span class="tech-node-icon">💱</span>
+                            <span class="tech-node-label">交易执行</span>
+                        </div>
+                        <div class="tech-node" style="left: 180px; top: 600px;" @click="toggleNode('LT2')">
+                            <span class="tech-node-icon">📋</span>
+                            <span class="tech-node-label">订单管理</span>
+                        </div>
+                        <div class="tech-node" style="left: 260px; top: 600px;" @click="toggleNode('LT3')">
+                            <span class="tech-node-icon">🛡️</span>
+                            <span class="tech-node-label">风险控制</span>
+                        </div>
+                        <div class="tech-node" style="left: 340px; top: 600px;" @click="toggleNode('LT4')">
+                            <span class="tech-node-icon">👁️</span>
+                            <span class="tech-node-label">实时监控</span>
+                        </div>
+                        <div class="tech-node" style="left: 420px; top: 600px;" @click="toggleNode('LT5')">
+                            <span class="tech-node-icon">📡</span>
+                            <span class="tech-node-label">行情接收</span>
+                        </div>
+                        <div class="tech-node" style="left: 500px; top: 600px;" @click="toggleNode('LT6')">
+                            <span class="tech-node-icon">🚪</span>
+                            <span class="tech-node-label">交易网关</span>
+                        </div>
+                        <div class="tech-node" style="left: 580px; top: 600px;" @click="toggleNode('LT7')">
+                            <span class="tech-node-icon">💰</span>
+                            <span class="tech-node-label">资金管理</span>
+                        </div>
+                        <div class="tech-node" style="left: 660px; top: 600px;" @click="toggleNode('LT8')">
+                            <span class="tech-node-icon">💼</span>
+                            <span class="tech-node-label">持仓管理</span>
+                        </div>
+                        <div class="tech-node" style="left: 740px; top: 600px;" @click="toggleNode('LT9')">
+                            <span class="tech-node-icon">✋</span>
+                            <span class="tech-node-label">止损止盈</span>
+                        </div>
+                        <div class="tech-node" style="left: 820px; top: 600px;" @click="toggleNode('LT10')">
+                            <span class="tech-node-icon">⚖️</span>
+                            <span class="tech-node-label">套利策略</span>
+                        </div>
+                        
+                        <!-- 实验管理层 - 紧凑布局 -->
+                        <div class="tech-node" style="left: 100px; top: 740px;" @click="toggleNode('EM1')">
+                            <span class="tech-node-icon">🧪</span>
+                            <span class="tech-node-label">实验管理</span>
+                        </div>
+                        <div class="tech-node" style="left: 180px; top: 740px;" @click="toggleNode('EM2')">
+                            <span class="tech-node-icon">🌿</span>
+                            <span class="tech-node-label">版本控制</span>
+                        </div>
+                        <div class="tech-node" style="left: 260px; top: 740px;" @click="toggleNode('EM3')">
+                            <span class="tech-node-icon">📊</span>
+                            <span class="tech-node-label">结果分析</span>
+                        </div>
+                        <div class="tech-node" style="left: 340px; top: 740px;" @click="toggleNode('EM4')">
+                            <span class="tech-node-icon">⚙️</span>
+                            <span class="tech-node-label">参数调优</span>
+                        </div>
+                        <div class="tech-node" style="left: 420px; top: 740px;" @click="toggleNode('EM5')">
+                            <span class="tech-node-icon">⚖️</span>
+                            <span class="tech-node-label">模型比较</span>
+                        </div>
+                        <div class="tech-node" style="left: 500px; top: 740px;" @click="toggleNode('EM6')">
+                            <span class="tech-node-icon">📄</span>
+                            <span class="tech-node-label">实验报告</span>
+                        </div>
+                        <div class="tech-node" style="left: 580px; top: 740px;" @click="toggleNode('EM7')">
+                            <span class="tech-node-icon">📊</span>
+                            <span class="tech-node-label">数据集管理</span>
+                        </div>
+                        <div class="tech-node" style="left: 660px; top: 740px;" @click="toggleNode('EM8')">
+                            <span class="tech-node-icon">📅</span>
+                            <span class="tech-node-label">实验调度</span>
+                        </div>
+                        
+                        <!-- 前端展示层 - 紧凑布局 -->
+                        <div class="tech-node" style="left: 100px; top: 880px;" @click="toggleNode('UI1')">
+                            <span class="tech-node-icon">🖥️</span>
+                            <span class="tech-node-label">主界面</span>
+                        </div>
+                        <div class="tech-node" style="left: 180px; top: 880px;" @click="toggleNode('UI2')">
+                            <span class="tech-node-icon">📊</span>
+                            <span class="tech-node-label">图表组件</span>
+                        </div>
+                        <div class="tech-node" style="left: 260px; top: 880px;" @click="toggleNode('UI3')">
+                            <span class="tech-node-icon">📋</span>
+                            <span class="tech-node-label">数据表格</span>
+                        </div>
+                        <div class="tech-node" style="left: 340px; top: 880px;" @click="toggleNode('UI4')">
+                            <span class="tech-node-icon">⚙️</span>
+                            <span class="tech-node-label">控制面板</span>
+                        </div>
+                        <div class="tech-node" style="left: 420px; top: 880px;" @click="toggleNode('UI5')">
+                            <span class="tech-node-icon">👁️</span>
+                            <span class="tech-node-label">实时监控</span>
+                        </div>
+                        <div class="tech-node" style="left: 500px; top: 880px;" @click="toggleNode('UI6')">
+                            <span class="tech-node-icon">📄</span>
+                            <span class="tech-node-label">报告页面</span>
+                        </div>
+                        <div class="tech-node" style="left: 580px; top: 880px;" @click="toggleNode('UI7')">
+                            <span class="tech-node-icon">⚙️</span>
+                            <span class="tech-node-label">设置页面</span>
+                        </div>
+                        <div class="tech-node" style="left: 660px; top: 880px;" @click="toggleNode('UI8')">
+                            <span class="tech-node-icon">❓</span>
+                            <span class="tech-node-label">帮助系统</span>
+                        </div>
+                    </div>
+                    
+                    <!-- 控制面板 -->
+                    <div class="preview-controls">
+                        <h3>🎮 科技控制台</h3>
+                        <button class="control-button" @click="activateWorkflow('ai-strategy')">
+                            <span>🧠</span> AI策略生成
+                        </button>
+                        <button class="control-button" @click="activateWorkflow('traditional')">
+                            <span>📈</span> 传统策略执行
+                        </button>
+                        <button class="control-button" @click="activateWorkflow('model-training')">
+                            <span>🎓</span> 模型训练
+                        </button>
+                        <button class="control-button" @click="activateWorkflow('qlib-online')">
+                            <span>🖥️</span> QLib在线服务
+                        </button>
+                        <button class="control-button" @click="activateWorkflow('qlib-integration')">
+                            <span>🗺️</span> QLib集成管理
+                        </button>
+                        <button class="control-button" @click="deactivateAll">
+                            <span>⏹</span> 全部停用
+                        </button>
+                        <button class="control-button" @click="randomActivate">
+                            <span>🎲</span> 随机激活
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="demo-footer">
+                <div class="status-info">
+                    <div class="status-item">
+                        <span>🔧</span>
+                        总节点: {{ allNodes.length }}
+                    </div>
+                    <div class="status-item">
+                        <span>🔌</span>
+                        激活节点: {{ activeNodes }}
+                    </div>
+                    <div class="status-item">
+                        <span>⚡</span>
+                        活跃连接: {{ activeConnections }}
+                    </div>
+                    <div class="status-item">
+                        <span>📊</span>
+                        系统负载: {{ systemLoad }}%
+                    </div>
+                </div>
+                <div>
+                    <span style="color: #00ff88;">⚡ MyQuant 科技紧凑型总体架构电路板系统</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const { createApp } = Vue;
+        
+        createApp({
+            data() {
+                return {
+                    allNodes: [
+                        // 数据中枢层
+                        { id: 'DH1', name: '数据核心', icon: '📊', x: 100, y: 40, active: false },
+                        { id: 'DH2', name: '数据处理', icon: '⚙️', x: 180, y: 40, active: false },
+                        { id: 'DH3', name: '存储管理', icon: '💾', x: 260, y: 40, active: false },
+                        { id: 'DH4', name: '质量验证', icon: '✅', x: 340, y: 40, active: false },
+                        { id: 'DH5', name: '数据同步', icon: '🔄', x: 420, y: 40, active: false },
+                        { id: 'DH6', name: '备份系统', icon: '💾', x: 500, y: 40, active: false },
+                        { id: 'DH7', name: '数据清洗', icon: '🧹', x: 580, y: 40, active: false },
+                        { id: 'DH8', name: '验证系统', icon: '✔️', x: 660, y: 40, active: false },
+                        { id: 'DP1', name: '预处理', icon: '🔍', x: 740, y: 40, active: false },
+                        { id: 'DP2', name: '特征工程', icon: '📊', x: 820, y: 40, active: false },
+                        { id: 'DP3', name: '数据变换', icon: '🔄', x: 900, y: 40, active: false },
+                        { id: 'DP4', name: '数据聚合', icon: '📦', x: 980, y: 40, active: false },
+                        
+                        // QLib核心层
+                        { id: 'QL1', name: 'QLib核心', icon: '🔷', x: 100, y: 180, active: false },
+                        { id: 'QL2', name: '数据接口', icon: '🔌', x: 180, y: 180, active: false },
+                        { id: 'QL3', name: '策略引擎', icon: '🚀', x: 260, y: 180, active: false },
+                        { id: 'QL4', name: '回测系统', icon: '📈', x: 340, y: 180, active: false },
+                        { id: 'QL5', name: '风险管理', icon: '🛡️', x: 420, y: 180, active: false },
+                        { id: 'QL6', name: '性能监控', icon: '📊', x: 500, y: 180, active: false },
+                        { id: 'QL7', name: '日志系统', icon: '📝', x: 580, y: 180, active: false },
+                        { id: 'QL8', name: '配置管理', icon: '⚙️', x: 660, y: 180, active: false },
+                        { id: 'QL9', name: '缓存系统', icon: '💾', x: 740, y: 180, active: false },
+                        { id: 'QL10', name: '消息队列', icon: '📨', x: 820, y: 180, active: false },
+                        
+                        // 业务逻辑层
+                        { id: 'BL1', name: '业务逻辑', icon: '🗺️', x: 100, y: 320, active: false },
+                        { id: 'BL2', name: '数据分析', icon: '📊', x: 180, y: 320, active: false },
+                        { id: 'BL3', name: '报表生成', icon: '📈', x: 260, y: 320, active: false },
+                        { id: 'BL4', name: '通知系统', icon: '🔔', x: 340, y: 320, active: false },
+                        { id: 'BL5', name: '权限管理', icon: '🔑', x: 420, y: 320, active: false },
+                        { id: 'BL6', name: '用户管理', icon: '👥', x: 500, y: 320, active: false },
+                        { id: 'BL7', name: '任务调度', icon: '⏰', x: 580, y: 320, active: false },
+                        { id: 'BL8', name: '事件处理', icon: '⚡', x: 660, y: 320, active: false },
+                        
+                        // AI策略层
+                        { id: 'AI1', name: 'AI引擎', icon: '🧠', x: 100, y: 460, active: false },
+                        { id: 'AI2', name: '机器学习', icon: '🤖', x: 180, y: 460, active: false },
+                        { id: 'AI3', name: '深度学习', icon: '🕸️', x: 260, y: 460, active: false },
+                        { id: 'AI4', name: '模型训练', icon: '🎓', x: 340, y: 460, active: false },
+                        { id: 'AI5', name: '模型评估', icon: '📋', x: 420, y: 460, active: false },
+                        { id: 'AI6', name: '模型部署', icon: '📤', x: 500, y: 460, active: false },
+                        { id: 'AI7', name: '预测引擎', icon: '🔮', x: 580, y: 460, active: false },
+                        { id: 'AI8', name: '推荐系统', icon: '💡', x: 660, y: 460, active: false },
+                        { id: 'AI9', name: '优化算法', icon: '⚙️', x: 740, y: 460, active: false },
+                        { id: 'AI10', name: '特征选择', icon: '🔍', x: 820, y: 460, active: false },
+                        
+                        // 实盘交易层
+                        { id: 'LT1', name: '交易执行', icon: '💱', x: 100, y: 600, active: false },
+                        { id: 'LT2', name: '订单管理', icon: '📋', x: 180, y: 600, active: false },
+                        { id: 'LT3', name: '风险控制', icon: '🛡️', x: 260, y: 600, active: false },
+                        { id: 'LT4', name: '实时监控', icon: '👁️', x: 340, y: 600, active: false },
+                        { id: 'LT5', name: '行情接收', icon: '📡', x: 420, y: 600, active: false },
+                        { id: 'LT6', name: '交易网关', icon: '🚪', x: 500, y: 600, active: false },
+                        { id: 'LT7', name: '资金管理', icon: '💰', x: 580, y: 600, active: false },
+                        { id: 'LT8', name: '持仓管理', icon: '💼', x: 660, y: 600, active: false },
+                        { id: 'LT9', name: '止损止盈', icon: '✋', x: 740, y: 600, active: false },
+                        { id: 'LT10', name: '套利策略', icon: '⚖️', x: 820, y: 600, active: false },
+                        
+                        // 实验管理层
+                        { id: 'EM1', name: '实验管理', icon: '🧪', x: 100, y: 740, active: false },
+                        { id: 'EM2', name: '版本控制', icon: '🌿', x: 180, y: 740, active: false },
+                        { id: 'EM3', name: '结果分析', icon: '📊', x: 260, y: 740, active: false },
+                        { id: 'EM4', name: '参数调优', icon: '⚙️', x: 340, y: 740, active: false },
+                        { id: 'EM5', name: '模型比较', icon: '⚖️', x: 420, y: 740, active: false },
+                        { id: 'EM6', name: '实验报告', icon: '📄', x: 500, y: 740, active: false },
+                        { id: 'EM7', name: '数据集管理', icon: '📊', x: 580, y: 740, active: false },
+                        { id: 'EM8', name: '实验调度', icon: '📅', x: 660, y: 740, active: false },
+                        
+                        // 前端展示层
+                        { id: 'UI1', name: '主界面', icon: '🖥️', x: 100, y: 880, active: false },
+                        { id: 'UI2', name: '图表组件', icon: '📊', x: 180, y: 880, active: false },
+                        { id: 'UI3', name: '数据表格', icon: '📋', x: 260, y: 880, active: false },
+                        { id: 'UI4', name: '控制面板', icon: '⚙️', x: 340, y: 880, active: false },
+                        { id: 'UI5', name: '实时监控', icon: '👁️', x: 420, y: 880, active: false },
+                        { id: 'UI6', name: '报告页面', icon: '📄', x: 500, y: 880, active: false },
+                        { id: 'UI7', name: '设置页面', icon: '⚙️', x: 580, y: 880, active: false },
+                        { id: 'UI8', name: '帮助系统', icon: '❓', x: 660, y: 880, active: false }
+                    ],
+                    connections: []
+                };
+            },
+            computed: {
+                activeNodes() {
+                    return this.allNodes.filter(n => n.active).length;
+                },
+                activeConnections() {
+                    return this.connections.filter(c => c.active).length;
+                },
+                systemLoad() {
+                    const total = this.allNodes.length;
+                    const active = this.activeNodes;
+                    return total > 0 ? Math.round((active / total) * 100) : 0;
+                }
+            },
+            mounted() {
+                this.drawTechBackground();
+                this.generateTechConnections();
+                this.updateConnections();
+            },
+            methods: {
+                drawTechBackground() {
+                    const canvas = this.$refs.canvas;
+                    if (!canvas) return;
+                    
+                    const ctx = canvas.getContext('2d');
+                    canvas.width = canvas.offsetWidth;
+                    canvas.height = canvas.offsetHeight;
+                    
+                    // 科技感背景
+                    ctx.fillStyle = '#000511';
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    
+                    // 科技网格
+                    ctx.strokeStyle = '#001e3c';
+                    ctx.lineWidth = 0.5;
+                    
+                    const gridSize = 30;
+                    for (let x = 0; x < canvas.width; x += gridSize) {
+                        ctx.beginPath();
+                        ctx.moveTo(x, 0);
+                        ctx.lineTo(x, canvas.height);
+                        ctx.stroke();
+                    }
+                    
+                    for (let y = 0; y < canvas.height; y += gridSize) {
+                        ctx.beginPath();
+                        ctx.moveTo(0, y);
+                        ctx.lineTo(canvas.width, y);
+                        ctx.stroke();
+                    }
+                    
+                    // 科技感装饰点
+                    for (let i = 0; i < 100; i++) {
+                        const x = Math.random() * canvas.width;
+                        const y = Math.random() * canvas.height;
+                        
+                        ctx.fillStyle = '#00ff88';
+                        ctx.globalAlpha = 0.1;
+                        ctx.beginPath();
+                        ctx.arc(x, y, 1, 0, Math.PI * 2);
+                        ctx.fill();
+                        ctx.globalAlpha = 1;
+                    }
+                },
+                
+                generateTechConnections() {
+                    this.connections = [];
+                    const nodes = this.allNodes;
+                    
+                    // 生成紧凑型连接
+                    for (let i = 0; i < nodes.length - 1; i++) {
+                        for (let j = i + 1; j < nodes.length; j++) {
+                            const distance = Math.sqrt(
+                                Math.pow(nodes[j].x - nodes[i].x, 2) + 
+                                Math.pow(nodes[j].y - nodes[i].y, 2)
+                            );
+                            
+                            // 只连接距离较近的节点，创建紧凑效果
+                            if (distance < 200 && Math.random() > 0.6) {
+                                this.connections.push({
+                                    id: `tech-${i}-${j}`,
+                                    from: nodes[i].id,
+                                    to: nodes[j].id,
+                                    active: false
+                                });
+                            }
+                        }
+                    }
+                },
+                
+                updateConnections() {
+                    const svg = this.$refs.connectionsSvg;
+                    if (!svg) return;
+                    
+                    // 清除现有连接线
+                    const existingLines = svg.querySelectorAll('line');
+                    existingLines.forEach(line => line.remove());
+                    
+                    // 绘制连接线
+                    this.connections.forEach(conn => {
+                        const fromNode = this.allNodes.find(n => n.id === conn.from);
+                        const toNode = this.allNodes.find(n => n.id === conn.to);
+                        
+                        if (fromNode && toNode) {
+                            const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                            line.setAttribute('x1', fromNode.x + 30);
+                            line.setAttribute('y1', fromNode.y + 20);
+                            line.setAttribute('x2', toNode.x + 30);
+                            line.setAttribute('y2', toNode.y + 20);
+                            line.setAttribute('class', 'connection-line');
+                            line.setAttribute('filter', conn.active ? 'url(#techGlow)' : '');
+                            
+                            svg.appendChild(line);
+                        }
+                    });
+                },
+                
+                toggleNode(nodeId) {
+                    const node = this.allNodes.find(n => n.id === nodeId);
+                    if (node) {
+                        node.active = !node.active;
+                        this.updateConnections();
+                    }
+                },
+                
+                activateWorkflow(workflow) {
+                    this.deactivateAll();
+                    
+                    const workflows = {
+                        'ai-strategy': ['DH1', 'DH2', 'DH3', 'DH4', 'DH5', 'DH7', 'DH8', 'DP1', 'DP2', 'DP3', 'DP4', 'QL1', 'QL2', 'QL8', 'QL9', 'BL1', 'BL2', 'AN1', 'AN2', 'AN4', 'AI1', 'AI2', 'AI3', 'AI4', 'AI5', 'AI6', 'AI7', 'AI8', 'AI9', 'AI10', 'AI11', 'AI12', 'ML1', 'ML2', 'ML3', 'OL1', 'MI1', 'AA1'],
+                        'traditional': ['DH1', 'DH2', 'DH4', 'DH5', 'DH7', 'QL1', 'QL2', 'QL3', 'QL4', 'QL5', 'QL6', 'QL7', 'QL8', 'QL9', 'QL10', 'BL1', 'BL2', 'BL3', 'BL4', 'BL5', 'BL6', 'BL7', 'BL8', 'AN1', 'AN2', 'AN3', 'AN4'],
+                        'model-training': ['DH1', 'DH2', 'DH3', 'DH4', 'DH6', 'DH7', 'DP1', 'DP2', 'DP3', 'DP4', 'QL1', 'QL2', 'QL8', 'QL9', 'BL1', 'BL2', 'AN1', 'AN4', 'AI1', 'AI3', 'AI4', 'AI6', 'AI10', 'AI11', 'AI12', 'ML1', 'ML2', 'ML3', 'MI1'],
+                        'qlib-online': ['DH1', 'DH2', 'DH6', 'QL1', 'QL2', 'QL6', 'QL8', 'QL9', 'BL1', 'BL2', 'EM1', 'EM2', 'EM3', 'EM4', 'EM5', 'EM6', 'EM7', 'EM8', 'AU1', 'AI2', 'AI8'],
+                        'qlib-integration': ['DH1', 'DH2', 'DH3', 'DH4', 'DH5', 'DH6', 'DH7', 'DH8', 'QL1', 'QL2', 'QL3', 'QL4', 'QL5', 'QL6', 'QL7', 'QL8', 'QL9', 'QL10', 'EM1', 'EM2', 'EM3', 'EM4', 'EM5', 'EM6', 'EM7', 'EM8', 'AU1', 'UI1', 'UI2', 'UI3', 'UI4', 'UI5', 'UI6', 'UI7', 'UI8']
+                    };
+                    
+                    const nodesToActivate = workflows[workflow] || [];
+                    
+                    // 逐个激活节点，创建科技感动画
+                    nodesToActivate.forEach((nodeId, index) => {
+                        setTimeout(() => {
+                            const node = this.allNodes.find(n => n.id === nodeId);
+                            if (node) {
+                                node.active = true;
+                                this.updateConnections();
+                            }
+                        }, index * 50);
+                    });
+                },
+                
+                deactivateAll() {
+                    this.allNodes.forEach(node => {
+                        node.active = false;
+                    });
+                    this.updateConnections();
+                },
+                
+                randomActivate() {
+                    this.deactivateAll();
+                    const numToActivate = Math.floor(Math.random() * 20) + 10;
+                    const shuffled = [...this.allNodes].sort(() => 0.5 - Math.random());
+                    const selected = shuffled.slice(0, numToActivate);
+                    
+                    selected.forEach((node, index) => {
+                        setTimeout(() => {
+                            node.active = true;
+                            this.updateConnections();
+                        }, index * 30);
+                    });
+                }
+            },
+            watch: {
+                allNodes: {
+                    handler() {
+                        this.updateConnections();
+                    },
+                    deep: true
+                }
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>

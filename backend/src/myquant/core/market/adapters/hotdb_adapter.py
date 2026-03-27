@@ -27,15 +27,16 @@ from .base import V5DataAdapter
 
 
 # 周期到文件后缀的映射
+# 注意：1h是HotDB专用的（聚合存储），LocalDB不支持
 _PERIOD_SUFFIX = {
     '1d': 'day',
     '1w': 'week',
     '1mon': 'month',
-    '1m': '1m',
-    '5m': '5m',
-    '15m': '15m',
-    '30m': '30m',
-    '1h': '1h',
+    '1m': 'min1',
+    '5m': 'min5',
+    '15m': 'min15',
+    '30m': 'min30',
+    '1h': 'min60',  # HotDB专用，用于存储聚合的1h数据
 }
 
 
@@ -46,7 +47,7 @@ class V5HotDBAdapter(V5DataAdapter):
         super().__init__()
         self._name = 'hotdb'
         # hotdb_adapter.py -> adapters -> market -> core -> myquant -> src -> backend -> root
-        project_root = Path(__file__).resolve().parent.parent.parent.parent.parent.parent
+        project_root = Path(__file__).resolve().parent.parent.parent.parent.parent.parent.parent
         self._data_dir = project_root / 'data' / 'hotdata'
         self._metadata_dir = self._data_dir / 'metadata'
         self._metadata_file = self._metadata_dir / 'index.json'
@@ -170,9 +171,12 @@ class V5HotDBAdapter(V5DataAdapter):
         return f"{self._exchange(symbol)}{code}"
 
     def _get_stock_dir(self, symbol: str, period: str) -> Path:
-        """获取股票数据目录"""
-        period_suffix = self._get_period_suffix(period)
-        return self._data_dir / self._exchange(symbol) / period_suffix / self._dir_name(symbol)
+        """获取股票数据目录
+
+        注意：目录名使用周期名（如5m），文件后缀使用后缀名（如min5）
+        """
+        # 目录名直接用period，与LocalDB保持一致
+        return self._data_dir / self._exchange(symbol) / period / self._dir_name(symbol)
 
     def get_kline(
         self,
@@ -222,14 +226,29 @@ class V5HotDBAdapter(V5DataAdapter):
                 df = self._get_or_generate_data(symbol, period)
 
                 if df is None or df.empty:
-                    # 尝试在线补全（仅日线）
-                    if period == '1d' and self._try_online_completion:
-                        logger.info(f"[HotDB] {symbol} {period} 无数据，尝试在线补全")
-                        df = self._complete_from_online(symbol, period)
-                        if df is not None and not df.empty:
-                            # 保存到 HotDB
-                            self.save_kline(symbol, df, period)
-                    else:
+                    # 无数据，直接跳过（由 fallback 继续尝试其他数据源）
+                    continue
+                else:
+                    # 检查数据新鲜度：如果数据过期，返回 None 让 fallback 继续尝试
+                    # 注意：对于聚合周期（1h），允许使用旧数据进行聚合生成
+                    latest_time = df['datetime'].iloc[-1]
+                    now = pd.Timestamp.now(tz=None).replace(tzinfo=None)
+                    days_old = (now - latest_time).days
+
+                    # 日线数据：超过1天视为过期
+                    # 分钟线数据：超过1天视为过期（非交易日也会过期）
+                    # 但对于 1h（聚合周期），允许使用旧数据（总比没有好）
+                    is_expired = days_old > 1 and period != '1h'
+
+                    if is_expired:
+                        logger.info(
+                            f"[HotDB] {symbol} {period} 数据已过期: "
+                            f"最新 {latest_time.date()}, 已过期 {days_old} 天"
+                        )
+                        # 清除过期的缓存数据
+                        self._memory_cache.pop(cache_key, None)
+                        self._memory_cache_time.pop(cache_key, None)
+                        # 返回 None 让 fallback 继续尝试
                         continue
 
                 # 保存到内存缓存（完整的未过滤数据）
@@ -281,6 +300,16 @@ class V5HotDBAdapter(V5DataAdapter):
 
         # 2. 文件不存在，尝试聚合生成（仅 15m/30m/1h）
         if period in ('15m', '30m', '1h'):
+            # 先检查5m数据是否存在，如果不存在则从1m聚合生成
+            stock_dir_5m = self._get_stock_dir(symbol, '5m')
+            if not stock_dir_5m.exists():
+                logger.info(f"[HotDB] {symbol} 5m数据不存在，尝试从1m聚合生成")
+                df_5m = self._aggregate_from_1m(symbol, '5m')
+                if df_5m is not None and not df_5m.empty:
+                    # 保存5m数据（使用无递归版本）
+                    self._save_kline_no_agg(symbol, df_5m, '5m')
+                    logger.info(f"[HotDB] 从1m聚合生成5m数据: {len(df_5m)} 条")
+
             logger.info(
                 f"[HotDB] {symbol} {period} 无数据，尝试从 5m 聚合生成"
             )
@@ -321,7 +350,8 @@ class V5HotDBAdapter(V5DataAdapter):
                 second = time_val % 100
                 datetime_str = f'{date_str} {hour:02d}:{minute:02d}:{second:02d}'
             else:
-                datetime_str = date_str
+                # 日线没有时间部分，使用收盘时间 15:00:00
+                datetime_str = f'{date_str} 15:00:00'
 
             rows.append({
                 'datetime': pd.Timestamp(datetime_str),
@@ -329,17 +359,16 @@ class V5HotDBAdapter(V5DataAdapter):
                 'close': closes[i],
                 'volume': volumes[i] if volumes else 0,
                 'amount': amounts[i] if amounts else 0,
+                '_timezone': 'Asia/Shanghai',  # 标记为北京时间
             })
 
         return pd.DataFrame(rows)
 
     def _aggregate_from_5m(self, symbol: str, target_period: str) -> Optional[pd.DataFrame]:
-        """从5分钟数据聚合生成目标周期数据（numpy 向量化优化版）
+        """从5分钟数据聚合生成目标周期数据
 
-        优化说明：
-        - 使用 numpy reshape 向量化操作，替代 pandas groupby
-        - 性能提升约 7x（72ms → 10ms）
-        - 数据精度完全一致，经过逐字段验证
+        对于 15m/30m：简单按固定数量聚合（3根/6根）
+        对于 1h：按交易时间段聚合（09:30-10:30, 10:30-11:30, 13:00-14:00, 14:00-15:00）
 
         Args:
             symbol: 股票代码
@@ -351,15 +380,7 @@ class V5HotDBAdapter(V5DataAdapter):
         # 先读取 5m 数据
         df_5m = self._get_or_generate_data(symbol, '5m')
         if df_5m is None or df_5m.empty:
-            logger.debug(
-                f"[HotDB] 无法获取 {symbol} 的 5m 数据，跳过聚合"
-            )
-            return None
-
-        # 聚合倍数
-        mapping = {'15m': 3, '30m': 6, '1h': 12}
-        factor = mapping.get(target_period)
-        if factor is None:
+            logger.debug(f"[HotDB] 无法获取 {symbol} 的 5m 数据，跳过聚合")
             return None
 
         try:
@@ -370,15 +391,202 @@ class V5HotDBAdapter(V5DataAdapter):
             df['datetime'] = pd.to_datetime(df['datetime'])
             df = df.sort_values('datetime').reset_index(drop=True)
 
+            if target_period == '1h':
+                # 1小时按交易时间段聚合
+                agg_df = self._aggregate_1h_by_trading_time(df)
+            else:
+                # 15m/30m 按固定数量聚合
+                factor = {'15m': 3, '30m': 6}.get(target_period)
+                if factor is None:
+                    return None
+                agg_df = self._aggregate_by_fixed_count(df, factor)
+
+            if agg_df is None or agg_df.empty:
+                return None
+
+            elapsed = (time.time() - start_time) * 1000
+            logger.debug(
+                f"[HotDB] 聚合 {symbol} 5m → {target_period}: "
+                f"{len(df_5m)} 根 → {len(agg_df)} 根 (耗时: {elapsed:.2f}ms)"
+            )
+
+            # 自动保存聚合结果
+            self._save_kline_no_agg(symbol, agg_df, target_period)
+
+            return agg_df
+
+        except Exception as e:
+            logger.warning(f"[HotDB] 聚合 {symbol} 5m → {target_period} 失败: {e}")
+            return None
+
+    def _aggregate_1h_by_trading_time(self, df: pd.DataFrame) -> Optional[pd.DataFrame]:
+        """按交易时间段聚合1小时K线
+
+        A股交易时间：
+        - 09:30-10:30 → 10:30 收盘
+        - 10:30-11:30 → 11:30 收盘
+        - 13:00-14:00 → 14:00 收盘
+        - 14:00-15:00 → 15:00 收盘
+        """
+        def get_hour_period(dt):
+            """根据时间返回所属的1小时周期收盘时间"""
+            if isinstance(dt, pd.Timestamp):
+                hour = dt.hour
+                minute = dt.minute
+            else:
+                dt = pd.Timestamp(dt)
+                hour = dt.hour
+                minute = dt.minute
+
+            time_val = hour * 100 + minute
+
+            # 09:30-10:25 → 10:30 收盘
+            if 930 <= time_val < 1030:
+                return dt.replace(hour=10, minute=30).strftime('%Y-%m-%d %H:%M:%S')
+            # 10:30-11:25 → 11:30 收盘
+            elif 1030 <= time_val < 1130:
+                return dt.replace(hour=11, minute=30).strftime('%Y-%m-%d %H:%M:%S')
+            # 11:30-12:55 → 11:30（上午最后一根）
+            elif 1130 <= time_val < 1300:
+                return dt.replace(hour=11, minute=30).strftime('%Y-%m-%d %H:%M:%S')
+            # 13:00-13:55 → 14:00 收盘
+            elif 1300 <= time_val < 1400:
+                return dt.replace(hour=14, minute=0).strftime('%Y-%m-%d %H:%M:%S')
+            # 14:00-14:55 → 15:00 收盘
+            elif 1400 <= time_val < 1500:
+                return dt.replace(hour=15, minute=0).strftime('%Y-%m-%d %H:%M:%S')
+            # 15:00 → 15:00 收盘
+            elif time_val == 1500:
+                return dt.replace(hour=15, minute=0).strftime('%Y-%m-%d %H:%M:%S')
+            else:
+                return None  # 非交易时间
+
+        # 分配每根5分钟K线到对应的1小时周期
+        df['period_close'] = df['datetime'].apply(get_hour_period)
+
+        # 过滤掉非交易时间的数据
+        df = df[df['period_close'].notna()].copy()
+
+        if df.empty:
+            return None
+
+        # 按日期+周期收盘时间分组聚合
+        df['group_key'] = df['period_close']
+
+        agg_df = df.groupby('group_key').agg({
+            'open': 'first',
+            'high': 'max',
+            'low': 'min',
+            'close': 'last',
+            'volume': 'sum',
+            'amount': 'sum'
+        }).reset_index()
+
+        # 重命名 group_key 为 datetime（这就是收盘时间）
+        agg_df = agg_df.rename(columns={'group_key': 'datetime'})
+        agg_df = agg_df[['datetime', 'open', 'high', 'low', 'close', 'volume', 'amount']]
+        agg_df = agg_df.sort_values('datetime').reset_index(drop=True)
+
+        return agg_df
+
+    def _aggregate_by_fixed_count(self, df: pd.DataFrame, factor: int) -> Optional[pd.DataFrame]:
+        """按固定数量聚合（15m=3根, 30m=6根）"""
+        n = len(df)
+        n_agg = n // factor
+
+        if n_agg == 0:
+            return None
+
+        # 转换为 numpy 数组
+        opens = df['open'].values.astype(np.float64)
+        highs = df['high'].values.astype(np.float64)
+        lows = df['low'].values.astype(np.float64)
+        closes = df['close'].values.astype(np.float64)
+        volumes = df['volume'].values.astype(np.float64)
+        datetimes = df['datetime'].values
+        amount = df.get('amount', pd.Series([0.0] * n)).values.astype(np.float64)
+
+        n_complete = n_agg * factor
+
+        # 完整部分
+        opens_2d = opens[:n_complete].reshape(n_agg, factor)
+        highs_2d = highs[:n_complete].reshape(n_agg, factor)
+        lows_2d = lows[:n_complete].reshape(n_agg, factor)
+        closes_2d = closes[:n_complete].reshape(n_agg, factor)
+        volumes_2d = volumes[:n_complete].reshape(n_agg, factor)
+        amount_2d = amount[:n_complete].reshape(n_agg, factor)
+        datetimes_2d = datetimes[:n_complete].reshape(n_agg, factor)
+
+        agg_open = opens_2d[:, 0]
+        agg_high = highs_2d.max(axis=1)
+        agg_low = lows_2d.min(axis=1)
+        agg_close = closes_2d[:, -1]
+        agg_volume = volumes_2d.sum(axis=1)
+        agg_amount = amount_2d.sum(axis=1)
+        agg_datetime = datetimes_2d[:, -1]
+
+        # 处理余数部分
+        n_remainder = n % factor
+        if n_remainder > 0:
+            rem_start = n_complete
+            agg_open = np.append(agg_open, opens[rem_start])
+            agg_high = np.append(agg_high, highs[rem_start:].max())
+            agg_low = np.append(agg_low, lows[rem_start:].min())
+            agg_close = np.append(agg_close, closes[-1])
+            agg_volume = np.append(agg_volume, volumes[rem_start:].sum())
+            agg_amount = np.append(agg_amount, amount[rem_start:].sum())
+            agg_datetime = np.append(agg_datetime, datetimes[-1])
+
+        return pd.DataFrame({
+            'datetime': agg_datetime,
+            'open': agg_open,
+            'high': agg_high,
+            'low': agg_low,
+            'close': agg_close,
+            'volume': agg_volume,
+            'amount': agg_amount
+        })
+
+    def _aggregate_from_1m(self, symbol: str, target_period: str = '5m') -> Optional[pd.DataFrame]:
+        """从1分钟数据聚合生成5分钟数据（numpy 向量化优化版）
+
+        从1m数据聚合生成5m数据，用于当HotDB只有1m数据时自动生成5m数据。
+
+        Args:
+            symbol: 股票代码
+            target_period: 目标周期 (目前仅支持 5m)
+
+        Returns:
+            聚合后的 DataFrame 或 None
+        """
+        # 先读取 1m 数据
+        df_1m = self._get_or_generate_data(symbol, '1m')
+        if df_1m is None or df_1m.empty:
+            logger.debug(f"[HotDB] 无法获取 {symbol} 的 1m 数据，跳过聚合")
+            return None
+
+        # 聚合倍数：1m → 5m = 5倍
+        factor = 5
+        if target_period != '5m':
+            return None
+
+        try:
+            start_time = time.time()
+
+            # 确保数据已排序
+            df = df_1m.copy().reset_index(drop=True)
+            df['datetime'] = pd.to_datetime(df['datetime'])
+            df = df.sort_values('datetime').reset_index(drop=True)
+
             n = len(df)
             n_agg = n // factor
             n_remainder = n % factor
 
             if n_agg == 0:
-                logger.debug(f"[HotDB] {symbol} 5m 数据不足 {factor} 条，无法聚合 {target_period}")
+                logger.debug(f"[HotDB] {symbol} 1m 数据不足 {factor} 条，无法聚合 {target_period}")
                 return None
 
-            # 转换为 numpy 数组（避免复制）
+            # 转换为 numpy 数组
             opens = df['open'].values.astype(np.float64)
             highs = df['high'].values.astype(np.float64)
             lows = df['low'].values.astype(np.float64)
@@ -407,7 +615,7 @@ class V5HotDBAdapter(V5DataAdapter):
             agg_close = closes_2d[:, -1]
             agg_volume = volumes_2d.sum(axis=1)
             agg_amount = amount_2d.sum(axis=1)
-            agg_datetime = datetimes_2d[:, 0]
+            agg_datetime = datetimes_2d[:, -1]  # 使用收盘时间（最后一根5分钟的时间）
 
             # 处理余数部分（最后一组不完整）
             if n_remainder > 0:
@@ -418,7 +626,7 @@ class V5HotDBAdapter(V5DataAdapter):
                 agg_close = np.append(agg_close, closes[-1])
                 agg_volume = np.append(agg_volume, volumes[rem_start:].sum())
                 agg_amount = np.append(agg_amount, amount[rem_start:].sum())
-                agg_datetime = np.append(agg_datetime, datetimes[rem_start])
+                agg_datetime = np.append(agg_datetime, datetimes[-1])  # 使用最后一根的时间作为收盘时间
 
             # 构造结果 DataFrame
             agg_df = pd.DataFrame({
@@ -434,17 +642,14 @@ class V5HotDBAdapter(V5DataAdapter):
             elapsed = (time.time() - start_time) * 1000
 
             logger.debug(
-                f"[HotDB] 聚合 {symbol} 5m → {target_period}: "
-                f"{len(df_5m)} 根 → {len(agg_df)} 根 (耗时: {elapsed:.2f}ms)"
+                f"[HotDB] 聚合 {symbol} 1m → {target_period}: "
+                f"{len(df_1m)} 根 → {len(agg_df)} 根 (耗时: {elapsed:.2f}ms)"
             )
-
-            # 自动保存聚合结果（不触发预聚合）
-            self._save_kline_no_agg(symbol, agg_df, target_period)
 
             return agg_df
 
         except Exception as e:
-            logger.warning(f"[HotDB] 聚合 {symbol} 5m → {target_period} 失败: {e}")
+            logger.warning(f"[HotDB] 聚合 {symbol} 1m → {target_period} 失败: {e}")
             return None
 
     def get_quote(self, symbols: List[str]) -> Dict[str, dict]:
@@ -490,9 +695,9 @@ class V5HotDBAdapter(V5DataAdapter):
 
             df['datetime'] = pd.to_datetime(df['datetime'])
 
-            # 1分钟数据：清理3天前的数据
+            # 1分钟数据：清理7天前的数据（增加保留天数）
             if period == '1m':
-                self._cleanup_old_1m_data(symbol, df, days=3)
+                self._cleanup_old_1m_data(symbol, df, days=7)
 
             # 日线使用智能合并（追加新日期）
             if period == '1d':
@@ -529,6 +734,21 @@ class V5HotDBAdapter(V5DataAdapter):
                     )
                 else:
                     logger.info(f"[HotDB] 新增 {symbol} {period}: {len(df)} 条")
+
+            # 统一时区：将所有时间转换为北京时间（naive）
+            def localize_to_beijing(dt):
+                """将 datetime 转换为北京时间（naive）"""
+                if pd.isna(dt):
+                    return dt
+                if hasattr(dt, 'tz') and dt.tz is not None:
+                    # 有时区信息：转换为 UTC+8，然后移除时区标记
+                    beijing_time = dt.tz_convert('Asia/Shanghai')
+                    return beijing_time.tz_localize(None)
+                else:
+                    # naive datetime：假设已经是北京时间，直接返回
+                    return dt
+
+            df['datetime'] = df['datetime'].apply(localize_to_beijing)
 
             # 日期转换为YYYYMMDD格式
             period_suffix = self._get_period_suffix(period)
@@ -645,7 +865,8 @@ class V5HotDBAdapter(V5DataAdapter):
                 agg_close = closes_2d[:, -1]
                 agg_volume = volumes_2d.sum(axis=1)
                 agg_amount = amount_2d.sum(axis=1)
-                agg_datetime = datetimes_2d[:, 0]
+                # 取最后一个时间（聚合窗口的结束时间）
+                agg_datetime = datetimes_2d[:, -1]
 
                 # 处理余数部分
                 if n_remainder > 0:
@@ -725,6 +946,19 @@ class V5HotDBAdapter(V5DataAdapter):
                 return False
 
             df['datetime'] = pd.to_datetime(df['datetime'])
+
+            # 统一时区：将所有时间转换为北京时间（naive）
+            def localize_to_beijing(dt):
+                """将 datetime 转换为北京时间（naive）"""
+                if pd.isna(dt):
+                    return dt
+                if hasattr(dt, 'tz') and dt.tz is not None:
+                    beijing_time = dt.tz_convert('Asia/Shanghai')
+                    return beijing_time.tz_localize(None)
+                else:
+                    return dt
+
+            df['datetime'] = df['datetime'].apply(localize_to_beijing)
 
             # 日期转换
             period_suffix = self._get_period_suffix(period)
@@ -914,143 +1148,6 @@ class V5HotDBAdapter(V5DataAdapter):
 
         except Exception as e:
             logger.warning(f"[HotDB] 清理 {symbol} 1m 数据失败: {e}")
-
-    def _complete_from_online(
-        self, symbol: str, period: str
-    ) -> Optional[pd.DataFrame]:
-        """从在线源补全数据（通过 SeamlessService）
-
-        检查 HotDB 最后日期 vs 今天，缺少的从在线源获取
-
-        Args:
-            symbol: 股票代码
-            period: 周期
-
-        Returns:
-            补全后的数据，失败返回 None
-        """
-        try:
-            from myquant.core.market.services.seamless_service import (
-                get_seamless_kline_service
-            )
-
-            service = get_seamless_kline_service()
-
-            # 通过 SeamlessService 获取在线数据
-            # use_cache=False 强制使用在线源，不使用 HotDB 缓存
-            logger.info(f"[HotDB] 通过 SeamlessService 获取 {symbol} {period}")
-            df = service.get_kline(
-                symbol=symbol,
-                period=period,
-                count=1000,
-                include_realtime=True,
-                adjust_type='none',
-                use_cache=False  # 强制在线获取
-            )
-
-            if df is not None and not df.empty:
-                logger.info(f"[HotDB] 在线补全 {symbol} {period}: {len(df)} 条")
-                return df
-            else:
-                logger.warning(f"[HotDB] 在线源无 {symbol} {period} 数据")
-                return None
-
-        except Exception as e:
-            logger.warning(f"[HotDB] 在线补全 {symbol} {period} 失败: {e}")
-            return None
-
-    def _is_symbol_ready(self, symbol: str) -> bool:
-        """检查股票是否已转存到 HotDB
-
-        Args:
-            symbol: 股票代码
-
-        Returns:
-            True: 已转存，False: 未转存
-        """
-        key = f"{symbol}_ready"
-        return self._metadata.get(key, {}).get('ready', False)
-
-    def _mark_symbol_ready(self, symbol: str):
-        """标记股票已转存到 HotDB
-
-        Args:
-            symbol: 股票代码
-        """
-        try:
-            key = f"{symbol}_ready"
-            self._metadata[key] = {
-                'symbol': symbol,
-                'ready': True,
-                'timestamp': datetime.now().isoformat()
-            }
-            self._save_metadata()
-            logger.debug(f"[HotDB] 标记已转存: {symbol}")
-        except Exception as e:
-            logger.warning(f"[HotDB] 标记 {symbol} 失败: {e}")
-
-    def ensure_symbol_in_hotdb(self, symbol: str) -> bool:
-        """确保股票数据在 HotDB 中（只转存一次）
-
-        自选板块调用此方法：
-        1. 检查内部标记，已转存则跳过
-        2. 未转存则从 LocalDB 复制 1d + 5m
-        3. 5m 保存时自动触发 15m/30m/1h 聚合
-        4. 标记为已转存
-
-        Args:
-            symbol: 股票代码 (如 600000.SH)
-
-        Returns:
-            True: 数据已在 HotDB 中或转存成功
-            False: 转存失败
-        """
-        # 1. 检查是否已转存
-        if self._is_symbol_ready(symbol):
-            logger.debug(f"[HotDB] {symbol} 已转存，跳过")
-            return True
-
-        # 2. 检查 LocalDB 是否可用
-        try:
-            from myquant.core.market.adapters import get_adapter
-            localdb = get_adapter('localdb')
-            if not localdb or not localdb.is_available():
-                logger.warning(f"[HotDB] LocalDB 不可用，无法转存 {symbol}")
-                return False
-        except Exception as e:
-            logger.warning(f"[HotDB] 获取 LocalDB 失败: {e}")
-            return False
-
-        logger.info(f"[HotDB] 开始转存 {symbol} 从 LocalDB")
-
-        # 3. 从 LocalDB 复制 1d 数据
-        try:
-            result = localdb.get_kline(symbols=[symbol], period='1d', count=5000)
-            if symbol in result and not result[symbol].empty:
-                self.save_kline(symbol, result[symbol], '1d')
-                logger.info(f"[HotDB] 转存 {symbol} 1d: {len(result[symbol])} 条")
-            else:
-                logger.warning(f"[HotDB] LocalDB 中 {symbol} 无 1d 数据")
-        except Exception as e:
-            logger.warning(f"[HotDB] 转存 {symbol} 1d 失败: {e}")
-
-        # 4. 从 LocalDB 复制 5m 数据（会自动触发聚合）
-        try:
-            result = localdb.get_kline(symbols=[symbol], period='5m', count=5000)
-            if symbol in result and not result[symbol].empty:
-                self.save_kline(symbol, result[symbol], '5m')
-                logger.info(f"[HotDB] 转存 {symbol} 5m: {len(result[symbol])} 条")
-                # 5m 保存会自动触发 15m/30m/1h 聚合
-            else:
-                logger.warning(f"[HotDB] LocalDB 中 {symbol} 无 5m 数据")
-        except Exception as e:
-            logger.warning(f"[HotDB] 转存 {symbol} 5m 失败: {e}")
-
-        # 5. 标记为已转存
-        self._mark_symbol_ready(symbol)
-
-        logger.info(f"[HotDB] {symbol} 转存完成")
-        return True
 
 
 def create_hotdb_adapter():

@@ -17,6 +17,7 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root / "src"))
 
 from myquant.core.market.adapters import get_adapter
+from myquant.core.market.services import get_hotdb_service
 from loguru import logger
 
 
@@ -157,8 +158,10 @@ def test_batch_transfer(symbols: list):
 
         start_symbol = time.time()
 
-        # 使用 ensure_symbol_in_hotdb（生产方法）
-        success = hotdb.ensure_symbol_in_hotdb(symbol)
+        # 使用 HotDBService（生产方法）
+        hotdb_service = get_hotdb_service()
+        result = hotdb_service.ensure_symbol(symbol)
+        success = result.get('success', False)
 
         elapsed = (time.time() - start_symbol) * 1000
         status = "成功" if success else "失败"
