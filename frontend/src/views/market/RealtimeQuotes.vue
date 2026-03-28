@@ -1296,8 +1296,8 @@ const selectStock = (code: string) => {
   loadKlineData()
 }
 
-// 切换周期
-const changeTimeframe = (tf: string) => {
+// 切换周期（先加载数据，避免图表闪空白）
+const changeTimeframe = async (tf: string) => {
   if (currentTimeframe.value === tf) return  // 周期没变，不处理
 
   if (!tf || tf === 'undefined') {
@@ -1315,18 +1315,18 @@ const changeTimeframe = (tf: string) => {
     console.error('[changeTimeframe] 保存失败:', e)
   }
 
-  isInitialLoad.value = true  // 切换周期时重新适应显示范围
+  isInitialLoad.value = true
 
-  // 清空旧聚合器，创建新聚合器（确保干净的聚合状态）
+  // 先加载数据（利用TTL缓存，瞬间完成）
+  console.log('[RealtimeQuotes] 切换周期，加载历史数据:', tf)
+  await loadKlineData()
+
+  // 数据加载完成后再切换聚合器（避免图表闪空白）
   if (aggregator) {
     aggregator.clear()
   }
   aggregator = createKlineAggregator(tf as Timeframe)
-  console.log('[RealtimeQuotes] 新建聚合器:', tf)
-
-  // 切换周期时，用 HTTP API 加载历史数据（WebSocket 只推1分钟线，需要聚合）
-  console.log('[RealtimeQuotes] 切换周期，加载历史数据:', tf)
-  loadKlineData()
+  console.log('[RealtimeQuotes] 聚合器已切换:', tf)
 
   // WebSocket 保持连接（始终推1分钟线），无需重连
   // 聚合器会自动将1分钟线聚合到目标周期

@@ -1,11 +1,49 @@
 # MyQuant v11 项目上下文
 > 每次新对话开始必读，保持最新状态
 
-## 当前状态（2026-03-25）
+## 当前状态（2026-03-28）
 - **后端**: ✅ 运行中 http://localhost:8000
 - **前端**: ✅ 已迁移到 v11，运行在 http://localhost:5174
 - **数据源**: ✅ pytdx2/XtQuant/TdxQuant 均正常，WebSocket 实时推送已优化
 - **复权因子缓存**: ✅ 混合模式已实现（日线用前复权，分钟线用等比复权）
+- **架构重构**: ✅ KlineService 统一数据入口已完成（符合 V5 场景化服务架构）
+
+### 9. KlineService 重构 - V5 场景化服务架构（已完成）
+**问题**:
+1. 切换 K 线周期时重复下载数据（500-1000ms）
+2. HotDB 过期判断逻辑错误，历史数据被丢弃
+3. 业务逻辑在 adapter 层（违反分层架构）
+4. 没有统一的数据获取入口
+
+**解决**:
+1. KlineService 扩展为统一数据获取入口
+   - `get_historical_kline()`: 统一入口方法
+   - `_try_hotdb()`: HotDB 快速通道（<10ms）
+   - `_try_localdb()`: LocalDB 冷数据库
+   - `_fetch_from_online()`: V5 双层路由
+
+2. SeamlessKlineService 简化
+   - `_get_historical_kline()`: 调用 KlineService
+   - `_get_realtime_kline()`: 调用 KlineService
+   - 删除冗余的 `_try_hotdb_fast_path()`
+
+**新调用链**:
+```
+前端 → API → SeamlessKlineService
+    ↓
+KlineService.get_historical_kline() ← 统一入口
+    ↓
+HotDB/LocalDB/V5双层路由
+```
+
+**效果**:
+- HotDB 命中: < 10ms 响应
+- 切换周期: 瞬间完成
+- 架构清晰: 职责分离，符合 V5 设计
+
+**修改文件**:
+- `kline_service.py`: 扩展为统一数据入口
+- `seamless_service.py`: 简化，调用 KlineService
 
 ### 8. 复权因子预计算和通达信标准前复权（已完成）
 **问题**:

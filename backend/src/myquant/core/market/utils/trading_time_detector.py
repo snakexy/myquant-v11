@@ -11,7 +11,7 @@
 
 from typing import Dict, List, Optional, Set, Callable, Any
 from loguru import logger
-from datetime import datetime, time, timedelta
+from datetime import datetime, time, date
 from enum import Enum
 import json
 import os
@@ -90,36 +90,102 @@ class TradingTimeDetectorV2:
         logger.info("缓存配置: " + ("已启用" if enable_cache else "已禁用"))
         logger.info(f"节假日缓存文件: {self._holiday_cache_file}")
 
-    def _get_hardcoded_holidays(self) -> set:
-        """获取本地节假日数据（2024-2026年）"""
-        return {
-            "20240101",  # 元旦
-            "20240210", "20240211", "20240212", "20240213", "20240214", "20240215", "20240216", "20240217",  # 春节
-            "20240404", "20240405", "20240406",  # 清明节
-            "20240501", "20240502", "20240503", "20240504", "20240505",  # 劳动节
-            "20240610",  # 端午节
-            "20240915", "20240916", "20240917",  # 中秋节
-            "20241001", "20241002", "20241003", "20241004", "20241005", "20241006", "20241007",  # 国庆节
-            "20250101",  # 元旦
-            "20250128", "20250129", "20250130", "20250131", "20250201", "20250202", "20250203", "20250204",  # 春节
-            "20250404", "20250405", "20250406",  # 清明节
-            "20250501", "20250502", "20250503", "20250504", "20250505",  # 劳动节
-            "20250531", "20250601", "20250602",  # 端午节
-            "20251001", "20251002", "20251003", "20251004", "20251005", "20251006", "20251007", "20251008",  # 国庆节
-            "20260101",  # 元旦 (预计)
-            "20260128", "20260129", "20260130", "20260131", "20260201", "20260202", "20260203", "20260204",  # 春节 (预计)
-            "20260404", "20260405", "20260406",  # 清明节 (预计)
-            "20260501", "20260502", "20260503", "20260504", "20260505",  # 劳动节 (预计)
-            "20260620", "20260621", "20260622",  # 端午节 (预计)
-            "20260925", "20260926", "20260927",  # 中秋节 (预计)
-            "20261001", "20261002", "20261003", "20261004", "20261005", "20261006", "20261007", "20261008",  # 国庆节 (预计)
-        }
+    def _fetch_holidays_from_online(self, start_year: int, end_year: int) -> Optional[set]:
+        """从 holiday-cn (GitHub) 在线获取节假日数据
+
+        数据源: https://github.com/NateScarlet/holiday-cn
+        每日自动抓取国务院公告
+
+        Args:
+            start_year: 起始年份
+            end_year: 结束年份
+
+        Returns:
+            节假日日期集合 (YYYYMMDD 格式)，失败返回 None
+        """
+        try:
+            import urllib.request
+            import urllib.error
+
+            holidays = set()
+            base_url = "https://raw.githubusercontent.com/NateScarlet/holiday-cn/master"
+
+            for year in range(start_year, end_year + 1):
+                url = f"{base_url}/{year}.json"
+                try:
+                    with urllib.request.urlopen(url, timeout=5) as response:
+                        data = json.loads(response.read().decode('utf-8'))
+
+                        # holiday-cn 格式: {"days": [{"date": "2026-02-15", "isOffDay": true}, ...]}
+                        if 'days' in data:
+                            year_holidays = []
+                            for day_info in data['days']:
+                                if day_info.get('isOffDay', False):
+                                    # 转换 "2026-02-15" -> "20260215"
+                                    date_str = day_info['date'].replace('-', '')
+                                    holidays.add(date_str)
+                                    year_holidays.append(date_str)
+
+                            logger.info(f"[holiday-cn] 获取 {year} 年节假日: {len(year_holidays)} 天")
+
+                except urllib.error.URLError as e:
+                    logger.warning(f"[holiday-cn] 获取 {year} 年数据失败: {e}")
+                    continue
+                except Exception as e:
+                    logger.warning(f"[holiday-cn] 解析 {year} 年数据失败: {e}")
+                    continue
+
+            if holidays:
+                logger.info(f"[holiday-cn] 在线获取 {start_year}-{end_year} 年节假日: {len(holidays)} 天")
+                return holidays
+            else:
+                return None
+
+        except ImportError:
+            logger.warning("[holiday-cn] urllib 不可用，降级到 chinese_calendar")
+            return None
+        except Exception as e:
+            logger.warning(f"[holiday-cn] 在线获取失败: {e}，降级到 chinese_calendar")
+            return None
+
+    def _generate_holidays_from_chinese_calendar(self, start_year: int, end_year: int) -> Optional[set]:
+        """使用 chinese_calendar 库生成节假日数据（降级方案）
+
+        Args:
+            start_year: 起始年份
+            end_year: 结束年份
+
+        Returns:
+            节假日日期集合 (YYYYMMDD 格式)，失败返回 None
+        """
+        try:
+            import chinese_calendar as calendar
+            holidays = set()
+
+            for year in range(start_year, end_year + 1):
+                start_date = date(year, 1, 1)
+                end_date = date(year, 12, 31)
+
+                # 获取该年所有节假日
+                holidays_list = calendar.get_holidays(start_date, end_date)
+                for d in holidays_list:
+                    holidays.add(d.strftime("%Y%m%d"))
+
+            logger.info(f"[chinese_calendar] 生成 {start_year}-{end_year} 年节假日: {len(holidays)} 天")
+            return holidays
+
+        except ImportError:
+            logger.warning("[chinese_calendar] 库未安装，请运行: pip install chinese_calendar")
+            return None
+        except Exception as e:
+            logger.warning(f"[chinese_calendar] 生成节假日失败: {e}")
+            return None
 
     def _get_holidays_local(self, start_date: str = None, end_date: str = None) -> List[str]:
         """获取本地节假日数据（优先从缓存文件读取）
 
         缓存文件位置: backend/data/cache/holidays.json
-        每年更新一次即可
+        数据源优先级: 缓存文件 -> holiday-cn (在线) -> chinese_calendar (本地)
 
         Args:
             start_date: 开始日期 (YYYYMMDD) - 未使用，保持接口兼容
@@ -134,25 +200,56 @@ class TradingTimeDetectorV2:
                 with open(self._holiday_cache_file, 'r', encoding='utf-8') as f:
                     cache_data = json.load(f)
                     holidays = set(cache_data.get('holidays', []))
-                    logger.info(f"[节假日缓存] 从文件加载 {len(holidays)} 天节假日")
-                    return sorted(list(holidays))
+
+                    # 检查缓存是否过期（每月1号自动刷新）
+                    updated_at = cache_data.get('updated_at', '')
+                    if updated_at:
+                        try:
+                            cache_date = datetime.strptime(updated_at, '%Y-%m-%d %H:%M:%S')
+                            current_date = datetime.now()
+
+                            # 计算月份差异
+                            months_diff = (current_date.year - cache_date.year) * 12 + (current_date.month - cache_date.month)
+
+                            if months_diff < 1:
+                                logger.info(f"[节假日缓存] 从文件加载 {len(holidays)} 天节假日 (缓存有效，{updated_at})")
+                                return sorted(list(holidays))
+                            else:
+                                logger.info(f"[节假日缓存] 缓存已过期 ({months_diff} 个月)，重新获取")
+                        except ValueError:
+                            logger.warning("[节假日缓存] 解析缓存时间失败，重新获取")
+                    else:
+                        logger.info("[节假日缓存] 缓存无时间戳，重新获取")
+
             except Exception as e:
                 logger.warning(f"[节假日缓存] 读取缓存文件失败: {e}")
 
-        # 缓存文件不存在或读取失败，使用硬编码数据
-        holidays = self._get_hardcoded_holidays()
-        logger.info(f"[本地节假日] 使用硬编码数据 {len(holidays)} 天节假日")
+        # 尝试从 holiday-cn 在线获取节假日数据
+        current_year = datetime.now().year
+        holidays = self._fetch_holidays_from_online(current_year - 1, current_year + 2)
 
-        # 尝试保存到缓存文件（供下次使用）
+        # 降级到 chinese_calendar
+        if holidays is None:
+            logger.info("[节假日] 在线获取失败，降级到 chinese_calendar")
+            holidays = self._generate_holidays_from_chinese_calendar(current_year - 1, current_year + 2)
+
+        # 如果都失败，返回空集（降级：只排除周末）
+        if holidays is None:
+            logger.warning("[节假日] 无法获取节假日数据，将只排除周末（不排除节假日）")
+            holidays = set()
+
+        # 保存到缓存文件
         try:
             os.makedirs(os.path.dirname(self._holiday_cache_file), exist_ok=True)
+            source = "holiday-cn" if len(holidays) > 0 else "empty"
             with open(self._holiday_cache_file, 'w', encoding='utf-8') as f:
                 json.dump({
                     'holidays': sorted(list(holidays)),
                     'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                    'version': '1.0'
+                    'version': '3.0',
+                    'source': source
                 }, f, indent=2, ensure_ascii=False)
-            logger.info(f"[节假日缓存] 已保存到 {self._holiday_cache_file}")
+            logger.info(f"[节假日缓存] 已保存 {len(holidays)} 天节假日到 {self._holiday_cache_file}")
         except Exception as e:
             logger.warning(f"[节假日缓存] 保存缓存文件失败: {e}")
 
@@ -222,13 +319,6 @@ class TradingTimeDetectorV2:
             是否为交易日
         """
         check_date = check_date if check_date else datetime.now()
-
-        # 临时修复：系统时间异常（年份>2025）时，强制使用2025年
-        # TODO: 移除此修复后需修正系统时间
-        if check_date.year > 2025:
-            from datetime import timedelta
-            check_date = datetime(2025, check_date.month, check_date.day,
-                                 check_date.hour, check_date.minute, check_date.second)
 
         date_str = check_date.strftime("%Y%m%d")
         year = check_date.year

@@ -129,6 +129,9 @@ import { ref, onMounted, onUnmounted, watch, computed, nextTick } from 'vue'
 import { createChart, CandlestickSeries, HistogramSeries, LineSeries } from 'lightweight-charts'
 import type { Time, ChartOptions, CandlestickSeriesPartialOptions } from 'lightweight-charts'
 import { getUnifiedKline, transformUnifiedKlineData, type KlineDataItem as UnifiedKlineDataItem } from '@/api/unified'
+import { cachedFetch } from '@/utils/cacheManager'
+import { createKlineWebSocket, type KlineBar, type KlineWebSocketConfig } from '@/services/klineWebSocket'
+import { createKlineAggregator, type Timeframe } from '@/services/klineAggregator'
 
 // ==================== 类型定义 ====================
 
@@ -325,6 +328,12 @@ const realtimePrice = ref<RealtimePrice | null>(null)
 const currentData = ref<KLineDataItem | null>(null)
 const isLoadingMore = ref(false)  // 是否正在加载更多数据
 
+// WebSocket 和聚合器
+let klineWs: ReturnType<typeof createKlineWebSocket> | null = null
+let aggregator: ReturnType<typeof createKlineAggregator> | null = null
+const wsConnected = ref(false)
+const useWebSocket = ref(true)  // 是否启用 WebSocket（失败后自动降级）
+
 // 指标窗格
 const indicatorPaneRefs = ref<Map<string, HTMLElement>>(new Map())
 const indicatorPanes = ref<Array<{ id: string; name: string; height: number }>>([])
@@ -461,9 +470,15 @@ const loadData = async (period: string) => {
     // 映射周期格式
     const apiPeriod = mapPeriodToApi(period)
 
-    // ⭐ 调用统一数据API（/api/v1/data/unified）
-    // 后端UnifiedDataManager会自动选择最优数据源
-    const response = await getUnifiedKline(props.symbol, apiPeriod as any, 500)
+    // ⭐ 智能缓存策略
+    // 关键理解：只有最后一根K线是实时变化的，其他历史K线都是固定的
+    // 所以切换周期时可以放心使用长缓存
+    const cacheKey = `kline_${props.symbol}_${apiPeriod}`
+    const cacheTTL = 7 * 24 * 60 * 60 * 1000  // 7天长缓存（历史数据永久不变）
+
+    const response = await cachedFetch(cacheKey, async () => {
+      return await getUnifiedKline(props.symbol, apiPeriod as any, 500)
+    }, cacheTTL)
 
     if (response.code === 200 && response.data && response.data.length > 0) {
       const elapsedMs = response.metadata?.elapsed_ms || 0
@@ -602,9 +617,17 @@ const removeIndicatorSeries = (indicatorKey: string) => {
 const handlePeriodChange = async (period: string) => {
   if (period === selectedPeriod.value) return
 
+  // 断开旧连接
+  disconnectKlineWs()
+
   selectedPeriod.value = period
   await loadData(period)
   emit('periodChange', period)
+
+  // 重新连接 WebSocket（使用新周期）
+  if (props.enableRealtime) {
+    connectKlineWs()
+  }
 }
 
 // ==================== 工具方法 ====================
@@ -692,13 +715,142 @@ const stopRealtimeUpdate = () => {
   }
 }
 
+// ==================== WebSocket 实时推送 ====================
+
+/**
+ * 连接 K线 WebSocket
+ */
+const connectKlineWs = () => {
+  if (!props.enableRealtime || !useWebSocket.value) return
+  if (klineWs) return  // 已连接
+
+  console.log('[TradingViewKLine] 连接 WebSocket:', props.symbol)
+
+  // 将组件周期转换为 Timeframe
+  const periodMap: Record<string, Timeframe> = {
+    '1m': '1m',
+    '5m': '5m',
+    '15m': '15m',
+    '30m': '30m',
+    '60m': '60m',
+    'day': '1d',
+    'week': '1w',
+    'month': '1M'
+  }
+
+  const timeframe = periodMap[selectedPeriod.value] || '1d'
+
+  // 初始化聚合器
+  aggregator = createKlineAggregator(timeframe)
+
+  const wsConfig: KlineWebSocketConfig = {
+    onConnected: () => {
+      wsConnected.value = true
+      console.log('[TradingViewKLine] WebSocket 已连接')
+    },
+    onDisconnected: () => {
+      wsConnected.value = false
+      console.log('[TradingViewKLine] WebSocket 已断开')
+    },
+    onHistory: (bars: KlineBar[]) => {
+      // WebSocket 历史数据只用于初始化聚合器
+      console.log('[TradingViewKLine] WS 历史数据:', bars.length, '根')
+      if (aggregator && bars.length > 0) {
+        aggregator.onHistory(bars)
+      }
+    },
+    onBarUpdate: (bar: KlineBar) => {
+      // 最后一根 K线更新
+      console.log('[TradingViewKLine] WS Bar 更新:', bar)
+      if (!aggregator) return
+
+      const aggregated = aggregator.onBarUpdate(bar)
+      if (aggregated) {
+        updateLastBar(aggregated)
+      }
+    },
+    onBarClose: (bar: KlineBar) => {
+      // K线收线
+      console.log('[TradingViewKLine] WS Bar 收线:', bar)
+      if (!aggregator) return
+
+      const aggregated = aggregator.onBarClose(bar)
+      if (aggregated) {
+        updateLastBar(aggregated)
+      }
+    },
+    onError: (message: string) => {
+      console.error('[TradingViewKLine] WebSocket 错误:', message)
+      // WebSocket 失败，降级到定时轮询
+      if (useWebSocket.value) {
+        console.log('[TradingViewKLine] WebSocket 失败，降级到定时轮询')
+        useWebSocket.value = false
+        startRealtimeUpdate()
+      }
+    }
+  }
+
+  klineWs = createKlineWebSocket(props.symbol, wsConfig)
+  klineWs.connect()
+}
+
+/**
+ * 断开 WebSocket
+ */
+const disconnectKlineWs = () => {
+  if (klineWs) {
+    klineWs.disconnect()
+    klineWs = null
+  }
+  wsConnected.value = false
+  aggregator = null
+}
+
+/**
+ * 更新最后一根 K线
+ */
+const updateLastBar = (bar: KlineBar) => {
+  if (!chartData.value || chartData.value.length === 0) return
+
+  // 转换时间格式
+  let time: Time
+  if (typeof bar.time === 'string') {
+    time = new Date(bar.time).getTime() / 1000 as Time
+  } else {
+    time = bar.time as Time
+  }
+
+  const lastBar = {
+    time,
+    open: bar.open,
+    high: bar.high,
+    low: bar.low,
+    close: bar.close,
+    volume: bar.volume
+  }
+
+  // 更新最后一根
+  const lastIndex = chartData.value.length - 1
+  chartData.value[lastIndex] = lastBar
+
+  // 更新图表
+  if (candlestickSeries) {
+    candlestickSeries.update(lastBar)
+  }
+}
+
 // ==================== 生命周期 ====================
 
 onMounted(async () => {
   await nextTick()
   initChart()
   await loadData(props.period)
-  startRealtimeUpdate()
+
+  // 优先使用 WebSocket 实时推送
+  if (props.enableRealtime) {
+    connectKlineWs()
+    // 如果 WebSocket 连接失败，会自动降级到定时轮询
+  }
 
   // 响应窗口大小变化
   window.addEventListener('resize', handleResize)
@@ -706,7 +858,10 @@ onMounted(async () => {
 
 onUnmounted(() => {
   window.removeEventListener('resize', handleResize)
+
+  // 清理实时更新
   stopRealtimeUpdate()
+  disconnectKlineWs()
 
   // 清理图表
   if (chartApi) {
@@ -728,7 +883,16 @@ const handleResize = () => {
 // 监听symbol变化
 watch(() => props.symbol, async (newSymbol, oldSymbol) => {
   if (newSymbol !== oldSymbol) {
+    // 断开旧连接
+    disconnectKlineWs()
+
+    // 加载新股票数据
     await loadData(selectedPeriod.value)
+
+    // 重新连接 WebSocket
+    if (props.enableRealtime) {
+      connectKlineWs()
+    }
   }
 })
 

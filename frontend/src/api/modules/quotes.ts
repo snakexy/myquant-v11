@@ -158,3 +158,70 @@ export const deleteHotDBSymbol = async (symbol: string): Promise<{success: boole
   const { data } = await rawApi.delete<{success: boolean; message?: string}>(`/v5/hotdata/symbols/${symbol}`)
   return data
 }
+
+// ========== 自选股管理 API ==========
+
+/** 自选股分组 */
+export interface WatchlistGroup {
+  id: string
+  name: string
+  stocks: Array<{symbol: string; name: string}>
+  refreshInterval: number
+  preheat: boolean
+  created_at: string
+}
+
+/** 自选股数据 */
+export interface WatchlistData {
+  version: string
+  last_updated: string | null
+  groups: WatchlistGroup[]
+}
+
+/** 获取自选股列表 */
+export const fetchWatchlist = async (): Promise<{success: boolean; data?: WatchlistData; error?: string}> => {
+  const { data } = await v5Api.get<{success: boolean; data?: WatchlistData; error?: string}>('/watchlist/')
+  return data
+}
+
+/** 创建分组 */
+export const createWatchlistGroup = async (name: string): Promise<{success: boolean; group?: WatchlistGroup; error?: string}> => {
+  const { data } = await v5Api.post<{success: boolean; group?: WatchlistGroup; error?: string}>('/watchlist/groups', { name })
+  return data
+}
+
+/** 删除分组 */
+export const deleteWatchlistGroup = async (groupId: string): Promise<{success: boolean; group?: WatchlistGroup; error?: string}> => {
+  const { data } = await v5Api.delete<{success: boolean; group?: WatchlistGroup; error?: string}>(`/watchlist/groups/${groupId}`)
+  return data
+}
+
+/** 重命名分组 */
+export const renameWatchlistGroup = async (groupId: string, name: string): Promise<{success: boolean; group?: WatchlistGroup; error?: string}> => {
+  const { data } = await v5Api.put<{success: boolean; group?: WatchlistGroup; error?: string}>('/watchlist/groups/rename', { group_id: groupId, name })
+  return data
+}
+
+/** 添加股票到分组 */
+export const addStockToGroup = async (groupId: string, symbol: string, name: string): Promise<{success: boolean; group?: WatchlistGroup; error?: string}> => {
+  const { data } = await v5Api.post<{success: boolean; group?: WatchlistGroup; error?: string}>('/watchlist/groups/add-stock', { group_id: groupId, symbol, name })
+  return data
+}
+
+/** 从分组删除股票 */
+export const removeStockFromGroup = async (groupId: string, symbol: string): Promise<{success: boolean; group?: WatchlistGroup; error?: string}> => {
+  const { data } = await v5Api.post<{success: boolean; group?: WatchlistGroup; error?: string}>('/watchlist/groups/remove-stock', { group_id: groupId, symbol })
+  return data
+}
+
+/** 设置刷新频率 */
+export const setGroupRefreshInterval = async (groupId: string, interval: number): Promise<{success: boolean; group?: WatchlistGroup; error?: string}> => {
+  const { data } = await v5Api.put<{success: boolean; group?: WatchlistGroup; error?: string}>('/watchlist/groups/refresh-interval', { group_id: groupId, interval })
+  return data
+}
+
+/** 切换预热状态 */
+export const toggleGroupPreheat = async (groupId: string): Promise<{success: boolean; group?: WatchlistGroup; error?: string}> => {
+  const { data } = await v5Api.put<{success: boolean; group?: WatchlistGroup; error?: string}>('/watchlist/groups/toggle-preheat', { group_id: groupId })
+  return data
+}

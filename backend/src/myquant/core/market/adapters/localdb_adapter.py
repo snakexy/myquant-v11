@@ -2,8 +2,9 @@
 """
 V5 LocalDB 适配器
 
-直接读取本地数据库的 .day.bin 二进制文件。
-数据目录: {project_root}/data/qlib_data/stock/{exchange}/day/{exchange}{code}/
+支持两种模式：
+1. tdx_direct=True: 直接读取通达信本地数据库（.day/.lc5），零拷贝
+2. tdx_direct=False: 读取 Qlib bin 文件（data/qlib_data/stock/）
 
 不依赖 Qlib SDK，无初始化延迟。
 """
@@ -20,22 +21,37 @@ from .base import V5DataAdapter
 
 
 class V5LocalDBAdapter(V5DataAdapter):
-    """V5 LocalDB 适配器 - 直接读取二进制文件"""
+    """V5 LocalDB 适配器 - 支持通达信直连和 Qlib bin 两种模式"""
 
-    def __init__(self):
+    def __init__(self, use_tdx_direct: bool = True, tdx_path: Optional[str] = None):
+        """初始化 LocalDB 适配器
+
+        Args:
+            use_tdx_direct: 是否直接读取通达信数据库（默认 True，零拷贝）
+            tdx_path: 通达信安装路径（默认从环境变量 TDX_PATH 读取）
+        """
         super().__init__()
         self._name = 'localdb'
-        # localdb_adapter.py -> adapters -> market -> core -> myquant -> src -> backend -> root
-        # 修正：往上6层到项目根目录（与 HotDB 一致）
-        # 强制重载标记: 2026-03-27-21-50
-        project_root = Path(__file__).resolve().parent.parent.parent.parent.parent.parent.parent
-        self._data_dir = project_root / 'data' / 'qlib_data' / 'stock'
-        self._ready = self._data_dir.exists()
+        self._mode = 'tdx_direct' if use_tdx_direct else 'qlib_bin'
 
-        if not self._ready:
-            logger.warning(f"[LocalDB] 数据目录不存在: {self._data_dir}")
+        if self._mode == 'tdx_direct':
+            # 直接读取通达信本地数据库
+            from .tdxlocal_adapter import V5TdxLocalAdapter
+            self._tdx_reader = V5TdxLocalAdapter(tdx_path)
+            self._ready = self._tdx_reader.is_available()
+            logger.info(f"[LocalDB] 模式: tdx_direct, 通达信路径: {self._tdx_reader._tdx_path}")
         else:
-            logger.info(f"[LocalDB] 数据目录就绪: {self._data_dir}")
+            # 读取 Qlib bin 文件
+            # localdb_adapter.py -> adapters -> market -> core -> myquant -> src -> backend -> root
+            # 修正：往上6层到项目根目录（与 HotDB 一致）
+            project_root = Path(__file__).resolve().parent.parent.parent.parent.parent.parent.parent
+            self._data_dir = project_root / 'data' / 'qlib_data' / 'stock'
+            self._ready = self._data_dir.exists()
+
+            if not self._ready:
+                logger.warning(f"[LocalDB] 数据目录不存在: {self._data_dir}")
+            else:
+                logger.info(f"[LocalDB] 模式: qlib_bin, 数据目录: {self._data_dir}")
 
     def is_available(self) -> bool:
         return self._ready
@@ -113,7 +129,7 @@ class V5LocalDBAdapter(V5DataAdapter):
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
         count: Optional[int] = None,
-        adjust_type: str = 'none'  # 参数保留（兼容性），本地文件始终是不复权数据
+        adjust_type: str = 'none'
     ) -> Dict[str, pd.DataFrame]:
         """获取 K线数据（支持多周期）
 
@@ -122,6 +138,26 @@ class V5LocalDBAdapter(V5DataAdapter):
         if not self._ready:
             return {}
 
+        if self._mode == 'tdx_direct':
+            # 直接从通达信读取（支持 1d 和 5m）
+            if period not in ['1d', '5m']:
+                logger.warning(f"[LocalDB] 通达信直连模式只支持 1d/5m，请求的 {period} 将返回空")
+                return {}
+            return self._tdx_reader.get_kline(symbols, period, start_date, end_date, count, adjust_type)
+
+        # Qlib bin 模式
+        return self._get_kline_from_qlib_bin(symbols, period, start_date, end_date, count)
+
+    def _get_kline_from_qlib_bin(
+        self,
+        symbols: List[str],
+        period: str,
+        start_date: Optional[str],
+        end_date: Optional[str],
+        count: Optional[int]
+    ) -> Dict[str, pd.DataFrame]:
+
+        """从 Qlib bin 文件读取 K线数据"""
         # 获取周期目录和文件后缀
         period_dir = self._get_period_dir(period)
         period_suffix = self._get_period_suffix(period)
@@ -156,9 +192,11 @@ class V5LocalDBAdapter(V5DataAdapter):
                     # 构造 datetime
                     date_str = f'{dates[i][:4]}-{dates[i][4:6]}-{dates[i][6:8]}'
                     if is_minute and times and i < len(times):
-                        # 分钟线：拼接日期和时间
-                        time_str = f'{times[i]:06d}'
-                        datetime_str = f'{date_str} {time_str[:2]}:{time_str[2:4]}:{time_str[4:6]}'
+                        # 分钟线：拼接日期和时间（times 是字符串，需补零到6位）
+                        time_val = times[i]
+                        # 补零到 6 位 (93500 -> 093500)
+                        time_padded = str(time_val).zfill(6)
+                        datetime_str = f'{date_str} {time_padded[:2]}:{time_padded[2:4]}:{time_padded[4:6]}'
                     else:
                         # 日线：只有日期
                         datetime_str = date_str
@@ -193,6 +231,17 @@ class V5LocalDBAdapter(V5DataAdapter):
 
 
     def save_kline(self, symbol: str, df: pd.DataFrame, period: str = '1d') -> bool:
+        """保存K线数据到本地
+
+        注意：tdx_direct 模式下不支持保存（通达信文件只读）
+        """
+        if self._mode == 'tdx_direct':
+            logger.warning(f"[LocalDB] tdx_direct 模式不支持保存数据（通达信文件只读）")
+            return False
+
+        return self._save_kline_to_qlib_bin(symbol, df, period)
+
+    def _save_kline_to_qlib_bin(self, symbol: str, df: pd.DataFrame, period: str) -> bool:
         """保存K线数据到本地bin文件（支持多周期）
 
         Args:
@@ -276,6 +325,11 @@ class V5LocalDBAdapter(V5DataAdapter):
             f.write(struct.pack(f'<{count}i', *values))
 
 
-def create_localdb_adapter():
-    """创建 LocalDB 适配器实例"""
-    return V5LocalDBAdapter()
+def create_localdb_adapter(use_tdx_direct: bool = True, tdx_path: Optional[str] = None):
+    """创建 LocalDB 适配器实例
+
+    Args:
+        use_tdx_direct: 是否直接读取通达信数据库（默认 True，零拷贝）
+        tdx_path: 通达信安装路径（默认从环境变量 TDX_PATH 读取）
+    """
+    return V5LocalDBAdapter(use_tdx_direct=use_tdx_direct, tdx_path=tdx_path)

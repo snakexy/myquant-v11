@@ -369,6 +369,10 @@ class V5PyTdxPoolAdapter(V5DataAdapter):
                 if data and len(data) > 0:
                     df = pd.DataFrame(data)
 
+                    # PyTdx 返回的 datetime 是字符串，需要转换为 Timestamp
+                    if 'datetime' in df.columns and df['datetime'].dtype == 'object':
+                        df['datetime'] = pd.to_datetime(df['datetime'])
+
                     # 分钟线 vol 是股（shares），日线 vol 是手（lots），统一÷100转为手
                     is_daily = period in ('1d', '1D', 'day', 'd')
                     if not is_daily and 'vol' in df.columns:

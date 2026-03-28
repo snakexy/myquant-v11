@@ -204,7 +204,7 @@ class KlineDataset:
             """移除时区信息，统一为 naive datetime"""
             if pd.isna(dt):
                 return dt
-            if hasattr(dt, 'tz') and dt.tz is not None:
+            if hasattr(dt, 'tzinfo') and dt.tzinfo is not None:
                 # 保留本地时间，移除时区信息
                 return dt.tz_localize(None)
             return dt
@@ -272,7 +272,12 @@ class KlineDataset:
 
             merged_df['datetime'] = merged_df['datetime'].apply(normalize_daily_time)
         else:
-            # 非日线数据，使用原有的合并逻辑
+            # 非日线数据，确保 datetime 类型一致（避免 object vs datetime64 合并错误）
+            if left_df['datetime'].dtype == 'object':
+                left_df['datetime'] = pd.to_datetime(left_df['datetime'])
+            if right_df['datetime'].dtype == 'object':
+                right_df['datetime'] = pd.to_datetime(right_df['datetime'])
+
             merged_df = pd.merge(
                 left_df,
                 right_df,

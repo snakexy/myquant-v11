@@ -17,7 +17,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': resolve(__dirname, 'src'),
-      'lightweight-charts': resolve(__dirname, 'external/lightweight-charts'),
+      'lightweight-charts': resolve(__dirname, 'external/lightweight-charts/dist/lightweight-charts.development.mjs'),
     },
   },
   css: {

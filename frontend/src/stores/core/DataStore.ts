@@ -153,33 +153,34 @@ export const useDataStore = defineStore('data', () => {
   const marketOverview = ref<MarketOverview | null>(null)
   const lastUpdate = ref<number>(0)
 
-  // 自选股分组管理
-  // 从 localStorage 恢复
-  const savedGroups = localStorage.getItem('watchlistGroups')
-  const watchlistGroups = ref<any[]>(savedGroups ? JSON.parse(savedGroups) : [
+  // 自选股分组管理 - 使用后端 API 持久化
+  const watchlistGroups = ref<any[]>([
     { id: 'default', name: '默认分组', stocks: [], refreshInterval: 5000, preheat: false }
   ])
-  const activeGroupId = ref(savedGroups ? (JSON.parse(savedGroups)[0]?.id || 'default') : 'default')
+  const activeGroupId = ref('default')
+  const watchlistLoaded = ref(false)
 
-  // 监听变化并保存
-  watch(watchlistGroups, (groups) => {
+  /**
+   * 从后端加载自选股数据
+   */
+  const loadWatchlistFromAPI = async () => {
     try {
-      localStorage.setItem('watchlistGroups', JSON.stringify(groups))
-      console.log('[DataStore] 已保存 watchlistGroups 到 localStorage:', groups.length, '个分组')
-    } catch (e) {
-      console.error('[DataStore] 保存 watchlistGroups 失败:', e)
-    }
-  }, { deep: true })
+      const { fetchWatchlist } = await import('@/api/modules/quotes')
+      const result = await fetchWatchlist()
 
-  // 立即保存一次初始化数据（防止丢失）
-  try {
-    if (!savedGroups) {
-      localStorage.setItem('watchlistGroups', JSON.stringify(watchlistGroups.value))
-      console.log('[DataStore] 初始化并保存默认分组')
+      if (result.success && result.data?.groups) {
+        watchlistGroups.value = result.data.groups
+        activeGroupId.value = result.data.groups[0]?.id || 'default'
+        watchlistLoaded.value = true
+        console.log('[DataStore] 从后端加载自选股成功:', result.data.groups.length, '个分组')
+      }
+    } catch (e) {
+      console.error('[DataStore] 从后端加载自选股失败:', e)
     }
-  } catch (e) {
-    console.error('[DataStore] 初始化保存失败:', e)
   }
+
+  // 初始化时加载
+  loadWatchlistFromAPI()
 
   // 板块数据
   const sectors = ref<Sector[]>([])
@@ -1052,54 +1053,76 @@ export const useDataStore = defineStore('data', () => {
     setActiveGroup: (groupId: string) => {
       activeGroupId.value = groupId
     },
-    createGroup: (name: string) => {
-      const newGroup = {
-        id: `group_${Date.now()}`,
-        name,
-        stocks: [],
-        refreshInterval: 5000,
-        preheat: false
+    createGroup: async (name: string) => {
+      const { createWatchlistGroup } = await import('@/api/modules/quotes')
+      const result = await createWatchlistGroup(name)
+      if (result.success && result.group) {
+        watchlistGroups.value.push(result.group)
+        return result.group
       }
-      watchlistGroups.value.push(newGroup)
-      return newGroup
+      return null
     },
-    deleteGroup: (groupId: string) => {
-      const idx = watchlistGroups.value.findIndex(g => g.id === groupId)
-      if (idx !== -1) {
-        watchlistGroups.value.splice(idx, 1)
-        if (activeGroupId.value === groupId) {
-          activeGroupId.value = watchlistGroups.value[0]?.id || ''
+    deleteGroup: async (groupId: string) => {
+      const { deleteWatchlistGroup } = await import('@/api/modules/quotes')
+      const result = await deleteWatchlistGroup(groupId)
+      if (result.success) {
+        const idx = watchlistGroups.value.findIndex(g => g.id === groupId)
+        if (idx !== -1) {
+          watchlistGroups.value.splice(idx, 1)
+          if (activeGroupId.value === groupId) {
+            activeGroupId.value = watchlistGroups.value[0]?.id || ''
+          }
         }
       }
     },
-    renameGroup: (groupId: string, newName: string) => {
-      const group = watchlistGroups.value.find(g => g.id === groupId)
-      if (group) {
-        group.name = newName
+    renameGroup: async (groupId: string, newName: string) => {
+      const { renameWatchlistGroup } = await import('@/api/modules/quotes')
+      const result = await renameWatchlistGroup(groupId, newName)
+      if (result.success && result.group) {
+        const group = watchlistGroups.value.find(g => g.id === groupId)
+        if (group) {
+          group.name = result.group.name
+        }
       }
     },
-    addToGroup: (groupId: string, symbol: string, name: string) => {
-      const group = watchlistGroups.value.find(g => g.id === groupId)
-      if (group && !group.stocks.find((s: any) => s.symbol === symbol)) {
-        group.stocks.push({ symbol, name })
+    addToGroup: async (groupId: string, symbol: string, name: string) => {
+      const { addStockToGroup } = await import('@/api/modules/quotes')
+      const result = await addStockToGroup(groupId, symbol, name)
+      if (result.success && result.group) {
+        const group = watchlistGroups.value.find(g => g.id === groupId)
+        if (group) {
+          group.stocks = result.group.stocks
+        }
       }
     },
-    removeFromGroup: (groupId: string, symbol: string) => {
-      const group = watchlistGroups.value.find(g => g.id === groupId)
-      if (group) {
-        group.stocks = group.stocks.filter((s: any) => s.symbol !== symbol)
+    removeFromGroup: async (groupId: string, symbol: string) => {
+      const { removeStockFromGroup } = await import('@/api/modules/quotes')
+      const result = await removeStockFromGroup(groupId, symbol)
+      if (result.success && result.group) {
+        const group = watchlistGroups.value.find(g => g.id === groupId)
+        if (group) {
+          group.stocks = result.group.stocks
+        }
       }
     },
-    setGroupRefreshInterval: (groupId: string, interval: number) => {
-      const group = watchlistGroups.value.find(g => g.id === groupId)
-      if (group) {
-        group.refreshInterval = interval
+    setGroupRefreshInterval: async (groupId: string, interval: number) => {
+      const { setGroupRefreshInterval: apiSetInterval } = await import('@/api/modules/quotes')
+      const result = await apiSetInterval(groupId, interval)
+      if (result.success && result.group) {
+        const group = watchlistGroups.value.find(g => g.id === groupId)
+        if (group) {
+          group.refreshInterval = result.group.refreshInterval
+        }
       }
     },
-    togglePreheat: (groupId: string) => {
-      const group = watchlistGroups.value.find(g => g.id === groupId)
-      if (group) {
-        group.preheat = !group.preheat
+    togglePreheat: async (groupId: string) => {
+      const { toggleGroupPreheat } = await import('@/api/modules/quotes')
+      const result = await toggleGroupPreheat(groupId)
+      if (result.success && result.group) {
+        const group = watchlistGroups.value.find(g => g.id === groupId)
+        if (group) {
+          group.preheat = result.group.preheat
+        }
       }
     },
 

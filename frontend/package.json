@@ -1,7 +1,7 @@
 {
   "name": "myquant",
-  "version": "9.0.0",
-  "description": "MyQuant v9.0 - 智能量化交易平台前端",
+  "version": "11.0.0",
+  "description": "MyQuant v11.0 - 智能量化交易平台前端",
   "type": "module",
   "scripts": {
     "dev": "vite",

@@ -15,12 +15,12 @@ from pathlib import Path
 from loguru import logger
 
 from myquant.core.market.models import KlineDataset
-from myquant.core.market.routing import DataLevel, get_source_selector
 from myquant.core.market.adapters import get_adapter
 from myquant.core.market.utils.trading_time import TradingTimeChecker
 from myquant.core.market.services.cache import TTLCache
 from myquant.config.settings import XDXR_DIR
 from myquant.core.market.services.adjustment_factor_service import get_adjustment_factor_service
+from myquant.core.market.services.kline_service import get_kline_service
 
 
 # 自动保存配置
@@ -52,23 +52,44 @@ class SeamlessKlineService:
     """
 
     def __init__(self):
-        self._selector = get_source_selector()
-        self._adapter_cache = {}
+        # ✅ 依赖 KlineService（统一数据获取入口）
+        self._kline_service = get_kline_service()
+        self._factor_service = get_adjustment_factor_service()
         # XDXR除权除息数据缓存（TTL 1小时，因为这数据变化不频繁）
         self._xdxr_cache = TTLCache(maxsize=200, ttl=3600)  # 1小时TTL
         # XDXR文件缓存TTL（秒）：1天
         self._xdxr_file_ttl = 24 * 3600
         # K线数据缓存（TTL 60秒，加速周期切换）
         self._kline_cache = TTLCache(maxsize=500, ttl=60)
-        # 复权因子服务（预计算复权因子表，支持混合模式）
-        self._factor_service = get_adjustment_factor_service()
-        logger.info("[SeamlessKlineService] 初始化完成，混合模式复权已启用，K线缓存已开启")
+        logger.info("[SeamlessKlineService] 初始化完成，调用 KlineService 统一入口，K线缓存已开启")
 
-    def _get_adapter(self, name: str):
-        """获取适配器实例（带缓存）"""
-        if name not in self._adapter_cache:
-            self._adapter_cache[name] = get_adapter(name)
-        return self._adapter_cache[name]
+    def _ensure_naive_datetime(self, df: pd.DataFrame) -> pd.DataFrame:
+        """确保 DataFrame 中的 datetime 列为 timezone-naive
+
+        将所有 timezone-aware 的 datetime 转换为 timezone-naive（北京时间），
+        避免 concat/merge 时出现 object 类型或 timezone 混乱问题。
+
+        Args:
+            df: 输入 DataFrame
+
+        Returns:
+            datetime 列为 timezone-naive 的 DataFrame
+        """
+        if df.empty or 'datetime' not in df.columns:
+            return df
+
+        def make_naive(dt):
+            """将 datetime 转换为 naive（保留本地时间，移除时区信息）"""
+            if pd.isna(dt):
+                return dt
+            if hasattr(dt, 'tzinfo') and dt.tzinfo is not None:
+                # 保留本地时间，移除时区信息
+                return dt.tz_localize(None)
+            return dt
+
+        df = df.copy()
+        df['datetime'] = df['datetime'].apply(make_naive)
+        return df
 
     def get_kline(
         self,
@@ -137,7 +158,7 @@ class SeamlessKlineService:
         elif use_cache and cached_data is not None and not cached_data.empty:
             # 缓存存在但不需要增量（时间戳为空或请求指定了start_date）
             logger.debug(f"[K线缓存] 直接返回缓存数据")
-            return cached_data.copy()
+            return self._ensure_naive_datetime(cached_data.copy())
 
         # 获取历史数据（始终获取不复权原始数据）
         historical = self._get_historical_kline(
@@ -145,11 +166,14 @@ class SeamlessKlineService:
             start_date_for_fetch, end_date, 'none'
         )
 
+        # 确保历史数据 datetime 为 naive（避免 timezone 混乱）
+        historical.df = self._ensure_naive_datetime(historical.df)
+
         if historical.df.empty:
             # 如果没有获取到新数据且缓存存在，返回缓存
             if cached_data is not None and not cached_data.empty:
                 logger.debug(f"[增量获取] 无新数据，返回缓存")
-                return cached_data.copy()
+                return self._ensure_naive_datetime(cached_data.copy())
             return historical.df
 
         # 判断是否需要补充实时数据
@@ -167,6 +191,9 @@ class SeamlessKlineService:
                 end_date=datetime.now().strftime('%Y%m%d'),  # 添加end_date，确保适配器使用正确的日期范围
                 filter_today=False, get_realtime=True
             )
+
+            # 确保实时数据 datetime 为 naive
+            realtime.df = self._ensure_naive_datetime(realtime.df)
 
             logger.info(f"[数据补全] 获取到实时数据: {len(realtime.df)} 条")
             if not realtime.df.empty:
@@ -186,6 +213,16 @@ class SeamlessKlineService:
         # 增量合并：合并缓存数据和新获取的数据
         if incremental_fetch and cached_data is not None and not cached_data.empty:
             if not historical.df.empty:
+                # 确保两边的 datetime 都是 naive 且类型一致
+                cached_data = self._ensure_naive_datetime(cached_data.copy())
+                historical.df = self._ensure_naive_datetime(historical.df.copy())
+
+                # 强制转换 datetime 列为 datetime64 类型（避免 object 类型）
+                if cached_data['datetime'].dtype == 'object':
+                    cached_data['datetime'] = pd.to_datetime(cached_data['datetime'])
+                if historical.df['datetime'].dtype == 'object':
+                    historical.df['datetime'] = pd.to_datetime(historical.df['datetime'])
+
                 # 合并新旧数据并去重
                 merged_df = pd.concat([cached_data, historical.df], ignore_index=True)
 
@@ -262,6 +299,9 @@ class SeamlessKlineService:
 
         # 标记正在形成的K线
         historical.df = self._mark_forming_kline(historical.df, period)
+
+        # 最终确保所有 datetime 为 naive（避免 API 层 timezone 错误）
+        historical.df = self._ensure_naive_datetime(historical.df)
 
         return historical.df
 
@@ -505,216 +545,71 @@ class SeamlessKlineService:
         end_date: Optional[str],
         adjust_type: str
     ) -> KlineDataset:
-        """获取历史 K线数据
+        """获取历史 K线数据（调用 KlineService 统一入口）
 
         Args:
-            period: 周期 (用于分钟级数据的交易时间判断)
-            adjust_type: 复权类型，直接传递给数据源
-                - PyTdx 支持原生复权 (front/back/none)
-                - 其他数据源返回不复权数据，由服务层处理
+            period: 周期
+            adjust_type: 复权类型（暂不使用，复权由服务层统一处理）
         """
-        # ── HotDB 快速通道（增量更新模式）────────────────────────────
-        hotdb_result = self._try_hotdb_fast_path(
-            symbol, period, count, start_date, end_date
+        # ── 调用 KlineService 统一入口（内部已包含 HotDB 快速通道）────────────────────────────
+        df = self._kline_service.get_historical_kline(
+            symbol=symbol,
+            period=period,
+            count=count,
+            start_date=start_date,
+            end_date=end_date
         )
-        if hotdb_result and not hotdb_result.df.empty:
-            logger.info(f"[HotDB快速通道] {symbol} {period} 返回 {len(hotdb_result.df)} 条")
-            return hotdb_result
 
-        # ── 原有路由链────────────────────────────────────────────
-        # 获取基础数据源链
-        chain = self._selector.get_fallback_chain_for_code(DataLevel.L3, symbol)
-
-        # 服务层：根据交易时间调整数据源优先级
-        is_trading = TradingTimeChecker.is_trading_time()
-
-        if is_trading:
-            # 开盘在线优先: tdxquant → xtquant → pytdx
-            trading_priority = ['tdxquant', 'xtquant', 'pytdx']
-            adjusted_chain = []
-            for s in trading_priority:
-                if s in chain:
-                    adjusted_chain.append(s)
-            # 添加其他不在列表中的源
-            for s in chain:
-                if s not in adjusted_chain:
-                    adjusted_chain.append(s)
-            chain = adjusted_chain
-            logger.debug(f"[服务层] 交易时间，优先级: {chain}")
-        else:
-            # 收盘在线优先: xtquant → pytdx（不使用 tdxquant，也不使用 localdb）
-            # 非交易时间只用在线数据源，确保数据是最新的
-            # LocalDB 可能有过期数据（如缺少最近交易日），必须排除
-            online_sources = ['xtquant', 'pytdx']
-            adjusted_chain = []
-            for s in online_sources:
-                if s in chain:
-                    adjusted_chain.append(s)
-            # 不添加其他源（排除 localdb 和 tdxquant）
-            chain = adjusted_chain
-            logger.debug(f"[服务层] 非交易时间，优先级（仅在线源）: {chain}")
-
-        adapter = chain[0] if chain else None
-
-        if adapter is None:
+        if df.empty:
             return KlineDataset.empty()
 
-        # 所有适配器现在都返回不复权数据，复权由服务层统一处理
-        # 不需要再根据复权类型排除特定适配器（如 LocalDB）
-        attempt_chain = chain
-
-        for try_adapter in attempt_chain:
-            try:
-                adapter_instance = self._get_adapter(try_adapter)
-                if not adapter_instance:
-                    continue
-
-                # 始终传递 'none' 给适配器（获取不复权原始数据）
-                df_dict = adapter_instance.get_kline(
-                    symbols=[symbol],
-                    period=period,
-                    start_date=start_date,
-                    end_date=end_date,
-                    count=count,
-                    adjust_type='none'  # 始终获取不复权数据
-                )
-
-                if symbol in df_dict and not df_dict[symbol].empty:
-                    df = df_dict[symbol]
-                    time_range = f"{df['datetime'].iloc[0]} to {df['datetime'].iloc[-1]}" if 'datetime' in df.columns else 'N/A'
-                    logger.info(f"[数据源] {try_adapter} 返回 {symbol} {period}: {len(df)}条, 时间范围: {time_range}")
-
-                    # 自动保存到LocalDB（如果是从在线源获取的数据）
-                    if AUTO_SAVE_TO_LOCALDB and try_adapter in SAVE_ONLINE_SOURCES:
-                        self._save_to_localdb(symbol, df, period, try_adapter)
-
-                    return KlineDataset.from_adapter(df_dict[symbol], try_adapter)
-
-            except Exception:
-                continue
-
-        return KlineDataset.empty()
+        return KlineDataset.from_adapter(df, 'klineservice')
 
     def _get_realtime_kline(
         self,
         symbol: str,
         period: str,
         adjust_type: str,
-        start_date: Optional[str] = None,  # 新增：指定开始日期
-        end_date: Optional[str] = None,    # 新增：指定结束日期
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
         filter_today: bool = True,
         get_realtime: bool = True
     ) -> KlineDataset:
-        """获取补充的 K线数据（从指定日期到今天）
+        """获取补充的 K线数据（调用 KlineService 统一入口）
 
         Args:
             symbol: 股票代码
             period: 周期
             adjust_type: 复权类型
-            start_date: 开始日期 (YYYYMMDD)，默认为今天
-            end_date: 结束日期 (YYYYMMDD)，默认为今天
-            filter_today: 是否只过滤今天的数据
-            get_realtime: 是否获取实时数据
+            start_date: 开始日期 (YYYYMMDD)
+            end_date: 结束日期 (YYYYMMDD)
+            filter_today: 是否只过滤今天的数据（保留参数兼容性）
+            get_realtime: 是否获取实时数据（保留参数兼容性）
         """
-        is_trading = TradingTimeChecker.is_trading_time()
-        # 如果没有指定开始日期，使用今天
         if not start_date:
             start_date = datetime.now().strftime('%Y%m%d')
-
-        # 如果没有指定结束日期，使用今天
         if not end_date:
             end_date = datetime.now().strftime('%Y%m%d')
 
-        logger.info(f"[补充数据] 开始获取 {symbol} 从 {start_date} 到 {end_date} 的数据")
+        logger.info(f"[SeamlessKlineService] 获取补充数据 {symbol} 从 {start_date} 到 {end_date}")
 
-        # 数据源优先级链（补充数据时跳过 localdb，因为它只有历史数据）
-        fallback_chain = self._selector.get_fallback_chain_for_code(DataLevel.L3, symbol)
-        # 移除 localdb；非交易时间也移除 tdxquant（终端未运行）
-        is_trading = TradingTimeChecker.is_trading_time()
-        supplement_chain = [
-            s for s in fallback_chain
-            if s != 'localdb' and (is_trading or s != 'tdxquant')
-        ]
+        # 调用 KlineService 统一入口
+        df = self._kline_service.get_historical_kline(
+            symbol=symbol,
+            period=period,
+            count=500,
+            start_date=start_date,
+            end_date=end_date
+        )
 
-        # 对于日线数据，PyTdx 有最新的交易日数据，优先使用
-        if period == '1d' and 'pytdx' in supplement_chain:
-            supplement_chain = [s for s in supplement_chain if s != 'pytdx']
-            supplement_chain.insert(0, 'pytdx')
-
-        # 对于分钟线数据，XtQuant OHLCV 数据质量更好（pytdx 收盘 bar 有已知的 high/low 污染问题）
-        elif period != '1d' and 'xtquant' in supplement_chain:
-            supplement_chain = [s for s in supplement_chain if s != 'xtquant']
-            supplement_chain.insert(0, 'xtquant')
-
-        if not supplement_chain:
-            logger.debug("[补充数据] 没有可用的在线数据源")
+        if df.empty:
+            logger.warning(f"[SeamlessKlineService] 未获取到补充数据 {symbol} 从 {start_date}")
             return KlineDataset.empty()
 
-        logger.info(f"[补充数据] 可用数据源: {supplement_chain}")
+        logger.info(f"[SeamlessKlineService] 获取补充数据成功 {symbol}: {len(df)} 条")
 
-        # 尝试各数据源获取补充数据
-        for source in supplement_chain:
-            try:
-                adapter_instance = self._get_adapter(source)
-                if not adapter_instance or not adapter_instance.is_available():
-                    logger.debug(f"[补充数据] {source} 不可用，跳过")
-                    continue
-
-                logger.info(f"[补充数据] 尝试从 {source} 获取 {symbol} 数据 (start_date={start_date}, end_date={end_date}, count=500)")
-
-                # 获取从 start_date 到 end_date 的数据（始终获取不复权数据）
-                df_dict = adapter_instance.get_kline(
-                    symbols=[symbol],
-                    period=period,
-                    start_date=start_date,
-                    end_date=end_date,  # 添加结束日期
-                    count=500 if not is_trading else 100,  # 收盘后多取
-                    adjust_type='none'  # 始终获取不复权数据，复权由服务层统一处理
-                )
-
-                if symbol in df_dict and not df_dict[symbol].empty:
-                    df = df_dict[symbol]
-                    min_date = str(df['datetime'].min()) if 'datetime' in df.columns else 'N/A'
-                    max_date = str(df['datetime'].max()) if 'datetime' in df.columns else 'N/A'
-                    logger.info(f"[补充数据] {source} 返回 {len(df)} 条数据，日期范围: {min_date} 到 {max_date}")
-
-                    if not df.empty:
-                        # 检查数据是否足够新鲜（最新数据应该在最近7天内）
-                        if 'datetime' in df.columns:
-                            latest_date = df['datetime'].iloc[-1]
-                            try:
-                                if isinstance(latest_date, str):
-                                    latest_dt = datetime.strptime(latest_date.split()[0], '%Y-%m-%d')
-                                elif hasattr(latest_date, 'date'):
-                                    latest_dt = latest_date
-                                else:
-                                    latest_dt = pd.to_datetime(latest_date)
-                                days_old = (datetime.now().date() - latest_dt.date()).days
-                                if days_old > 7:
-                                    logger.info(f"[补充数据] {source} 数据过旧（{days_old}天前），尝试下一个数据源")
-                                    continue
-                            except Exception as e:
-                                logger.debug(f"[补充数据] 无法检查数据新鲜度: {e}")
-
-                        logger.info(f"[{'实时' if is_trading else '补充'}] {source} 获取 {symbol} 数据成功: {len(df)} 条 (从 {start_date})")
-
-                        # 自动保存到LocalDB（如果是从在线源获取的数据）
-                        if AUTO_SAVE_TO_LOCALDB and source in SAVE_ONLINE_SOURCES:
-                            self._save_to_localdb(symbol, df, period, source)
-
-                        # 回写到 HotDB（异步模式，加速下次访问）
-                        self._save_to_hotdb(symbol, df, period)
-
-                        return KlineDataset.from_adapter(df, source)
-                else:
-                    logger.debug(f"[补充数据] {source} 没有返回 {symbol} 的数据")
-
-            except Exception as e:
-                logger.warning(f"[{'实时' if is_trading else '补充'}] {source} 获取 {symbol} 失败: {e}")
-                continue
-
-        logger.warning(f"[补充数据] 所有数据源都无法获取 {symbol} 从 {start_date} 开始的数据")
-        return KlineDataset.empty()
+        # 数据保存由 HotDBService 统一管理，不在此处处理
+        return KlineDataset.from_adapter(df, 'klineservice')
 
     def _need_realtime_supplement(self, historical: KlineDataset, period: str) -> bool:
         """判断是否需要补充实时数据
@@ -725,6 +620,10 @@ class SeamlessKlineService:
             return False
 
         last_time = historical.df.iloc[-1]['datetime']
+        # 修复：检查 last_time 是否为 None 或 NaT
+        if pd.isna(last_time) or last_time is None:
+            return False
+
         now = datetime.now()
         today = now.date()
         last_date = last_time.date()
@@ -733,8 +632,15 @@ class SeamlessKlineService:
         logger.info(f"[数据补全检查] 最后数据日期: {last_date}, 今天: {today}, 当前时间: {now.strftime('%H:%M')}")
 
         if last_date < today:
-            # 最后数据是昨天或更早
-            # 关键修复：如果现在还在当天开盘前（< 09:30），今天本来就没有数据
+            # 计算日期差距
+            days_diff = (today - last_date).days
+
+            if days_diff > 1:
+                # 缺口超过1天，无论当前时间都需要补
+                logger.info(f"[数据补全] 数据缺口过大: 缺少 {days_diff} 天数据，需要补全")
+                return True
+
+            # 缺口正好1天（昨天）
             current_time = now.time()
             market_open = datetime.strptime("09:30", "%H:%M").time()
 
@@ -796,90 +702,8 @@ class SeamlessKlineService:
             logger.warning(f"[LocalDB] 保存过程出错: {e}")
 
     def _get_adapter(self, name: str):
-        """获取或创建适配器（带缓存）"""
-        if name not in self._adapter_cache:
-            self._adapter_cache[name] = get_adapter(name)
-        return self._adapter_cache[name]
-
-    def _try_hotdb_fast_path(
-        self,
-        symbol: str,
-        period: str,
-        count: Optional[int],
-        start_date: Optional[str],
-        end_date: Optional[str]
-    ) -> Optional[KlineDataset]:
-        """尝试 HotDB 快速通道（增量更新模式）
-
-        HotDB 有数据且无缺口 → 直接返回（<1ms）
-        HotDB 有数据但有缺口 → 智能增量补全后返回
-        HotDB 无数据 → 返回 None，降级到原有路由链
-
-        Args:
-            symbol: 股票代码
-            period: 周期
-            count: 返回数量
-            start_date: 开始日期
-            end_date: 结束日期
-
-        Returns:
-            KlineDataset 或 None
-        """
-        try:
-            # 延迟导入避免循环依赖
-            from myquant.core.market.services.hotdb_service import get_hotdb_service
-
-            hotdb_service = get_hotdb_service()
-            df = hotdb_service.get_kline_with_auto_update(
-                symbol=symbol,
-                period=period,
-                count=count,
-                start_date=start_date,
-                end_date=end_date
-            )
-
-            if df is None or df.empty:
-                logger.debug(f"[HotDB快速通道] {symbol} {period} 无数据，降级到路由链")
-                return None
-
-            logger.info(f"[HotDB快速通道] {symbol} {period} 命中，返回 {len(df)} 条数据")
-            return KlineDataset.from_adapter(df, 'hotdb')
-
-        except Exception as e:
-            logger.warning(f"[HotDB快速通道] {symbol} {period} 失败: {e}，降级到路由链")
-            return None
-
-    def _save_to_hotdb(self, symbol: str, df: pd.DataFrame, period: str):
-        """将实时数据回写到 HotDB（异步模式）
-
-        在获取实时数据后，延迟写入 HotDB 以加速下次访问
-
-        Args:
-            symbol: 股票代码
-            df: K线数据
-            period: 周期
-        """
-        try:
-            # 延迟导入避免循环依赖
-            from myquant.core.market.services.hotdb_service import get_hotdb_service
-            import threading
-
-            def async_save():
-                try:
-                    hotdb_service = get_hotdb_service()
-                    hotdb = hotdb_service._get_hotdb_adapter()
-                    if hotdb:
-                        hotdb.save_kline(symbol, df, period)
-                        logger.debug(f"[HotDB回写] {symbol} {period} 保存 {len(df)} 条")
-                except Exception as e:
-                    logger.warning(f"[HotDB回写] {symbol} {period} 失败: {e}")
-
-            # 启动后台线程保存（不阻塞主流程）
-            thread = threading.Thread(target=async_save, daemon=True)
-            thread.start()
-
-        except Exception as e:
-            logger.warning(f"[HotDB回写] 启动异步保存失败: {e}")
+        """获取适配器实例（简化版，不使用缓存）"""
+        return get_adapter(name)
 
     def _mark_forming_kline(self, df: pd.DataFrame, period: str) -> pd.DataFrame:
         """标记正在形成的K线

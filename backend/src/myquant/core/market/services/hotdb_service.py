@@ -101,7 +101,15 @@ class HotDBService:
                     )
 
                     if symbol in df_dict and not df_dict[symbol].empty:
-                        df = df_dict[symbol]
+                        df = df_dict[symbol].copy()
+
+                        # === 修复：单位统一转换 ===
+                        # LocalDB 存储的是原始股数（所有周期都是股）
+                        # 但 TdxQuant/PyTdx 返回的是手（÷100）
+                        # 为了保持一致性，所有周期都需要转换为手
+                        if 'volume' in df.columns:
+                            df['volume'] = df['volume'] / 100
+                            logger.debug(f"[HotDB] {symbol} {period} 成交量单位转换: 股 → 手")
 
                         # 保存到 HotDB
                         success = hotdb.save_kline(symbol, df, period)
@@ -414,6 +422,12 @@ class HotDBService:
             df = df_dict[symbol]
             logger.info(f"[HotDB] 从 LocalDB 复制 {symbol} {period}: {len(df)} 条")
 
+            # === 修复：单位统一转换 ===
+            # LocalDB 存储的是原始股数（所有周期都是股），需要转换为手（÷100）
+            if 'volume' in df.columns:
+                df['volume'] = df['volume'] / 100
+                logger.debug(f"[HotDB] {symbol} {period} 成交量单位转换: 股 → 手")
+
             # 保存到 HotDB
             success = hotdb.save_kline(symbol, df, period)
             if success:
@@ -503,7 +517,8 @@ class HotDBService:
     def _complete_from_online(
         self, symbol: str, period: str,
         start_date: Optional[str] = None,
-        end_date: Optional[str] = None
+        end_date: Optional[str] = None,
+        count: Optional[int] = None
     ) -> Optional[pd.DataFrame]:
         """从在线源获取数据并保存到 HotDB（智能增量模式）
 
@@ -514,6 +529,7 @@ class HotDBService:
             period: 周期
             start_date: 开始日期（增量更新时指定）
             end_date: 结束日期（增量更新时指定）
+            count: 数量（1m 数据等使用 count 方式）
 
         Returns:
             获取的数据，失败返回 None
@@ -542,14 +558,16 @@ class HotDBService:
                             'period': period,
                         }
 
-                        # 如果指定了日期范围，只使用日期范围（不传 count）
-                        if start_date:
+                        # 优先级：显式 count > 日期范围 > 默认 count
+                        if count is not None:
+                            get_kline_kwargs['count'] = count
+                            logger.info(f"[HotDB] 使用 count 方式获取 {count} 条")
+                        elif start_date:
                             get_kline_kwargs['start_date'] = start_date
-                        if end_date:
-                            get_kline_kwargs['end_date'] = end_date
-
-                        # 如果没有日期范围，才使用 count（兜底）
-                        if not start_date and not end_date:
+                            if end_date:
+                                get_kline_kwargs['end_date'] = end_date
+                        else:
+                            # 兜底：使用默认数量
                             get_kline_kwargs['count'] = 10000
 
                         df_dict = adapter.get_kline(**get_kline_kwargs)
@@ -575,11 +593,217 @@ class HotDBService:
             logger.warning(f"[HotDB] 在线补全 {symbol} {period} 失败: {e}")
             return None
 
+    def _detect_gap(self, symbol: str, period: str) -> Optional[Dict]:
+        """检测数据缺口（Service 层业务逻辑）
+
+        判断 HotDB 数据是否需要增量更新：
+        - 日线：最新日期与今天相差 > 1 天，且当前已过 09:30
+        - 分钟线：检测内部缺口（排除周末、节假日、正常隔夜）
+
+        Args:
+            symbol: 股票代码
+            period: 周期
+
+        Returns:
+            dict: {has_gap, latest, missing_start, missing_end, reason} 或 None
+        """
+        try:
+            hotdb = self._get_hotdb_adapter()
+            if not hotdb or not hotdb.is_available():
+                return {'has_gap': True, 'reason': 'hotdb_unavailable', 'latest': None}
+
+            # 获取数据基本信息
+            info = hotdb.get_data_info(symbol, period)
+            if not info or not info['has_data']:
+                return {'has_gap': True, 'reason': 'no_data', 'latest': None}
+
+            latest = info['latest']
+            now = pd.Timestamp.now(tz=None).replace(tzinfo=None)
+
+            if period == '1d':
+                # === 日线缺口检测 ===
+                from datetime import timedelta
+                from ..utils.trading_time_detector import TradingTimeDetectorV2
+
+                today = now.date()
+                latest_date = latest.date()
+                natural_days_diff = (today - latest_date).days
+
+                if natural_days_diff <= 0:
+                    return {'has_gap': False, 'reason': 'up_to_date', 'latest': latest}
+
+                # 计算缺失的交易日
+                missing_trading_days = []
+                current_date = latest_date + timedelta(days=1)
+                detector = TradingTimeDetectorV2()
+
+                while current_date <= today:
+                    try:
+                        current_dt = datetime.combine(current_date, datetime.min.time())
+                        if detector.is_trading_day(current_dt):
+                            missing_trading_days.append(current_date)
+                    except Exception:
+                        weekday = current_date.weekday()
+                        if weekday < 5:
+                            missing_trading_days.append(current_date)
+                    current_date += timedelta(days=1)
+
+                if len(missing_trading_days) > 0:
+                    return {
+                        'has_gap': True,
+                        'reason': 'daily_gap',
+                        'latest': latest,
+                        'missing_start': pd.Timestamp(missing_trading_days[0]),
+                        'missing_end': pd.Timestamp(missing_trading_days[-1]),
+                        'days_missing': len(missing_trading_days)
+                    }
+
+                return {'has_gap': False, 'reason': 'up_to_date', 'latest': latest}
+
+            else:
+                # === 分钟线缺口检测 ===
+                from datetime import timedelta
+                from ..utils.trading_time_detector import TradingTimeDetectorV2
+
+                # 1. 【优先】检查最新数据与当前时间的差距
+                # 这是最重要的检查：数据是否太旧了？
+                time_diff_minutes = (now - latest).total_seconds() / 60
+                thresholds = {'1m': 5, '5m': 15, '15m': 30, '30m': 60, '1h': 120}
+                threshold = thresholds.get(period, 15)
+
+                if time_diff_minutes > threshold:
+                    # 数据太旧了，优先补全最新数据
+                    # 检查缺了多少个交易日
+                    detector = TradingTimeDetectorV2()
+                    latest_date = latest.date()
+                    today = now.date()
+
+                    missing_trading_days = []
+                    current_date = latest_date + timedelta(days=1)
+
+                    while current_date <= today:
+                        try:
+                            current_dt = datetime.combine(current_date, datetime.min.time())
+                            if detector.is_trading_day(current_dt):
+                                missing_trading_days.append(current_date)
+                        except Exception:
+                            weekday = current_date.weekday()
+                            if weekday < 5:
+                                missing_trading_days.append(current_date)
+                        current_date += timedelta(days=1)
+
+                    if len(missing_trading_days) > 0:
+                        logger.warning(
+                            f"[HotDBService] {symbol} {period} 数据已落后 {len(missing_trading_days)} 个交易日，"
+                            f"最新数据: {latest}, 需要优先补全最新缺口"
+                        )
+                        return {
+                            'has_gap': True,
+                            'reason': 'latest_data_gap',
+                            'latest': latest,
+                            'missing_start': latest + timedelta(minutes=5),  # 从最新数据下一条开始
+                            'missing_end': now,
+                            'days_missing': len(missing_trading_days),
+                            'minutes_missing': int(time_diff_minutes)
+                        }
+
+                # 2. 检查内部缺口（排除周末、节假日）
+                # 只有数据是新的（没有落后），才检查内部缺口
+                df_dict = hotdb.get_kline(
+                    symbols=[symbol],
+                    period=period,
+                    count=10000,
+                    allow_stale=True
+                )
+
+                if symbol in df_dict and not df_dict[symbol].empty:
+                    df = df_dict[symbol].copy()
+                    df = df.sort_values('datetime').reset_index(drop=True)
+                    time_diffs = df['datetime'].diff()
+
+                    # 只检查超过4小时的缺口（排除正常隔夜和午休）
+                    large_gaps = time_diffs[time_diffs > pd.Timedelta(hours=4)]
+
+                    if len(large_gaps) > 0:
+                        detector = TradingTimeDetectorV2()
+                        max_missing_days = 0
+                        max_gap_info = None
+
+                        for gap_idx, gap in large_gaps.items():
+                            if gap_idx == 0:
+                                continue
+
+                            gap_start = df.iloc[gap_idx - 1]['datetime']
+                            gap_end = df.iloc[gap_idx]['datetime']
+
+                            # 计算缺失的交易日
+                            current_date = gap_start.date()
+                            end_date = gap_end.date()
+                            missing_trading_days = []
+
+                            while current_date < end_date:
+                                current_date = current_date + pd.Timedelta(days=1)
+                                try:
+                                    current_dt = datetime.combine(current_date, datetime.min.time())
+                                    if detector.is_trading_day(current_dt):
+                                        missing_trading_days.append(current_date)
+                                except Exception:
+                                    weekday = current_date.weekday()
+                                    if weekday < 5:
+                                        missing_trading_days.append(current_date)
+
+                            if len(missing_trading_days) > max_missing_days:
+                                max_missing_days = len(missing_trading_days)
+                                max_gap_info = {
+                                    'gap_start': gap_start,
+                                    'gap_end': gap_end,
+                                    'gap': gap,
+                                    'missing_days': missing_trading_days
+                                }
+
+                        if max_gap_info:
+                            logger.warning(
+                                f"[HotDBService] {symbol} {period} 发现交易日缺口: "
+                                f"{max_gap_info['gap_start']} -> {max_gap_info['gap_end']} "
+                                f"(缺失 {max_missing_days} 个交易日)"
+                            )
+
+                            return {
+                                'has_gap': True,
+                                'reason': 'internal_gap',
+                                'latest': df['datetime'].iloc[-1],
+                                'missing_start': max_gap_info['gap_start'],
+                                'missing_end': max_gap_info['gap_end'],
+                                'gap_size_hours': max_gap_info['gap'].total_seconds() / 3600,
+                                'missing_trading_days': max_missing_days
+                            }
+
+                # 2. 检查最新数据与当前时间的差距
+                time_diff_minutes = (now - latest).total_seconds() / 60
+                thresholds = {'1m': 5, '5m': 15, '15m': 30, '30m': 60, '1h': 120}
+                threshold = thresholds.get(period, 15)
+
+                if time_diff_minutes > threshold:
+                    return {
+                        'has_gap': True,
+                        'reason': 'intraday_gap',
+                        'latest': latest,
+                        'missing_start': latest + timedelta(minutes=period * 5),  # 简化计算
+                        'missing_end': now,
+                        'minutes_missing': int(time_diff_minutes)
+                    }
+
+                return {'has_gap': False, 'reason': 'up_to_date', 'latest': latest}
+
+        except Exception as e:
+            logger.warning(f"[HotDBService] 检测 {symbol} {period} 缺口失败: {e}")
+            return None
+
     def smart_update(self, symbol: str, period: str) -> Dict[str, Any]:
         """智能增量更新（核心入口）
 
         完整流程：
-        1. HotDB 有数据 → detect_gap → 有缺口则补全 → 无缺口直接返回
+        1. HotDB 有数据 → _detect_gap → 有缺口则补全 → 无缺口直接返回
         2. HotDB 无数据 → ensure_hotdb_data → 再检查缺口
 
         Args:
@@ -605,19 +829,9 @@ class HotDBService:
                 if copied:
                     # 复制成功，再次检查缺口
                     info = hotdb.get_data_info(symbol, period)
-                else:
-                    # LocalDB 也无数据，返回需要在线获取
-                    return {
-                        'success': True,
-                        'has_data': False,
-                        'has_gap': True,
-                        'reason': 'no_data_in_hotdb_or_localdb',
-                        'symbol': symbol,
-                        'period': period
-                    }
 
-            # 2. 检测缺口
-            gap_info = hotdb.detect_gap(symbol, period)
+            # 2. 检测缺口（使用 Service 层的缺口检测逻辑）
+            gap_info = self._detect_gap(symbol, period)
 
             if not gap_info:
                 return {'success': False, 'error': '缺口检测失败', 'has_data': info.get('has_data', False)}
@@ -650,18 +864,69 @@ class HotDBService:
                 f"最新 {gap_info.get('latest')}"
             )
 
-            # 计算缺失的日期范围
+            # 计算缺失的日期范围或数量
             missing_start = gap_info.get('missing_start')
             missing_end = gap_info.get('missing_end')
 
-            start_date_str = missing_start.strftime('%Y%m%d') if missing_start else None
-            end_date_str = missing_end.strftime('%Y%m%d') if missing_end else None
+            # 1m 数据特殊处理：PyTdx 不支持日期范围，必须使用 count
+            use_date_range = True
+            fetch_count = None
+
+            if period == '1m':
+                # 1m 数据始终使用 count 方式
+                use_date_range = False
+
+                if gap_info.get('reason') == 'no_data':
+                    # 首次获取：800 条（约 13 小时）
+                    fetch_count = 800
+                    logger.info(f"[HotDB] {symbol} 1m 无数据，将获取 {fetch_count} 条（约 13 小时）")
+                else:
+                    # 有缺口：计算缺失条数
+                    if missing_start and missing_end:
+                        # 计算时间差（分钟）
+                        diff_minutes = int((missing_end - missing_start).total_seconds() / 60)
+                        # 加上一些余量，确保覆盖
+                        fetch_count = min(diff_minutes + 100, 800)
+                        logger.info(f"[HotDB] {symbol} 1m 有缺口，将获取 {fetch_count} 条（缺口约 {diff_minutes} 分钟）")
+                    else:
+                        # 兜底：获取 800 条
+                        fetch_count = 800
+                        logger.info(f"[HotDB] {symbol} 1m 有缺口（无法计算时间差），将获取 {fetch_count} 条")
+            elif gap_info.get('reason') == 'no_data' and not missing_start:
+                # 其他周期首次获取
+                from datetime import timedelta
+                now = pd.Timestamp.now(tz=None).replace(tzinfo=None)
+
+                if period in ['5m', '15m', '30m']:
+                    # 5/15/30分钟：获取最近1个月
+                    missing_end = now
+                    missing_start = now - timedelta(days=30)
+                elif period in ['1w', '1W', 'week']:
+                    # 周K：获取最近2年（约100周）
+                    missing_end = now
+                    missing_start = now - timedelta(days=730)
+                elif period in ['1mon', '1M', 'month']:
+                    # 月K：获取最近3年（约36个月）
+                    missing_end = now
+                    missing_start = now - timedelta(days=1095)
+                else:
+                    # 日线：获取最近3个月
+                    missing_end = now
+                    missing_start = now - timedelta(days=90)
+
+                if missing_start:
+                    logger.info(f"[HotDB] {symbol} {period} 无数据，将获取 {missing_start.date()} 到 {missing_end.date()} 的数据")
+
+            # 准备在线获取参数
+            start_date_str = missing_start.strftime('%Y%m%d') if (use_date_range and missing_start) else None
+            end_date_str = missing_end.strftime('%Y%m%d') if (use_date_range and missing_end) else None
 
             # 在线获取缺失部分
             df_new = self._complete_from_online(
                 symbol, period,
-                start_date=start_date_str,
-                end_date=end_date_str
+                start_date=start_date_str if use_date_range else None,
+                end_date=end_date_str if use_date_range else None,
+                count=fetch_count if not use_date_range else None
             )
 
             if df_new is None or df_new.empty:
@@ -848,8 +1113,14 @@ class HotDBService:
             try:
                 result = localdb.get_kline(symbols=[symbol], period='1d', count=5000)
                 if symbol in result and not result[symbol].empty:
-                    hotdb.save_kline(symbol, result[symbol], '1d')
-                    logger.info(f"[HotDB] 转存 {symbol} 1d: {len(result[symbol])} 条")
+                    df = result[symbol]
+                    # === 修复：单位统一转换 ===
+                    # LocalDB 存储的是原始股数，需要转换为手（÷100）
+                    if 'volume' in df.columns:
+                        df['volume'] = df['volume'] / 100
+                        logger.debug(f"[HotDB] {symbol} 1d 成交量单位转换: 股 → 手")
+                    hotdb.save_kline(symbol, df, '1d')
+                    logger.info(f"[HotDB] 转存 {symbol} 1d: {len(df)} 条")
                 else:
                     logger.warning(f"[HotDB] LocalDB 中 {symbol} 无 1d 数据")
             except Exception as e:
@@ -859,8 +1130,14 @@ class HotDBService:
             try:
                 result = localdb.get_kline(symbols=[symbol], period='5m', count=5000)
                 if symbol in result and not result[symbol].empty:
-                    hotdb.save_kline(symbol, result[symbol], '5m')
-                    logger.info(f"[HotDB] 转存 {symbol} 5m: {len(result[symbol])} 条")
+                    df = result[symbol]
+                    # === 修复：单位统一转换 ===
+                    # LocalDB 存储的是原始股数，需要转换为手（÷100）
+                    if 'volume' in df.columns:
+                        df['volume'] = df['volume'] / 100
+                        logger.debug(f"[HotDB] {symbol} 5m 成交量单位转换: 股 → 手")
+                    hotdb.save_kline(symbol, df, '5m')
+                    logger.info(f"[HotDB] 转存 {symbol} 5m: {len(df)} 条")
                 else:
                     logger.warning(f"[HotDB] LocalDB 中 {symbol} 无 5m 数据")
             except Exception as e:

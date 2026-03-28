@@ -44,9 +44,11 @@ export class KlineWebSocket {
       return
     }
 
-    // 根据当前页面协议选择 ws:// 或 wss://
+    // 使用相对路径，通过 vite 代理连接后端
+    // 开发环境: localhost:5180 -> vite proxy -> localhost:8000
+    // 生产环境: 同域名下直接连接
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const wsUrl = `${protocol}//localhost:8000/ws/kline/${this.symbol}`
+    const wsUrl = `${protocol}//${window.location.host}/ws/kline/${this.symbol}`
     console.log('[KlineWS] 连接:', wsUrl)
 
     try {

@@ -532,10 +532,14 @@ class V5XtQuantAdapter(V5DataAdapter):
     def _normalize_kline_df(self, df: pd.DataFrame, source: str) -> pd.DataFrame:
         """标准化 K线 DataFrame
 
-        XtQuant 返回的已经是手/元，与通达信本地格式一致，无需转换
+        使用 V5 FormatConverter 转换为标准格式
         """
         if df is None or df.empty:
             return df
+
+        # 使用 V5 FormatConverter 转换为标准格式（time → datetime, 时间戳转换）
+        from myquant.core.market.utils.format_converter import FormatConverter
+        df = FormatConverter.normalize_kline(df, 'xtquant')
 
         # 添加数据源标记
         df['data_source'] = source

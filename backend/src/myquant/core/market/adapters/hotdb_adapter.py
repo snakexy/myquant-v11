@@ -110,9 +110,23 @@ class V5HotDBAdapter(V5DataAdapter):
         except Exception as e:
             logger.warning(f"[HotDB] 保存元数据失败: {e}")
 
+    def _get_period_dir(self, period: str) -> str:
+        """获取周期对应的目录名（Qlib 标准）"""
+        period_map = {
+            '1d': 'day',
+            '1w': 'week',
+            '1mon': 'month',
+            '1m': 'min1',
+            '5m': 'min5',
+            '15m': 'min15',
+            '30m': 'min30',
+            '1h': 'min60',
+        }
+        return period_map.get(period, 'day')
+
     def _get_period_suffix(self, period: str) -> str:
         """获取周期对应的文件后缀"""
-        return _PERIOD_SUFFIX.get(period, 'day')
+        return self._get_period_dir(period)
 
     def _read_floats(self, filepath: Path) -> Optional[List[float]]:
         """读取 float32 二进制文件: int32 count + float32[count]"""
@@ -188,12 +202,12 @@ class V5HotDBAdapter(V5DataAdapter):
         return f"{self._exchange(symbol)}{code}"
 
     def _get_stock_dir(self, symbol: str, period: str) -> Path:
-        """获取股票数据目录
+        """获取股票数据目录（Qlib 标准结构）
 
-        注意：目录名使用周期名（如5m），文件后缀使用后缀名（如min5）
+        Qlib 标准目录: hotdata/SH/min1/sh600519/
         """
-        # 目录名直接用period，与LocalDB保持一致
-        return self._data_dir / self._exchange(symbol) / period / self._dir_name(symbol)
+        period_dir = self._get_period_dir(period)
+        return self._data_dir / self._exchange(symbol) / period_dir / self._dir_name(symbol)
 
     def get_kline(
         self,
@@ -281,10 +295,11 @@ class V5HotDBAdapter(V5DataAdapter):
                     # 检查数据新鲜度
                     days_old = (now - latest_time).days
 
-                    # 日线数据：超过1天视为过期
-                    # 分钟线数据：超过1天视为过期（非交易日也会过期）
-                    # 但对于 1h（聚合周期），允许使用旧数据（总比没有好）
-                    is_expired = days_old > 1 and period != '1h'
+                    # HotDB 过期策略：
+                    # - 1m 数据：只保留 7 天滚动窗口，超过 7 天视为过期
+                    # - 其他周期（5m/15m/30m/1h/1d/1w/1mon）：全量保留，永不过期
+                    #   （这些数据从 LocalDB 预热，会智能增量更新保持最新）
+                    is_expired = (period == '1m' and days_old > 7)
 
                     # 如果 allow_stale=True，允许返回过期数据（用于增量更新场景）
                     if is_expired and not allow_stale:
@@ -366,7 +381,7 @@ class V5HotDBAdapter(V5DataAdapter):
         return None
 
     def _read_from_file(self, symbol: str, period: str) -> Optional[pd.DataFrame]:
-        """从文件读取 K线数据"""
+        """从文件读取 K线数据（Qlib 标准格式）"""
         stock_dir = self._get_stock_dir(symbol, period)
         period_suffix = self._get_period_suffix(period)
 
@@ -532,12 +547,19 @@ class V5HotDBAdapter(V5DataAdapter):
         # 重命名 group_key 为 datetime（这就是收盘时间）
         agg_df = agg_df.rename(columns={'group_key': 'datetime'})
         agg_df = agg_df[['datetime', 'open', 'high', 'low', 'close', 'volume', 'amount']]
+        # 修复：将字符串转换为 Timestamp
+        agg_df['datetime'] = pd.to_datetime(agg_df['datetime'])
         agg_df = agg_df.sort_values('datetime').reset_index(drop=True)
 
         return agg_df
 
     def _aggregate_by_fixed_count(self, df: pd.DataFrame, factor: int) -> Optional[pd.DataFrame]:
-        """按固定数量聚合（15m=3根, 30m=6根）"""
+        """按固定数量聚合（15m=3根, 30m=6根）
+
+        修复时间对齐问题：
+        - 15分钟聚合应在 xx:15, xx:30, xx:45, xx:00 结束
+        - 30分钟聚合应在 xx:00, xx:30 结束
+        """
         n = len(df)
         n_agg = n // factor
 
@@ -570,7 +592,67 @@ class V5HotDBAdapter(V5DataAdapter):
         agg_close = closes_2d[:, -1]
         agg_volume = volumes_2d.sum(axis=1)
         agg_amount = amount_2d.sum(axis=1)
-        agg_datetime = datetimes_2d[:, -1]
+
+        # 修复：计算正确的周期结束时间
+        # 基于每组的开盘时间，计算它所属的固定时间槽
+        period_minutes = factor * 5  # 15m 或 30m
+        agg_datetime_list = []
+
+        for i in range(n_agg):
+            first_dt = pd.Timestamp(datetimes_2d[i, 0])
+            hour = first_dt.hour
+            minute = first_dt.minute
+            time_val = hour * 100 + minute
+
+            if period_minutes == 15:
+                # 15分钟周期时间槽：
+                # 09:30-09:45 -> 09:45
+                # 09:45-10:00 -> 10:00
+                # 10:00-10:15 -> 10:15
+                # ...
+                # 14:45-15:00 -> 15:00
+                # 计算从09:30开始的第几个15分钟周期
+                minutes_from_open = (hour - 9) * 60 + (minute - 30)
+                period_index = minutes_from_open // 15
+                # 结束时间 = 09:30 + (period_index + 1) * 15分钟
+                end_minutes = 30 + (period_index + 1) * 15
+                end_hour = 9 + end_minutes // 60
+                end_min = end_minutes % 60
+                period_end = first_dt.replace(hour=end_hour, minute=end_min, second=0)
+            else:  # period_minutes == 30
+                # 30分钟周期时间槽：
+                # 09:30-10:00 -> 10:00
+                # 10:00-10:30 -> 10:30
+                # 10:30-11:00 -> 11:00
+                # ...
+                # 14:30-15:00 -> 15:00
+                if 930 <= time_val < 1000:
+                    period_end = first_dt.replace(hour=10, minute=0, second=0)
+                elif 1000 <= time_val < 1030:
+                    period_end = first_dt.replace(hour=10, minute=30, second=0)
+                elif 1030 <= time_val < 1100:
+                    period_end = first_dt.replace(hour=11, minute=0, second=0)
+                elif 1100 <= time_val < 1130:
+                    period_end = first_dt.replace(hour=11, minute=30, second=0)
+                elif 1130 <= time_val < 1330:
+                    # 上午收盘，跳过午休
+                    # 11:30-13:00 不应该有数据，但如果有的话归到13:30
+                    period_end = first_dt.replace(hour=13, minute=30, second=0)
+                elif 1300 <= time_val < 1330:
+                    period_end = first_dt.replace(hour=13, minute=30, second=0)
+                elif 1330 <= time_val < 1400:
+                    period_end = first_dt.replace(hour=14, minute=0, second=0)
+                elif 1400 <= time_val < 1430:
+                    period_end = first_dt.replace(hour=14, minute=30, second=0)
+                elif 1430 <= time_val < 1500:
+                    period_end = first_dt.replace(hour=15, minute=0, second=0)
+                else:
+                    # 超出交易时间，用最后一根K线时间
+                    period_end = pd.Timestamp(datetimes_2d[i, -1])
+
+            agg_datetime_list.append(period_end)
+
+        agg_datetime = pd.DatetimeIndex(agg_datetime_list)
 
         # 处理余数部分
         n_remainder = n % factor
@@ -582,7 +664,8 @@ class V5HotDBAdapter(V5DataAdapter):
             agg_close = np.append(agg_close, closes[-1])
             agg_volume = np.append(agg_volume, volumes[rem_start:].sum())
             agg_amount = np.append(agg_amount, amount[rem_start:].sum())
-            agg_datetime = np.append(agg_datetime, datetimes[-1])
+            # 余数部分使用最后一根K线的时间
+            agg_datetime = agg_datetime.append(pd.DatetimeIndex([pd.Timestamp(datetimes[-1])]))
 
         return pd.DataFrame({
             'datetime': agg_datetime,
@@ -787,7 +870,7 @@ class V5HotDBAdapter(V5DataAdapter):
                 """将 datetime 转换为北京时间（naive）"""
                 if pd.isna(dt):
                     return dt
-                if hasattr(dt, 'tz') and dt.tz is not None:
+                if hasattr(dt, 'tzinfo') and dt.tzinfo is not None:
                     # 有时区信息：转换为 UTC+8，然后移除时区标记
                     beijing_time = dt.tz_convert('Asia/Shanghai')
                     return beijing_time.tz_localize(None)
@@ -796,6 +879,14 @@ class V5HotDBAdapter(V5DataAdapter):
                     return dt
 
             df['datetime'] = df['datetime'].apply(localize_to_beijing)
+
+            # 过滤掉无效日期（1970-01-01 或 NaT）
+            min_valid_date = pd.Timestamp('2010-01-01')
+            before_filter = len(df)
+            df = df[df['datetime'] >= min_valid_date].copy()
+            after_filter = len(df)
+            if before_filter != after_filter:
+                logger.warning(f"[HotDB] 过滤掉 {before_filter - after_filter} 条无效日期数据（< 2010-01-01）")
 
             # 日期转换为YYYYMMDD格式
             period_suffix = self._get_period_suffix(period)
@@ -996,7 +1087,7 @@ class V5HotDBAdapter(V5DataAdapter):
                 """将 datetime 转换为北京时间（naive）"""
                 if pd.isna(dt):
                     return dt
-                if hasattr(dt, 'tz') and dt.tz is not None:
+                if hasattr(dt, 'tzinfo') and dt.tzinfo is not None:
                     beijing_time = dt.tz_convert('Asia/Shanghai')
                     return beijing_time.tz_localize(None)
                 else:
@@ -1149,10 +1240,36 @@ class V5HotDBAdapter(V5DataAdapter):
             earliest_date = f'{earliest_str[:4]}-{earliest_str[4:6]}-{earliest_str[6:8]}'
             latest_date = f'{latest_str[:4]}-{latest_str[4:6]}-{latest_str[6:8]}'
 
+            # === 修复：分钟线需要精确时间戳 ===
+            if period != '1d':
+                # 分钟线：从文件名读取的日期只有年月日，需要加上时间
+                # 获取实际K线数据来确定精确的最后时间
+                try:
+                    # 读取最后一条K线的时间
+                    time_file = stock_dir / f'time.{period_suffix}.bin'
+                    if time_file.exists():
+                        with open(time_file, 'rb') as f:
+                            # 读取文件最后4字节（最后一条时间）
+                            f.seek(-4, 2)  # 从结尾往前移4字节
+                            last_time_int = struct.unpack('<i', f.read(4))[0]
+                            # 转换为时间字符串 HHMMSS
+                            last_time_str = f'{last_time_int:06d}'
+                            latest_time = f'{last_time_str[:2]}:{last_time_str[2:4]}:{last_time_str[4:6]}'
+                            latest_ts = pd.Timestamp(f'{latest_date} {latest_time}')
+                    else:
+                        # 没有时间文件，假设是收盘时间 15:00:00
+                        latest_ts = pd.Timestamp(f'{latest_date} 15:00:00')
+                except Exception:
+                    # 出错时假设是收盘时间
+                    latest_ts = pd.Timestamp(f'{latest_date} 15:00:00')
+            else:
+                # 日线：只需要日期精度
+                latest_ts = pd.Timestamp(latest_date)
+
             return {
                 'count': count,
-                'earliest': pd.Timestamp(earliest_str),
-                'latest': pd.Timestamp(latest_str),
+                'earliest': pd.Timestamp(earliest_date),
+                'latest': latest_ts,
                 'has_data': True
             }
 
@@ -1270,7 +1387,82 @@ class V5HotDBAdapter(V5DataAdapter):
                 return {'has_gap': False, 'reason': 'up_to_date', 'latest': latest}
 
             else:
-                # 分钟线：检查时间缺口（不受交易时间限制）
+                # 分钟线：首先检查数据内部缺口（排除周末、节假日、正常隔夜）
+
+                # === 1. 检查数据内部缺口（只检测真正的交易日缺失）===
+                df_dict = self.get_kline(symbols=[symbol], period=period, count=10000, allow_stale=True)
+                if symbol in df_dict and not df_dict[symbol].empty:
+                    df = df_dict[symbol].copy()
+                    df = df.sort_values('datetime').reset_index(drop=True)
+
+                    # 计算相邻数据点的时间差
+                    time_diffs = df['datetime'].diff()
+
+                    # 只检查超过4小时的缺口（排除正常隔夜和午休）
+                    large_gaps = time_diffs[time_diffs > pd.Timedelta(hours=4)]
+
+                    if len(large_gaps) > 0:
+                        # 检查每个大缺口，找出缺失交易日最多的那个
+                        from ..utils.trading_time_detector import TradingTimeDetectorV2
+                        detector = TradingTimeDetectorV2()
+
+                        max_missing_days = 0
+                        max_gap_info = None
+
+                        for gap_idx, gap in large_gaps.items():
+                            if gap_idx == 0:
+                                continue
+
+                            # 缺口前后的时间
+                            gap_start = df.iloc[gap_idx - 1]['datetime']
+                            gap_end = df.iloc[gap_idx]['datetime']
+
+                            # 计算这两个日期之间缺失的交易日
+                            current_date = gap_start.date()
+                            end_date = gap_end.date()
+                            missing_trading_days = []
+
+                            while current_date < end_date:
+                                current_date = current_date + pd.Timedelta(days=1)
+                                try:
+                                    current_dt = datetime.combine(current_date, datetime.min.time())
+                                    if detector.is_trading_day(current_dt):
+                                        missing_trading_days.append(current_date)
+                                except Exception:
+                                    # 判断失败，简单排除周末
+                                    weekday = current_date.weekday()
+                                    if weekday < 5:  # 0-4 是周一到周五
+                                        missing_trading_days.append(current_date)
+
+                            # 记录缺失交易日最多的缺口
+                            if len(missing_trading_days) > max_missing_days:
+                                max_missing_days = len(missing_trading_days)
+                                max_gap_info = {
+                                    'gap_start': gap_start,
+                                    'gap_end': gap_end,
+                                    'gap': gap,
+                                    'missing_days': missing_trading_days
+                                }
+
+                        # 如果有缺失交易日的缺口，返回最大的那个
+                        if max_gap_info:
+                            logger.warning(
+                                f"[HotDB] {symbol} {period} 发现交易日缺口: "
+                                f"{max_gap_info['gap_start']} -> {max_gap_info['gap_end']} "
+                                f"(缺失 {max_missing_days} 个交易日)"
+                            )
+
+                            return {
+                                'has_gap': True,
+                                'reason': 'internal_gap',
+                                'latest': df['datetime'].iloc[-1],
+                                'missing_start': max_gap_info['gap_start'],
+                                'missing_end': max_gap_info['gap_end'],
+                                'gap_size_hours': max_gap_info['gap'].total_seconds() / 3600,
+                                'missing_trading_days': max_missing_days
+                            }
+
+                # === 2. 检查最新数据与当前时间的差距 ===
                 time_diff_minutes = (now - latest).total_seconds() / 60
 
                 # 阈值设置（分钟）

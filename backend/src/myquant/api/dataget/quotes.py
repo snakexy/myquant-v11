@@ -82,17 +82,22 @@ def _to_unix_timestamp(dt) -> int:
     import pytz
     beijing_tz = pytz.timezone('Asia/Shanghai')
 
-    if isinstance(dt, datetime):
+    # 修复：pd.Timestamp 是 datetime 的子类，需要先检查 pd.Timestamp
+    # 避免因为 isinstance(dt, datetime) 为 True 而使用错误的 localize 方法
+    if isinstance(dt, pd.Timestamp):
+        # pd.Timestamp 专用分支
+        if dt.tzinfo is None:
+            dt = dt.tz_localize('Asia/Shanghai')
+        return int(dt.timestamp() * 1000)
+    elif isinstance(dt, datetime):
+        # 普通 datetime 对象
         if dt.tzinfo is None:
             dt = beijing_tz.localize(dt)
         return int(dt.timestamp() * 1000)
-    elif isinstance(dt, pd.Timestamp):
-        if dt.tz is None:
-            dt = dt.tz_localize('Asia/Shanghai')
-        return int(dt.timestamp() * 1000)
     else:
+        # 字符串或其他类型
         dt = pd.Timestamp(dt)
-        if dt.tz is None:
+        if dt.tzinfo is None:
             dt = dt.tz_localize('Asia/Shanghai')
         return int(dt.timestamp() * 1000)
 

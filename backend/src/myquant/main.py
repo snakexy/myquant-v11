@@ -29,6 +29,7 @@ from myquant.api.dataget import (
     market_router,
 )
 from myquant.api.dataget import hotdata_router
+from myquant.api.dataget import watchlist_router
 from myquant.api.dataget.kline_ws import router as ws_kline_router
 from myquant.api.dataget.batch_update_ws import router as ws_batch_update_router
 
@@ -72,6 +73,7 @@ app.include_router(monitoring_router,  prefix="/api/monitoring",  tags=["监控"
 app.include_router(incremental_router, prefix="/api/incremental", tags=["增量更新"])
 app.include_router(conversion_router,  prefix="/api/conversion",  tags=["数据转换"])
 app.include_router(hotdata_router,     prefix="/api/v5/hotdata", tags=["热数据库"])
+app.include_router(watchlist_router,   prefix="/api/v5/watchlist", tags=["自选股管理"])
 # 前端兼容路由别名
 app.include_router(quotes_router,      prefix="/api/v5",          tags=["行情(v5别名)"])
 app.include_router(market_router,      prefix="/api/v1/quotes",   tags=["市场(v1别名)"])

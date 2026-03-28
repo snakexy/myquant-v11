@@ -55,7 +55,8 @@ class FormatConverter:
     def _pytdx_kline_to_standard(df: pd.DataFrame) -> pd.DataFrame:
         """PyTdx K线 → 标准格式
 
-        PyTdx K线成交量单位：手（100股）
+        注意：PyTdx 适配器已经做了成交量单位转换（分钟线股→手）
+        这里只处理列名映射，不再转换成交量
         """
         # PyTdx返回的列名: datetime, open, close, high, low, vol, amount
         column_mapping = {
@@ -71,15 +72,15 @@ class FormatConverter:
         # 重命名列
         df_normalized = df.rename(columns=column_mapping)
 
-        # PyTdx K线成交量单位是"手"，保持不变
+        # 注意：PyTdx 适配器已经处理了成交量单位转换（分钟线股→手）
+        # 这里不再转换，避免双重除以 100
 
-        # 确保有标准列
+        # 按标准列顺序返回
         required_columns = ['datetime', 'open', 'high', 'low', 'close', 'volume', 'amount']
         for col in required_columns:
             if col not in df_normalized.columns:
                 df_normalized[col] = None
 
-        # 按标准列顺序返回
         return df_normalized[required_columns]
 
     @staticmethod
@@ -102,16 +103,48 @@ class FormatConverter:
         # 重命名列
         df_normalized = df.rename(columns=column_mapping)
 
-        # XtQuant返回的datetime列可能是numeric毫秒时间戳，需要转换
+        # XtQuant返回的datetime列可能是numeric时间戳，需要转换
         if 'datetime' in df_normalized.columns and not df_normalized['datetime'].isna().all():
-            # 检查是否是numeric类型（毫秒时间戳）
+            # 检查是否是numeric类型
             first_val = df_normalized['datetime'].iloc[0] if len(df_normalized) > 0 else None
-            if isinstance(first_val, (int, float, np.number)) and first_val > 100000000000:
-                # 毫秒时间戳 → UTC datetime
-                df_normalized['datetime'] = pd.to_datetime(df_normalized['datetime'], unit='ms', errors='coerce')
-                # XtQuant 存的是 CST 时刻（午夜/开盘/收盘），转出来是 UTC
-                # 加 8 小时还原为 CST，确保日期正确（noon_daily_time 只保留日期部分）
-                df_normalized['datetime'] = df_normalized['datetime'] + pd.Timedelta(hours=8)
+            if isinstance(first_val, (int, float, np.number)):
+                # 智能检测时间戳格式
+                # 1. 检查是否是 YYYYMMDD 或 YYYYMMDDHHmmss 格式（如 20260316 或 20260316100000）
+                if 20000000 < first_val < 30000000:  # YYYYMMDD 格式 (8位)
+                    df_normalized['datetime'] = pd.to_datetime(
+                        df_normalized['datetime'].astype(str),
+                        format='%Y%m%d',
+                        errors='coerce'
+                    )
+                elif 20000000000000 < first_val < 30000000000000:  # YYYYMMDDHHmmss 格式 (14位)
+                    df_normalized['datetime'] = pd.to_datetime(
+                        df_normalized['datetime'].astype(str),
+                        format='%Y%m%d%H%M%S',
+                        errors='coerce'
+                    )
+                # 2. 检查是否是毫秒时间戳（13位，2000年到2050年）
+                elif 946684800000 <= first_val <= 2524608000000:  # 2000-01-01 到 2050-01-01 的毫秒时间戳
+                    df_normalized['datetime'] = pd.to_datetime(
+                        df_normalized['datetime'],
+                        unit='ms',
+                        errors='coerce'
+                    )
+                    # XtQuant 存的是 CST 时刻，转出来是 UTC
+                    # 加 8 小时还原为 CST
+                    df_normalized['datetime'] = df_normalized['datetime'] + pd.Timedelta(hours=8)
+                # 3. 检查是否是秒时间戳（10位）
+                elif 946684800 <= first_val <= 2524608000:  # 2000-01-01 到 2050-01-01 的秒时间戳
+                    df_normalized['datetime'] = pd.to_datetime(
+                        df_normalized['datetime'],
+                        unit='s',
+                        errors='coerce'
+                    )
+                # 4. 其他情况：尝试转换为 datetime
+                else:
+                    df_normalized['datetime'] = pd.to_datetime(
+                        df_normalized['datetime'],
+                        errors='coerce'
+                    )
 
         # XtQuant K线成交量单位已经是"手"，保持不变
 

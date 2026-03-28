@@ -22,6 +22,7 @@ pyyaml>=6.0.1
 pydantic>=2.5.0
 python-dotenv>=1.0.0
 pytz>=2024.1
+chinese_calendar>=1.8.0
 
 # Data sources
 # pytdx2: local package, see backend/external/pytdx2/ (NOT pip install)

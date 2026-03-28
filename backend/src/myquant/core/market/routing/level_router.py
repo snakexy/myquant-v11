@@ -101,11 +101,10 @@ class LevelRouter:
         ),
 
         # L3: 完整K线
-        # 优先使用在线数据源（PyTdx/TdxQuant/XtQuant）确保数据完整性和准确性
-        # LocalDB 作为最后的补充（数据可能较旧且成交量缺失）
+        # 优先使用 LocalDB（完整历史数据，零拷贝）+ 在线数据源（实时更新）
         DataLevel.L3: LevelConfig(
-            stock_sources=['tdxquant', 'pytdx', 'xtquant'],  # 在线优先：TdxQuant→PyTdx→XtQuant
-            index_sources=['tdxquant', 'pytdx', 'xtquant'],  # 指数同样优先在线
+            stock_sources=['localdb', 'tdxquant', 'pytdx', 'xtquant'],  # LocalDB优先，然后在线源
+            index_sources=['localdb', 'tdxquant', 'pytdx', 'xtquant'],  # 指数同样
             sector_sources=['tdxquant', 'pytdx'],  # 板块：TdxQuant（覆盖最全）→PyTdx
         ),
 

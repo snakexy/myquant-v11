@@ -451,32 +451,40 @@ const handleRefreshStock = async () => {
   hideStockMenu()
 
   try {
-    // 调用批量更新 API，只更新这只股票
+    // 使用 Element Plus 消息提示
+    const { ElMessage } = await import('element-plus')
+    ElMessage.info(`${symbol} 正在下载最新数据...`)
+
+    // 调用批量更新 API，下载到 HotDB（临时数据）
     const response = await fetch('/api/v5/hotdata/update-localdb', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         symbols: [symbol],
         periods: ['1d', '5m'],
-        source: 'pytdx'
+        source: 'xtquant'  // 使用 XtQuant 获取更多数据
       })
     })
 
     if (response.ok) {
       const data = await response.json()
       if (data.success) {
-        // 使用 Element Plus 消息提示
-        const { ElMessage } = await import('element-plus')
-        ElMessage.success(`${symbol} 正在后台下载中...`)
-
+        ElMessage.success(`${symbol} 数据已更新到 HotDB`)
         // 刷新行情数据
         setTimeout(() => {
           dataStore.fetchQuotes([symbol])
-        }, 2000)
+        }, 1000)
+      } else {
+        throw new Error(data.error || '下载失败')
       }
+    } else {
+      throw new Error('下载请求失败')
     }
+
   } catch (error) {
     console.error('[刷新股票] 失败:', error)
+    const { ElMessage } = await import('element-plus')
+    ElMessage.error(`下载失败: ${error}`)
   }
 }
 
