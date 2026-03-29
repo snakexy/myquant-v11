@@ -18,6 +18,9 @@ from .hotdata import router as hotdata_router
 from .watchlist import router as watchlist_router
 
 
+from .unified import router as unified_router
+
+
 __all__ = [
     'quotes_router',
     'monitoring_router',
@@ -26,4 +29,5 @@ __all__ = [
     'market_router',
     'hotdata_router',
     'watchlist_router',
+    'unified_router',
 ]

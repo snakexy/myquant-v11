@@ -93,11 +93,11 @@ class HotDBService:
 
             for period in periods:
                 try:
-                    # 从 LocalDB 读取数据
+                    # 从 LocalDB 读取数据（获取所有可用数据）
                     df_dict = localdb.get_kline(
                         symbols=[symbol],
                         period=period,
-                        count=5000  # 获取尽可能多的历史数据
+                        count=100000  # 获取尽可能多的历史数据
                     )
 
                     if symbol in df_dict and not df_dict[symbol].empty:
@@ -410,9 +410,9 @@ class HotDBService:
             localdb = self._get_localdb_adapter()
             hotdb = self._get_hotdb_adapter()
 
-            # 从 LocalDB 获取数据
+            # 从 LocalDB 获取数据（获取尽可能多的历史数据）
             df_dict = localdb.get_kline(
-                symbols=[symbol], period=period, count=5000
+                symbols=[symbol], period=period, count=100000
             )
 
             if symbol not in df_dict or df_dict[symbol].empty:
@@ -868,7 +868,11 @@ class HotDBService:
             missing_start = gap_info.get('missing_start')
             missing_end = gap_info.get('missing_end')
 
-            # 1m 数据特殊处理：PyTdx 不支持日期范围，必须使用 count
+            # 计算缺失的日期范围
+            missing_start = gap_info.get('missing_start')
+            missing_end = gap_info.get('missing_end')
+
+            # 1m 数据：使用 count 方式（PyTdx 不支持 1m 日期范围）
             use_date_range = True
             fetch_count = None
 
@@ -1114,11 +1118,7 @@ class HotDBService:
                 result = localdb.get_kline(symbols=[symbol], period='1d', count=5000)
                 if symbol in result and not result[symbol].empty:
                     df = result[symbol]
-                    # === 修复：单位统一转换 ===
-                    # LocalDB 存储的是原始股数，需要转换为手（÷100）
-                    if 'volume' in df.columns:
-                        df['volume'] = df['volume'] / 100
-                        logger.debug(f"[HotDB] {symbol} 1d 成交量单位转换: 股 → 手")
+                    # 日线数据无需转换（LocalDB 中已是手单位）
                     hotdb.save_kline(symbol, df, '1d')
                     logger.info(f"[HotDB] 转存 {symbol} 1d: {len(df)} 条")
                 else:

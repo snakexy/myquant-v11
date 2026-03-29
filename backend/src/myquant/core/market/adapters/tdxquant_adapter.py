@@ -152,35 +152,73 @@ class V5TdxQuantAdapter(V5DataAdapter):
             tb_str = traceback.format_exc()
 
             # 检查常见错误
-            if "TQ数据接口初始化失败" in error_str:
-                # 检查是否已经初始化成功（SDK 可能已可用）
-                try:
-                    from tqcenter import tq
-                    if hasattr(tq, '_initialized') and tq._initialized:
-                        logger.info("[TdxQuant] ✅ 检测到 SDK 已初始化成功，复用现有连接")
-                        self._tq = tq
-                        self._initialized = True
-                        _TDXQUANT_INIT_SUCCESS = True
-                        _TDXQUANT_LAST_ERROR = None
-                        return True
-                except Exception:
-                    pass
+            if "TQ数据接口初始化失败" in error_str or "已有同名策略运行" in error_str:
+                # TQ初始化失败：可能是策略同名或DLL被占用
+                # 解决方案：创建一个新的初始化文件名（如 myquant_init_2.py）
+                # 限制：最多创建3个备用文件（myquant_init_2.py ~ myquant_init_4.py）
+                # 清理：初始化成功后删除其他备用文件
+                import shutil
+                import glob
 
-                logger.error(f"[TdxQuant] ❌ 初始化失败:\n{tb_str}")
-                logger.error("[TdxQuant] 💡 可能原因：")
-                logger.error("   1. 通达信终端未运行或未登录")
-                logger.error("   2. TPythClient.dll 被其他程序占用")
-                logger.error("   3. myquant_init.py 已在运行（重启通达信可解决）")
-                logger.error("   4. 用户权限不足（需要管理员权限）")
-                logger.error("   请检查通达信是否已启动并登录")
-            elif "已有同名策略运行" in error_str:
-                # 关键修复：同名策略运行说明 myquant_init.py 已在运行
-                # 此时应静默处理，因为系统会自动降级到其他适配器
-                logger.warning("[TdxQuant] ⚠️ myquant_init.py 已在通达信中运行")
-                logger.info("[TdxQuant] 💡 将自动降级到 PyTdx/LocalDB 适配器")
-                # 标记为初始化失败，但不再重复尝试
-                _TDXQUANT_INIT_ATTEMPTED = True
-                _TDXQUANT_INIT_SUCCESS = False
+                original_path = r'E:\new_tdx64\PYPlugins\user\myquant_init.py'
+                base_dir = r'E:\new_tdx64\PYPlugins\user'
+                max_alternatives = 3  # 最多创建3个备用文件
+
+                # 先清理已存在的备用文件（避免垃圾累积）
+                existing_alts = glob.glob(os.path.join(base_dir, 'myquant_init_[0-9].py'))
+                if len(existing_alts) >= max_alternatives:
+                    logger.info(f"[TdxQuant] 清理旧备用文件: {len(existing_alts)} 个")
+                    for old_file in existing_alts:
+                        try:
+                            os.remove(old_file)
+                            logger.debug(f"[TdxQuant] 删除: {os.path.basename(old_file)}")
+                        except Exception as e:
+                            logger.debug(f"[TdxQuant] 删除失败: {e}")
+
+                # 查找可用的编号
+                for i in range(2, max_alternatives + 2):  # 尝试 myquant_init_2.py ~ myquant_init_5.py
+                    new_init_path = os.path.join(base_dir, f'myquant_init_{i}.py')
+
+                    try:
+                        # 如果文件已存在，尝试使用
+                        if os.path.exists(new_init_path):
+                            logger.info(f"[TdxQuant] 尝试使用现有文件: myquant_init_{i}.py")
+                            tq.initialize(path=new_init_path)
+                        else:
+                            # 创建新文件
+                            shutil.copy(original_path, new_init_path)
+                            logger.info(f"[TdxQuant] 创建新初始化文件: myquant_init_{i}.py")
+                            tq.initialize(path=new_init_path)
+
+                        # 验证初始化
+                        if hasattr(tq, '_initialized') and tq._initialized:
+                            self._tq = tq
+                            self._initialized = True
+                            _TDXQUANT_INIT_SUCCESS = True
+                            _TDXQUANT_LAST_ERROR = None
+
+                            logger.info(f"[TdxQuant] ✅ 初始化成功: myquant_init_{i}.py (run_id={self._tq.run_id})")
+
+                            # 清理其他备用文件
+                            for alt_file in glob.glob(os.path.join(base_dir, 'myquant_init_[0-9].py')):
+                                if alt_file != new_init_path:
+                                    try:
+                                        os.remove(alt_file)
+                                        logger.debug(f"[TdxQuant] 清理备用文件: {os.path.basename(alt_file)}")
+                                    except Exception:
+                                        pass
+
+                            return True
+
+                    except Exception as e:
+                        logger.debug(f"[TdxQuant] myquant_init_{i}.py 失败: {e}")
+                        continue
+
+                # 所有尝试都失败
+                error_msg = f"无法创建可用的初始化文件（已尝试 2-{max_alternatives + 1}）"
+                logger.error(f"[TdxQuant] ❌ {error_msg}")
+                _TDXQUANT_LAST_ERROR = error_msg
+                return False
             elif "返回ID小于0" in error_str or "ErrorId=11" in error_str:
                 logger.error(f"[TdxQuant] ❌ 重复初始化错误 (ErrorId=11): {error_str}")
             else:

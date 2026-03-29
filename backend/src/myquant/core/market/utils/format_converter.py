@@ -103,48 +103,52 @@ class FormatConverter:
         # 重命名列
         df_normalized = df.rename(columns=column_mapping)
 
-        # XtQuant返回的datetime列可能是numeric时间戳，需要转换
-        if 'datetime' in df_normalized.columns and not df_normalized['datetime'].isna().all():
-            # 检查是否是numeric类型
-            first_val = df_normalized['datetime'].iloc[0] if len(df_normalized) > 0 else None
-            if isinstance(first_val, (int, float, np.number)):
-                # 智能检测时间戳格式
-                # 1. 检查是否是 YYYYMMDD 或 YYYYMMDDHHmmss 格式（如 20260316 或 20260316100000）
-                if 20000000 < first_val < 30000000:  # YYYYMMDD 格式 (8位)
+        # ===== 关键修复：处理XtQuant的时间格式 =====
+        # XtQuant返回的数据：
+        # 1. 索引是YYYYMMDD格式（如20260329表示该周/月）
+        # 2. datetime(time)列是毫秒时间戳，但值可能是UTC时间，不能简单加8小时
+
+        # 优先使用索引作为日期（索引是正确的YYYYMMDD格式）
+        if len(df_normalized) > 0:
+            first_idx = df_normalized.index[0]
+            # 检查索引是否是YYYYMMDD格式（支持字符串和数字类型）
+            try:
+                # 尝试转换为数字
+                if isinstance(first_idx, str):
+                    idx_val = float(first_idx)
+                elif hasattr(first_idx, '__float__'):
+                    idx_val = float(first_idx)
+                else:
+                    idx_val = None
+
+                if idx_val and 20000000 < idx_val < 30000000:
+                    # 索引是YYYYMMDD格式（日线、周线、月线）
                     df_normalized['datetime'] = pd.to_datetime(
-                        df_normalized['datetime'].astype(str),
+                        df_normalized.index.astype(str),
                         format='%Y%m%d',
                         errors='coerce'
                     )
-                elif 20000000000000 < first_val < 30000000000000:  # YYYYMMDDHHmmss 格式 (14位)
+                    # XtQuant的周K线使用周日日期，需要调整到周五（最后一个交易日）
+                    # 检查是否有周末日期，如果是周六(-1天)或周日(-2天)，调整到周五
+                    df_normalized['datetime'] = df_normalized['datetime'].apply(
+                        lambda dt: FormatConverter._adjust_weekend_to_friday(dt)
+                    )
+                    df_normalized.reset_index(drop=True, inplace=True)
+                elif idx_val and 20000000000000 < idx_val < 30000000000000:
+                    # 索引是YYYYMMDDHHmmss格式（分钟线）
                     df_normalized['datetime'] = pd.to_datetime(
-                        df_normalized['datetime'].astype(str),
+                        df_normalized.index.astype(str),
                         format='%Y%m%d%H%M%S',
                         errors='coerce'
                     )
-                # 2. 检查是否是毫秒时间戳（13位，2000年到2050年）
-                elif 946684800000 <= first_val <= 2524608000000:  # 2000-01-01 到 2050-01-01 的毫秒时间戳
-                    df_normalized['datetime'] = pd.to_datetime(
-                        df_normalized['datetime'],
-                        unit='ms',
-                        errors='coerce'
-                    )
-                    # XtQuant 存的是 CST 时刻，转出来是 UTC
-                    # 加 8 小时还原为 CST
-                    df_normalized['datetime'] = df_normalized['datetime'] + pd.Timedelta(hours=8)
-                # 3. 检查是否是秒时间戳（10位）
-                elif 946684800 <= first_val <= 2524608000:  # 2000-01-01 到 2050-01-01 的秒时间戳
-                    df_normalized['datetime'] = pd.to_datetime(
-                        df_normalized['datetime'],
-                        unit='s',
-                        errors='coerce'
-                    )
-                # 4. 其他情况：尝试转换为 datetime
-                else:
-                    df_normalized['datetime'] = pd.to_datetime(
-                        df_normalized['datetime'],
-                        errors='coerce'
-                    )
+                    df_normalized.reset_index(drop=True, inplace=True)
+            except (TypeError, ValueError):
+                # 索引不是数值格式，尝试使用datetime列
+                if 'datetime' in df_normalized.columns:
+                    df_normalized = FormatConverter._process_xtquant_datetime_column(df_normalized)
+        elif 'datetime' in df_normalized.columns:
+            # 没有数据，处理datetime列
+            df_normalized = FormatConverter._process_xtquant_datetime_column(df_normalized)
 
         # XtQuant K线成交量单位已经是"手"，保持不变
 
@@ -155,6 +159,70 @@ class FormatConverter:
                 df_normalized[col] = None
 
         return df_normalized[required_columns]
+
+    @staticmethod
+    def _adjust_weekend_to_friday(dt):
+        """将周末日期调整到周五（A股最后一个交易日）
+
+        周六 → -1天 = 周五
+        周日 → -2天 = 周五
+        工作日 → 不变
+        """
+        if dt is None or pd.isna(dt):
+            return dt
+        # weekday(): 0=周一, 6=周日
+        # 周六(5) → -1天, 周日(6) → -2天
+        if dt.weekday() == 5:  # 周六
+            return dt - pd.Timedelta(days=1)
+        elif dt.weekday() == 6:  # 周日
+            return dt - pd.Timedelta(days=2)
+        return dt
+
+    @staticmethod
+    def _process_xtquant_datetime_column(df: pd.DataFrame) -> pd.DataFrame:
+        """处理XtQuant的datetime列（当没有索引时使用）"""
+        if 'datetime' not in df.columns or df['datetime'].isna().all():
+            return df
+
+        first_val = df['datetime'].iloc[0] if len(df) > 0 else None
+        if isinstance(first_val, (int, float, np.number)):
+            # YYYYMMDD 格式 (8位)
+            if 20000000 < first_val < 30000000:
+                df['datetime'] = pd.to_datetime(
+                    df['datetime'].astype(str),
+                    format='%Y%m%d',
+                    errors='coerce'
+                )
+            # YYYYMMDDHHmmss 格式 (14位)
+            elif 20000000000000 < first_val < 30000000000000:
+                df['datetime'] = pd.to_datetime(
+                    df['datetime'].astype(str),
+                    format='%Y%m%d%H%M%S',
+                    errors='coerce'
+                )
+            # 秒时间戳（10位）
+            elif 946684800 <= first_val <= 2524608000:
+                df['datetime'] = pd.to_datetime(
+                    df['datetime'],
+                    unit='s',
+                    errors='coerce'
+                )
+            # 毫秒时间戳（13位）- XtQuant的毫秒时间戳可能需要时区调整
+            # 但由于不确定是UTC还是CST，先不调整，直接解析
+            elif 946684800000 <= first_val <= 2524608000000:
+                df['datetime'] = pd.to_datetime(
+                    df['datetime'],
+                    unit='ms',
+                    errors='coerce'
+                )
+                # 不加8小时！XtQuant的时间戳含义不明确，可能导致日期错误
+            else:
+                df['datetime'] = pd.to_datetime(
+                    df['datetime'],
+                    errors='coerce'
+                )
+
+        return df
 
     @staticmethod
     def _tdxquant_kline_to_standard(df: pd.DataFrame) -> pd.DataFrame:

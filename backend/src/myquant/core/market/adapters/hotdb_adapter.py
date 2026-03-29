@@ -116,13 +116,17 @@ class V5HotDBAdapter(V5DataAdapter):
             '1d': 'day',
             '1w': 'week',
             '1mon': 'month',
+            '1M': 'month',  # 向后兼容
+            'month': 'month',  # 向后兼容
             '1m': 'min1',
             '5m': 'min5',
             '15m': 'min15',
             '30m': 'min30',
             '1h': 'min60',
         }
-        return period_map.get(period, 'day')
+        if period not in period_map:
+            raise ValueError(f"Unsupported period: {period}")
+        return period_map[period]
 
     def _get_period_suffix(self, period: str) -> str:
         """获取周期对应的文件后缀"""
@@ -276,7 +280,7 @@ class V5HotDBAdapter(V5DataAdapter):
                     now = pd.Timestamp.now(tz=None).replace(tzinfo=None)
 
                     # 检查日期是否有效（不能是 1970-01-01 或其他异常值）
-                    min_valid_date = pd.Timestamp('2010-01-01')
+                    min_valid_date = pd.Timestamp('2000-01-01')
                     is_invalid = earliest_time < min_valid_date
 
                     if is_invalid:
@@ -881,12 +885,13 @@ class V5HotDBAdapter(V5DataAdapter):
             df['datetime'] = df['datetime'].apply(localize_to_beijing)
 
             # 过滤掉无效日期（1970-01-01 或 NaT）
-            min_valid_date = pd.Timestamp('2010-01-01')
+            # 修改为 2000-01-01 以支持更早的上市数据（如贵州茅台 2001年上市）
+            min_valid_date = pd.Timestamp('2000-01-01')
             before_filter = len(df)
             df = df[df['datetime'] >= min_valid_date].copy()
             after_filter = len(df)
             if before_filter != after_filter:
-                logger.warning(f"[HotDB] 过滤掉 {before_filter - after_filter} 条无效日期数据（< 2010-01-01）")
+                logger.warning(f"[HotDB] 过滤掉 {before_filter - after_filter} 条无效日期数据（< 2000-01-01）")
 
             # 日期转换为YYYYMMDD格式
             period_suffix = self._get_period_suffix(period)
@@ -936,15 +941,15 @@ class V5HotDBAdapter(V5DataAdapter):
             return False
 
     def _auto_aggregate_from_5m(self, symbol: str, df_5m: pd.DataFrame):
-        """5m 数据保存后，自动聚合生成 15m/30m/1h（numpy 向量化 + 并行保存）
+        """5m 数据保存后，自动聚合生成 15m/30m/1h（按时间窗口对齐）
 
-        优化说明：
-        - 一次性聚合所有周期，避免重复数据准备
-        - 使用 numpy reshape 向量化操作
-        - 使用线程池并行保存 3 个周期（IO 并行）
+        修复：使用时间窗口对齐而不是连续分组
+        - 15分钟窗口：13:30-13:45, 13:45-14:00, 14:00-14:15, ...
+        - 30分钟窗口：13:30-14:00, 14:00-14:30, 14:30-15:00, ...
+        - 60分钟窗口：13:00-14:00, 14:00-15:00, ...
 
         Args:
-            symbol: 股票代码
+            symbol: 股票
             df_5m: 刚保存的 5m 数据
         """
         if df_5m is None or df_5m.empty:
@@ -953,77 +958,64 @@ class V5HotDBAdapter(V5DataAdapter):
         try:
             start_total = time.time()
 
-            # 准备数据（只准备一次）
+            # 准备数据
             df = df_5m.copy().reset_index(drop=True)
             df['datetime'] = pd.to_datetime(df['datetime'])
             df = df.sort_values('datetime').reset_index(drop=True)
 
-            n = len(df)
-
-            # 转换为 numpy 数组
-            opens = df['open'].values.astype(np.float64)
-            highs = df['high'].values.astype(np.float64)
-            lows = df['low'].values.astype(np.float64)
-            closes = df['close'].values.astype(np.float64)
-            volumes = df['volume'].values.astype(np.float64)
-            datetimes = df['datetime'].values
-            amount = df.get('amount', pd.Series([0.0] * n)).values.astype(np.float64)
-
             # 聚合配置
             periods_config = [
-                ('15m', 3),
-                ('30m', 6),
-                ('1h', 12),
+                ('15m', '15min'),
+                ('30m', '30min'),
+                ('1h', '1h'),
             ]
 
             # 聚合所有周期
             agg_results = {}
-            for target_period, factor in periods_config:
-                n_agg = n // factor
-                n_remainder = n % factor
+            for target_period, freq in periods_config:
+                # 按时间窗口分组聚合
+                # 使用left label，窗口开始时间作为标签，然后加上周期时长得到结束时间
+                df_grouped = df.set_index('datetime').groupby(pd.Grouper(freq=freq, label='left', closed='left'))
 
-                if n_agg == 0:
-                    continue
+                agg_df = df_grouped.agg({
+                    'open': 'first',
+                    'high': 'max',
+                    'low': 'min',
+                    'close': 'last',
+                    'volume': 'sum',
+                    'amount': 'sum' if 'amount' in df.columns else lambda x: 0
+                }).dropna()
 
-                n_complete = n_agg * factor
+                agg_df = agg_df.reset_index()
 
-                # 向量化聚合
-                opens_2d = opens[:n_complete].reshape(n_agg, factor)
-                highs_2d = highs[:n_complete].reshape(n_agg, factor)
-                lows_2d = lows[:n_complete].reshape(n_agg, factor)
-                closes_2d = closes[:n_complete].reshape(n_agg, factor)
-                volumes_2d = volumes[:n_complete].reshape(n_agg, factor)
-                amount_2d = amount[:n_complete].reshape(n_agg, factor)
-                datetimes_2d = datetimes[:n_complete].reshape(n_agg, factor)
+                # 时间标签调整为窗口结束时间
+                agg_df['datetime'] = agg_df['datetime'] + pd.to_timedelta(self._get_period_minutes(target_period), unit='min')
 
-                agg_open = opens_2d[:, 0]
-                agg_high = highs_2d.max(axis=1)
-                agg_low = lows_2d.min(axis=1)
-                agg_close = closes_2d[:, -1]
-                agg_volume = volumes_2d.sum(axis=1)
-                agg_amount = amount_2d.sum(axis=1)
-                agg_datetime = datetimes_2d[:, -1]
+                # 过滤掉完全不在交易时间段的数据（窗口与交易时间无交集）
+                def has_trading_time(dt_window_end, period_minutes):
+                    """检查时间窗口是否与交易时间有交集"""
+                    window_start = dt_window_end - pd.Timedelta(minutes=period_minutes)
+                    window_end = dt_window_end
 
-                # 处理余数
-                if n_remainder > 0:
-                    rem_start = n_complete
-                    agg_open = np.append(agg_open, opens[rem_start])
-                    agg_high = np.append(agg_high, highs[rem_start:].max())
-                    agg_low = np.append(agg_low, lows[rem_start:].min())
-                    agg_close = np.append(agg_close, closes[-1])
-                    agg_volume = np.append(agg_volume, volumes[rem_start:].sum())
-                    agg_amount = np.append(agg_amount, amount[rem_start:].sum())
-                    agg_datetime = np.append(agg_datetime, datetimes[rem_start])
+                    # 上午交易时间：9:30-11:30
+                    am_start = pd.Timedelta(hours=9, minutes=30)
+                    am_end = pd.Timedelta(hours=11, minutes=30)
 
-                agg_df = pd.DataFrame({
-                    'datetime': agg_datetime,
-                    'open': agg_open,
-                    'high': agg_high,
-                    'low': agg_low,
-                    'close': agg_close,
-                    'volume': agg_volume,
-                    'amount': agg_amount
-                })
+                    # 下午交易时间：13:00-15:00
+                    pm_start = pd.Timedelta(hours=13, minutes=0)
+                    pm_end = pd.Timedelta(hours=15, minutes=0)
+
+                    window_start_timedelta = pd.Timedelta(hours=window_start.hour, minutes=window_start.minute)
+                    window_end_timedelta = pd.Timedelta(hours=window_end.hour, minutes=window_end.minute)
+
+                    # 检查窗口是否与交易时间有交集
+                    has_am = (window_end_timedelta > am_start) and (window_start_timedelta < am_end)
+                    has_pm = (window_end_timedelta > pm_start) and (window_start_timedelta < pm_end)
+
+                    return has_am or has_pm
+
+                period_minutes = self._get_period_minutes(target_period)
+                agg_df = agg_df[agg_df['datetime'].apply(lambda dt: has_trading_time(dt, period_minutes))]
 
                 agg_results[target_period] = agg_df
 
@@ -1055,7 +1047,16 @@ class V5HotDBAdapter(V5DataAdapter):
             )
 
         except Exception as e:
-            logger.warning(f"[HotDB] 聚合 {symbol} 失败: {e}")
+            logger.error(f"[HotDB] 聚合 {symbol} 失败: {e}")
+
+    def _get_period_minutes(self, period: str) -> int:
+        """获取周期的分钟数"""
+        period_map = {
+            '15m': 15,
+            '30m': 30,
+            '1h': 60,
+        }
+        return period_map.get(period, 0)
 
     def _save_kline_no_agg(
         self, symbol: str, df: pd.DataFrame, period: str = '1d'

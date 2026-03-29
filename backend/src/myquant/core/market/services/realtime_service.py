@@ -34,6 +34,10 @@ class RealtimeMarketService:
             name: 适配器名称
             force_retry: 是否强制重试初始化（用于 TdxQuant 等可能初始化失败的适配器）
         """
+        # 如果强制重试，清除缓存并创建新实例
+        if force_retry and name == 'tdxquant':
+            self._adapter_cache.delete(name)
+
         # 先检查缓存
         cached = self._adapter_cache.get(name)
         if cached is not None:

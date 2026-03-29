@@ -103,6 +103,16 @@ class SourceSelector:
         Returns:
             数据源降级链（按优先级排序）
         """
+        # 确保 asset_type 是 AssetType 枚举
+        if isinstance(asset_type, str):
+            from myquant.core.market.models.stock import AssetType
+            # 尝试将字符串转换为枚举
+            try:
+                asset_type = AssetType(asset_type)
+            except ValueError:
+                # 如果转换失败，默认使用 STOCK
+                asset_type = AssetType.STOCK
+
         asset_type_str = asset_type.value if isinstance(asset_type, AssetType) else asset_type
         # 不传递 period 给 level_router，交易时间逻辑由服务层处理
         sources = self._level_router.get_sources(level, asset_type_str)

@@ -84,6 +84,7 @@ class V5PyTdxAdapter(V5DataAdapter):
         '1w': 5,
         'month': 6,
         '1M': 6,
+        '1mon': 6,
         '1min': 8,
         '1m': 8,
     }
