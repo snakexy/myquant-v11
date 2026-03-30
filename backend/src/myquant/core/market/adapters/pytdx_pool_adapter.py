@@ -362,7 +362,17 @@ class V5PyTdxPoolAdapter(V5DataAdapter):
 
                 # PyTdx API有单次请求限制，最多约800条
                 max_bars = 800
-                request_count = min(count, max_bars) if count else 100
+
+                # 周K/月K：如果没有指定 count，使用较大的默认值
+                if count is None:
+                    if period in ('1w', '1W', 'week'):
+                        count = 800  # 周K最大800条
+                    elif period in ('1mon', '1M', 'month'):
+                        count = 500  # 月K最大500条（实际上PyTdx只返回231条左右）
+                    else:
+                        count = 100  # 其他周期默认100条
+
+                request_count = min(count, max_bars)
                 logger.info(f"[PyTdxPool] {symbol} 请求周期: period={period}, category={category}, count={request_count}")
                 data = conn.api.get_security_bars(category, market, code, 0, request_count)
 
@@ -373,9 +383,9 @@ class V5PyTdxPoolAdapter(V5DataAdapter):
                     if 'datetime' in df.columns and df['datetime'].dtype == 'object':
                         df['datetime'] = pd.to_datetime(df['datetime'])
 
-                    # 分钟线 vol 是股（shares），日线 vol 是手（lots），统一÷100转为手
-                    is_daily = period in ('1d', '1D', 'day', 'd')
-                    if not is_daily and 'vol' in df.columns:
+                    # 分钟线 vol 是股（shares），日线及以上（含周线、月线）vol 是手（lots），统一÷100转为手
+                    is_daily_or_higher = period in ('1d', '1D', 'day', 'd', '1w', '1W', 'week', '1mon', '1M', 'month')
+                    if not is_daily_or_higher and 'vol' in df.columns:
                         df['vol'] = df['vol'] / 100
 
                     # 日期过滤

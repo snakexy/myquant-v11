@@ -136,6 +136,12 @@ class HotDBService:
                         selector = get_source_selector()
                         if selector:
                             chain = selector.get_fallback_chain_for_code(DataLevel.L3, symbol)
+
+                            # 周K/月K排除 XtQuant
+                            if period in ('1w', '1W', 'week', '1mon', '1M', 'month'):
+                                chain = [s for s in chain if s != 'xtquant']
+                                logger.debug(f"[HotDB] {period} 排除 XtQuant，数据源链: {chain}")
+
                             online_sources = [s for s in chain if s not in ('hotdb', 'localdb')]
 
                             for source_name in online_sources:
@@ -353,14 +359,14 @@ class HotDBService:
             }
 
     def ensure_hotdb_data(self, symbol: str, period: str) -> bool:
-        """确保HotDB有数据，没有则从LocalDB复制
+        """确保 HotDB 有数据，没有则从 LocalDB 复制
 
         Args:
             symbol: 股票代码
             period: 周期 (1d/5m/15m/30m/1h)
 
         Returns:
-            True: HotDB已有数据或成功复制
+            True: HotDB 已有数据或成功复制
             False: 需要在线获取
         """
         try:
@@ -383,10 +389,10 @@ class HotDBService:
                 return False
 
             if period in ('1d', '5m'):
-                # 直接复制（LocalDB有这些周期）
+                # 直接复制（LocalDB 有这些周期）
                 return self._copy_from_localdb(symbol, period)
             elif period in ('15m', '30m', '1h'):
-                # 从5分钟聚合
+                # 从 5 分钟聚合
                 return self._aggregate_from_5m(symbol, period)
             else:
                 logger.debug(f"[HotDB] {period} 需要在线获取")
@@ -534,6 +540,7 @@ class HotDBService:
         Returns:
             获取的数据，失败返回 None
         """
+        logger.info(f"[HotDB] _complete_from_online 调用: symbol={symbol}, period={period}, start_date={start_date}, end_date={end_date}, count={count}")
         try:
             selector = get_source_selector()
             if not selector:
@@ -542,6 +549,11 @@ class HotDBService:
 
             # 获取在线数据源的 fallback chain
             chain = selector.get_fallback_chain_for_code(DataLevel.L3, symbol)
+
+            # 周K/月K排除 XtQuant（避免结算日期冲突）
+            if period in ('1w', '1W', 'week', '1mon', '1M', 'month'):
+                chain = [s for s in chain if s != 'xtquant']
+                logger.debug(f"[HotDB] {period} 排除 XtQuant，数据源链: {chain}")
 
             # 遍历在线源（跳过 hotdb 和 localdb）
             online_sources = [s for s in chain if s not in ('hotdb', 'localdb')]
@@ -566,6 +578,15 @@ class HotDBService:
                             get_kline_kwargs['start_date'] = start_date
                             if end_date:
                                 get_kline_kwargs['end_date'] = end_date
+                            # 周K/月K使用日期范围时，指定足够大的 count
+                            if period in ('1w', '1W', 'week'):
+                                get_kline_kwargs['count'] = 1000  # 周K约1000条够用
+                                logger.info(f"[HotDB] 周K使用日期范围+count: {start_date}~{end_date}, count=1000")
+                            elif period in ('1mon', '1M', 'month'):
+                                get_kline_kwargs['count'] = 500   # 月K约500条够用
+                                logger.info(f"[HotDB] 月K使用日期范围+count: {start_date}~{end_date}, count=500")
+                            else:
+                                logger.info(f"[HotDB] 使用日期范围: {start_date}~{end_date}, 无count")
                         else:
                             # 兜底：使用默认数量
                             get_kline_kwargs['count'] = 10000
@@ -712,8 +733,7 @@ class HotDBService:
                 df_dict = hotdb.get_kline(
                     symbols=[symbol],
                     period=period,
-                    count=10000,
-                    allow_stale=True
+                    count=10000
                 )
 
                 if symbol in df_dict and not df_dict[symbol].empty:
@@ -799,6 +819,40 @@ class HotDBService:
             logger.warning(f"[HotDBService] 检测 {symbol} {period} 缺口失败: {e}")
             return None
 
+    def _is_data_fresh(self, symbol: str, period: str, df: pd.DataFrame) -> tuple:
+        """检查数据新鲜度（Service 层业务逻辑）
+
+        HotDB 过期策略：
+        - 1m 数据：只保留 7 天滚动窗口，超过 7 天视为过期
+        - 其他周期（5m/15m/30m/1h/1d/1w/1mon）：全量保留，永不过期
+          （这些数据从 LocalDB 预热，会智能增量更新保持最新）
+
+        Args:
+            symbol: 股票代码
+            period: 周期
+            df: 数据
+
+        Returns:
+            (is_fresh: bool, days_old: int) 元组
+        """
+        if df.empty:
+            return (True, 0)  # 无数据不算过期
+
+        now = pd.Timestamp.now(tz=None).replace(tzinfo=None)
+        latest_time = df['datetime'].iloc[-1]
+        days_old = (now - latest_time).days
+
+        # 1m 数据：超过 7 天视为过期
+        is_fresh = not (period == '1m' and days_old > 7)
+
+        if not is_fresh:
+            logger.info(
+                f"[HotDBService] {symbol} {period} 数据已过期: "
+                f"最新 {latest_time.date()}, 已过期 {days_old} 天"
+            )
+
+        return (is_fresh, days_old)
+
     def smart_update(self, symbol: str, period: str) -> Dict[str, Any]:
         """智能增量更新（核心入口）
 
@@ -822,12 +876,12 @@ class HotDBService:
             info = hotdb.get_data_info(symbol, period)
 
             if not info or not info.get('has_data'):
-                # HotDB 无数据，尝试从 LocalDB 复制
-                logger.info(f"[HotDB] {symbol} {period} 无数据，尝试从 LocalDB 复制")
+                # HotDB 无数据，从 LocalDB 复制
+                logger.info(f"[HotDB] {symbol} {period} 无数据，从 LocalDB 复制")
                 copied = self.ensure_hotdb_data(symbol, period)
 
                 if copied:
-                    # 复制成功，再次检查缺口
+                    # 复制成功，重新获取数据信息
                     info = hotdb.get_data_info(symbol, period)
 
             # 2. 检测缺口（使用 Service 层的缺口检测逻辑）
@@ -837,15 +891,38 @@ class HotDBService:
                 return {'success': False, 'error': '缺口检测失败', 'has_data': info.get('has_data', False)}
 
             if not gap_info['has_gap']:
-                # 无缺口，返回现有数据
+                # 无缺口，获取现有数据
                 df_dict = hotdb.get_kline(
                     symbols=[symbol],
                     period=period,
-                    count=10000,
-                    allow_stale=True
+                    count=10000
                 )
 
                 df = df_dict.get(symbol)
+
+                # Service 层业务逻辑：检查数据新鲜度
+                if df is not None and not df.empty:
+                    is_fresh, days_old = self._is_data_fresh(symbol, period, df)
+                    if not is_fresh:
+                        # 数据已过期，触发更新
+                        logger.info(
+                            f"[HotDBService] {symbol} {period} 数据过期（{days_old}天），触发更新"
+                        )
+                        # 清除过期数据
+                        hotdb.delete_kline(symbol, period)
+                        # 返回需要更新的标记
+                        return {
+                            'success': True,
+                            'has_data': False,
+                            'has_gap': True,
+                            'reason': 'data_expired',
+                            'df': None,
+                            'latest': gap_info.get('latest'),
+                            'symbol': symbol,
+                            'period': period,
+                            'should_update_localdb': False
+                        }
+
                 return {
                     'success': True,
                     'has_data': True,
@@ -889,12 +966,12 @@ class HotDBService:
                     if missing_start and missing_end:
                         # 计算时间差（分钟）
                         diff_minutes = int((missing_end - missing_start).total_seconds() / 60)
-                        # 加上一些余量，确保覆盖
-                        fetch_count = min(diff_minutes + 100, 800)
+                        # 余量只需要 5 条（5分钟），覆盖边界对齐误差即可
+                        fetch_count = max(diff_minutes + 5, 10)  # 至少取 10 条
                         logger.info(f"[HotDB] {symbol} 1m 有缺口，将获取 {fetch_count} 条（缺口约 {diff_minutes} 分钟）")
                     else:
-                        # 兜底：获取 800 条
-                        fetch_count = 800
+                        # 兜底：获取 100 条（约1.5小时）
+                        fetch_count = 100
                         logger.info(f"[HotDB] {symbol} 1m 有缺口（无法计算时间差），将获取 {fetch_count} 条")
             elif gap_info.get('reason') == 'no_data' and not missing_start:
                 # 其他周期首次获取
@@ -906,13 +983,13 @@ class HotDBService:
                     missing_end = now
                     missing_start = now - timedelta(days=30)
                 elif period in ['1w', '1W', 'week']:
-                    # 周K：获取最近2年（约100周）
-                    missing_end = now
-                    missing_start = now - timedelta(days=730)
+                    # 周K：使用 None 表示获取全部历史（PyTdx 最多800条约15年）
+                    missing_start = None
+                    missing_end = None
                 elif period in ['1mon', '1M', 'month']:
-                    # 月K：获取最近3年（约36个月）
-                    missing_end = now
-                    missing_start = now - timedelta(days=1095)
+                    # 月K：使用 None 表示获取全部历史（PyTdx 最多800条约66年）
+                    missing_start = None
+                    missing_end = None
                 else:
                     # 日线：获取最近3个月
                     missing_end = now
@@ -920,6 +997,8 @@ class HotDBService:
 
                 if missing_start:
                     logger.info(f"[HotDB] {symbol} {period} 无数据，将获取 {missing_start.date()} 到 {missing_end.date()} 的数据")
+                elif period in ['1w', '1W', 'week', '1mon', '1M', 'month']:
+                    logger.info(f"[HotDB] {symbol} {period} 无数据，将获取全部历史数据")
 
             # 准备在线获取参数
             start_date_str = missing_start.strftime('%Y%m%d') if (use_date_range and missing_start) else None
@@ -938,8 +1017,7 @@ class HotDBService:
                 df_dict = hotdb.get_kline(
                     symbols=[symbol],
                     period=period,
-                    count=10000,
-                    allow_stale=True
+                    count=10000
                 )
                 df = df_dict.get(symbol)
 
@@ -959,8 +1037,7 @@ class HotDBService:
             df_dict = hotdb.get_kline(
                 symbols=[symbol],
                 period=period,
-                count=10000,
-                allow_stale=True
+                count=10000
             )
             df = df_dict.get(symbol)
 

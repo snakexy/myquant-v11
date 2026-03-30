@@ -47,6 +47,15 @@
               >
                 ✏️
               </button>
+              <div class="toolbar-divider-v"></div>
+              <!-- 自定义系列按钮 -->
+              <button
+                :class="['timeframe-btn', { active: showBoxWhisker }]"
+                @click="toggleBoxWhisker"
+                title="箱线图（价格分布）"
+              >
+                箱线图
+              </button>
             </div>
           </div>
 
@@ -414,12 +423,17 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, computed, nextTick } from 'vue'
+import { ref, onMounted, onBeforeUnmount, computed, nextTick, watch } from 'vue'
 import { createChart, CrosshairMode, CandlestickSeries, HistogramSeries } from 'lightweight-charts'
 import GlobalNavBar from '@/components/GlobalNavBar.vue'
 import WatchlistPanel from '@/components/watchlist/WatchlistPanel.vue'
 import { useAppStore } from '@/stores/core/AppStore'
 import { useDataStore } from '@/stores/core/DataStore'
+import {
+  WhiskerBoxSeries,
+  ohlcvToWhiskerData,
+  type WhiskerData,
+} from '@/components/charts/custom-series'
 import {
   fetchKline,
   fetchSnapshot,
@@ -593,6 +607,13 @@ const editingAlertId = ref<string | null>(null)  // 正在编辑的价格线ID
 const editingAlertPrice = ref<string>('')  // 正在编辑的价格值
 const editingInput = ref<HTMLInputElement | null>(null)  // 编辑输入框引用
 const priceAlertsList = ref<any[]>([])  // 响应式价格线列表
+
+// 自定义系列相关
+type CustomSeriesApi = any
+let boxWhiskerSeriesApi: CustomSeriesApi | null = null
+const showBoxWhisker = ref(false)
+// 存储当前K线数据，供自定义系列使用
+const klineData = ref<any[]>([])
 const priceAlertsKey = ref(0)  // 强制刷新 key
 const showContextMenu = ref(false)  // 右键菜单显示状态
 const contextMenuPosition = ref({ x: 0, y: 0 })  // 右键菜单位置
@@ -941,6 +962,17 @@ const initChart = () => {
       userPriceAlerts.loadFromStorage(selectedStock.value)
       refreshPriceAlertsList()  // 刷新响应式列表
     }
+  }
+
+  // 初始化自定义系列
+  if (chart) {
+    // 箱线图（价格分布）
+    const boxWhiskerView = new WhiskerBoxSeries()
+    boxWhiskerSeriesApi = chart.addCustomSeries(boxWhiskerView, {
+      priceLineVisible: false,
+      lastValueVisible: false,
+    })
+    boxWhiskerSeriesApi.applyOptions({ visible: false })
   }
 
   // 十字光标移动 → 更新 hoverBar
@@ -1735,6 +1767,7 @@ const loadKlineData = async () => {
         : klineDataWithSeconds.sort((a, b) => (a.time as number) - (b.time as number))
 
       candleSeries?.setData(deduped)
+      klineData.value = deduped  // 保存K线数据供自定义系列使用
       lastBarsCount = deduped.length
 
       // 成交量数据与 deduped K线保持一致的时间戳
@@ -1745,16 +1778,36 @@ const loadKlineData = async () => {
       }))
       volumeSeries?.setData(volumeData)
 
+      // 更新自定义系列数据
+      if (showBoxWhisker.value && boxWhiskerSeriesApi) {
+        const whiskerData = ohlcvToWhiskerData(deduped, 20)
+        boxWhiskerSeriesApi.setData(whiskerData)
+      }
+
       // K线加载完成，立即结束loading（提升用户体验）
       loading.value = false
 
-      // 设置图表显示范围
+      // 设置图表显示范围（根据周期动态调整）
       if (isInitialLoad.value) {
         const total = lastBarsCount
         if (total > 0) {
+          // 根据周期确定显示的条数
+          let visibleBars = 200
+          let rightOffset = 10
+
+          if (currentTimeframe.value === '1M') {
+            // 月线：显示所有数据，或至少50条
+            visibleBars = Math.max(50, total)
+            rightOffset = 5  // 减少右边距
+          } else if (currentTimeframe.value === '1w') {
+            // 周线：显示100条
+            visibleBars = Math.min(100, total)
+            rightOffset = 8
+          }
+
           chart?.timeScale().setVisibleLogicalRange({
-            from: Math.max(0, total - 200),
-            to: total - 1 + 10,
+            from: Math.max(0, total - visibleBars),
+            to: total - 1 + rightOffset,
           })
         }
         chart?.priceScale('right').applyOptions({ autoScale: true })
@@ -2212,6 +2265,7 @@ const selectStock = (code: string) => {
   if (userPriceAlerts) {
     userPriceAlerts.clearAll()
     userPriceAlerts.loadFromStorage(code)
+    refreshPriceAlertsList()  // 刷新界面显示
   }
 
   isInitialLoad.value = true  // 切换股票时重新适应显示范围
@@ -2270,6 +2324,18 @@ const changeAdjustType = (type: string) => {
   adjustType.value = type
   isInitialLoad.value = true
   loadKlineData()
+}
+
+// 切换箱线图显示
+const toggleBoxWhisker = () => {
+  showBoxWhisker.value = !showBoxWhisker.value
+  if (boxWhiskerSeriesApi) {
+    boxWhiskerSeriesApi.applyOptions({ visible: showBoxWhisker.value })
+    if (showBoxWhisker.value && klineData.value.length > 0) {
+      const whiskerData = ohlcvToWhiskerData(klineData.value, 20)
+      boxWhiskerSeriesApi.setData(whiskerData)
+    }
+  }
 }
 
 // 市场状态缓存
@@ -2342,6 +2408,16 @@ onMounted(() => {
     connectKlineWs()
   })
 })
+
+// 监听自选股变化，重新加载迷你图
+watch(() => dataStore.activeGroup?.stocks, (newStocks, oldStocks) => {
+  const newCount = newStocks?.length || 0
+  const oldCount = oldStocks?.length || 0
+  if (newCount > oldCount) {
+    console.log('[监听] 检测到新股票添加，重新加载迷你图')
+    loadMiniCharts()
+  }
+}, { deep: true })
 
 onBeforeUnmount(() => {
   if (updateTimer) clearInterval(updateTimer)
