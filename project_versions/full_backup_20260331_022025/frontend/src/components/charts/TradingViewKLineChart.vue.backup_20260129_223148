@@ -1,0 +1,1158 @@
+<template>
+  <div class="tv-kline-container">
+    <!-- 顶部工具栏 -->
+    <div class="tv-toolbar" v-if="showToolbar">
+      <div class="toolbar-left">
+        <div class="stock-info">
+          <span class="stock-name">{{ stockName }}</span>
+          <span class="stock-code">{{ stockCode }}</span>
+        </div>
+        <div class="price-info" v-if="realtimeData">
+          <span class="current-price" :class="getPriceChangeClass(realtimeData.change_percent)">
+            {{ realtimeData.current_price?.toFixed(2) || '--' }}
+          </span>
+          <span class="price-change" :class="getPriceChangeClass(realtimeData.change_percent)">
+            {{ formatPriceChange(realtimeData.change_percent) }}
+          </span>
+        </div>
+      </div>
+
+      <div class="toolbar-center">
+        <div class="time-range-tabs">
+          <button
+            v-for="range in timeRanges"
+            :key="range.value"
+            :class="['tab-btn', { active: selectedPeriod === range.value }]"
+            @click="changePeriod(range.value)"
+          >
+            {{ range.label }}
+          </button>
+        </div>
+      </div>
+
+      <div class="toolbar-right">
+        <div class="indicator-tabs">
+          <button
+            v-for="indicator in availableIndicators"
+            :key="indicator.key"
+            :class="['indicator-btn', { active: activeIndicators.has(indicator.key) }]"
+            @click="toggleIndicator(indicator.key)"
+            :title="indicator.label"
+          >
+            {{ indicator.label }}
+          </button>
+        </div>
+        <button class="action-btn" @click="resetChart" title="重置">
+          <i class="fas fa-expand"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- 图表容器 -->
+    <div ref="chartContainer" class="tv-chart" :style="{ height: chartHeight }"></div>
+
+    <!-- 加载状态 -->
+    <div v-if="displayLoading" class="chart-loading">
+      <div class="spinner"></div>
+      <p>加载中...</p>
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref, onMounted, onUnmounted, watch, computed, nextTick } from 'vue'
+import { createChart } from 'lightweight-charts'
+import { useGlobalWebSocketEnhanced } from '@/composables/useWebSocketEnhanced'
+
+// 定义 lightweight-charts 相关类型
+type IChartApi = any
+type ISeriesApi<T = any> = any
+type ColorType = any
+type CrosshairMode = any
+
+// 定义数据类型接口
+interface CandlestickData {
+  time: any
+  open: number
+  high: number
+  low: number
+  close: number
+}
+
+interface HistogramData {
+  time: any
+  value: number
+  color?: string
+}
+
+interface LineData {
+  time: any
+  value: number
+}
+
+interface KLineData {
+  timestamp: number
+  open: number
+  high: number
+  low: number
+  close: number
+  volume: number
+  ma5?: number
+  ma10?: number
+  ma20?: number
+  ma30?: number
+  ma60?: number
+  boll_upper?: number
+  boll_middle?: number
+  boll_lower?: number
+  macd?: number
+  macd_signal?: number
+  macd_hist?: number
+  rsi6?: number
+  rsi12?: number
+  rsi24?: number
+  k?: number
+  d?: number
+  j?: number
+  atr14?: number
+}
+
+interface RealtimeData {
+  current_price: number
+  change_percent: number
+}
+
+interface Props {
+  stockCode?: string
+  stockName?: string
+  data?: KLineData[]
+  height?: string
+  loading?: boolean
+  showToolbar?: boolean
+  currentPrice?: number
+  priceChange?: number
+  changePercent?: number
+}
+
+const props = withDefaults(defineProps<Props>(), {
+  height: '600px',
+  loading: false,
+  showToolbar: true,
+  currentPrice: 0,
+  priceChange: 0,
+  changePercent: 0
+})
+
+const emit = defineEmits<{
+  ready: []
+  periodChange: [period: string]
+  indicatorToggle: [indicator: string, visible: boolean]
+}>()
+
+// DOM引用
+const chartContainer = ref<HTMLElement>()
+
+// 图表实例
+let chart: IChartApi | null = null
+let candlestickSeries: ISeriesApi<'Candlestick'> | null = null
+let volumeSeries: ISeriesApi<'Histogram'> | null = null
+let maSeries: Record<string, ISeriesApi<'Line'>> = {}
+let bollSeries: Record<string, ISeriesApi<'Line'>> = {}
+let macdSeries: Record<string, ISeriesApi<'Line' | 'Histogram'>> = {}
+let rsiSeries: Record<string, ISeriesApi<'Line'>> = {}
+let kdjSeries: Record<string, ISeriesApi<'Line'>> = {}
+let atrSeries: ISeriesApi<'Histogram'> | null = null
+
+// 状态
+const selectedPeriod = ref('day')
+const activeIndicators = ref<Set<string>>(new Set(['MA5', 'MA10', 'MA20', 'MA60', 'VOL']))
+const internalData = ref<KLineData[]>([])
+const internalLoading = ref(false)
+const realtimeData = ref<RealtimeData | null>(null)
+
+// WebSocket集成
+const ws = useGlobalWebSocketEnhanced()
+const wsEnabled = computed(() => ws.connected.value)
+
+// 时间周期选项 - K线图（5分钟起，1分钟用分时图）
+const timeRanges = [
+  { label: '5分', value: '5min' },
+  { label: '15分', value: '15min' },
+  { label: '30分', value: '30min' },
+  { label: '60分', value: '60min' },
+  { label: '日线', value: 'day' },
+  { label: '周K', value: 'week' },
+  { label: '月K', value: 'month' }
+]
+
+// 可用技术指标
+const availableIndicators = [
+  { key: 'MA5', label: 'MA5' },
+  { key: 'MA10', label: 'MA10' },
+  { key: 'MA20', label: 'MA20' },
+  { key: 'MA30', label: 'MA30' },
+  { key: 'MA60', label: 'MA60' },
+  { key: 'VOL', label: '成交量' },
+  { key: 'BOLL', label: 'BOLL' },
+  { key: 'MACD', label: 'MACD' },
+  { key: 'RSI', label: 'RSI' },
+  { key: 'KDJ', label: 'KDJ' },
+  { key: 'ATR', label: 'ATR' }
+]
+
+// 图表高度
+const chartHeight = computed(() => {
+  return props.showToolbar ? `calc(${props.height} - 50px)` : props.height
+})
+
+// 显示的数据（优先使用传入的data，否则使用内部数据）
+const displayData = computed(() => {
+  return props.data && props.data.length > 0 ? props.data : internalData.value
+})
+
+// 显示的加载状态
+const displayLoading = computed(() => {
+  return props.loading || internalLoading.value
+})
+
+// 颜色配置 - 使用中国股市颜色（红涨绿跌）
+const colors = {
+  upColor: '#ef4444',              // 阳线-红色
+  downColor: '#10b981',            // 阴线-绿色
+  wickUpColor: '#ef4444',          // 上影线-红色
+  wickDownColor: '#10b981',        // 下影线-绿色
+  borderVisible: false,
+  backgroundColor: '#0f0f23',       // 背景色（与主页一致）
+  gridColor: 'rgba(148, 163, 184, 0.1)',
+  crosshairColor: '#667eea',
+  ma5Color: '#FF6B6B',
+  ma10Color: '#4ECDC4',
+  ma20Color: '#45B7D1',
+  ma60Color: '#96CEB4',
+  volumeUpColor: 'rgba(239, 68, 68, 0.5)',
+  volumeDownColor: 'rgba(16, 185, 129, 0.5)'
+}
+
+// 初始化图表
+const initChart = () => {
+  if (!chartContainer.value) return
+
+  // 创建图表实例
+  chart = createChart(chartContainer.value, {
+    width: chartContainer.value.clientWidth,
+    height: parseInt(chartHeight.value),
+    layout: {
+      background: { type: ColorType.Solid, color: colors.backgroundColor },
+      textColor: '#B2B5BE',
+    },
+    grid: {
+      vertLines: {
+        color: colors.gridColor,
+        style: 1, // dashed
+      },
+      horzLines: {
+        color: colors.gridColor,
+        style: 1, // dashed
+      },
+    },
+    crosshair: {
+      mode: CrosshairMode.Normal,
+      vertLine: {
+        color: colors.crosshairColor,
+        width: 1,
+        style: 2, // dashed
+        labelBackgroundColor: colors.crosshairColor,
+      },
+      horzLine: {
+        color: colors.crosshairColor,
+        width: 1,
+        style: 2, // dashed
+        labelBackgroundColor: colors.crosshairColor,
+      },
+    },
+    rightPriceScale: {
+      borderColor: '#2A2E39',
+    },
+    timeScale: {
+      borderColor: '#2A2E39',
+      timeVisible: true,
+      secondsVisible: false,
+    },
+    localization: {
+      dateFormat: 'yyyy-MM-dd',
+    },
+  })
+
+  // 添加K线系列
+  candlestickSeries = chart.addCandlestickSeries({
+    upColor: colors.upColor,
+    downColor: colors.downColor,
+    borderVisible: colors.borderVisible,
+    wickUpColor: colors.wickUpColor,
+    wickDownColor: colors.wickDownColor,
+  })
+
+  // 添加成交量系列
+  volumeSeries = chart.addHistogramSeries({
+    color: '#26A69A',
+    priceFormat: {
+      type: 'volume',
+    },
+    priceScaleId: '',
+  })
+
+  // 初始化MA均线
+  maSeries = {
+    MA5: chart.addLineSeries({ color: colors.ma5Color, lineWidth: 1 }),
+    MA10: chart.addLineSeries({ color: colors.ma10Color, lineWidth: 1 }),
+    MA20: chart.addLineSeries({ color: colors.ma20Color, lineWidth: 1 }),
+    MA30: chart.addLineSeries({ color: '#96CEB4', lineWidth: 1 }),
+    MA60: chart.addLineSeries({ color: colors.ma60Color, lineWidth: 1 })
+  }
+
+  // 初始化布林带
+  bollSeries = {
+    upper: chart.addLineSeries({ color: '#FF9800', lineWidth: 1, lineStyle: 2 }),
+    middle: chart.addLineSeries({ color: '#FF9800', lineWidth: 1, lineStyle: 3 }),
+    lower: chart.addLineSeries({ color: '#FF9800', lineWidth: 1, lineStyle: 2 })
+  }
+
+  // 初始化MACD（使用独立的price scale）
+  const macdScaleId = 'macd'
+  macdSeries = {
+    macd: chart.addLineSeries({
+      color: '#26A69A',
+      lineWidth: 1,
+      priceScaleId: macdScaleId
+    }),
+    signal: chart.addLineSeries({
+      color: '#FF6B6B',
+      lineWidth: 1,
+      priceScaleId: macdScaleId
+    }),
+    hist: chart.addHistogramSeries({
+      color: '#787B86',
+      priceFormat: { type: 'price' },
+      priceScaleId: macdScaleId
+    })
+  }
+
+  // 初始化RSI（使用独立的price scale）
+  const rsiScaleId = 'rsi'
+  rsiSeries = {
+    rsi6: chart.addLineSeries({
+      color: '#9C27B0',
+      lineWidth: 1,
+      priceScaleId: rsiScaleId
+    }),
+    rsi12: chart.addLineSeries({
+      color: '#E91E63',
+      lineWidth: 1,
+      priceScaleId: rsiScaleId
+    }),
+    rsi24: chart.addLineSeries({
+      color: '#673AB7',
+      lineWidth: 1,
+      priceScaleId: rsiScaleId
+    })
+  }
+
+  // 初始化KDJ（使用独立的price scale）
+  const kdjScaleId = 'kdj'
+  kdjSeries = {
+    k: chart.addLineSeries({
+      color: '#FFEB3B',      // 黄色
+      lineWidth: 1,
+      priceScaleId: kdjScaleId
+    }),
+    d: chart.addLineSeries({
+      color: '#9E9E9E',      // 灰色
+      lineWidth: 1,
+      priceScaleId: kdjScaleId
+    }),
+    j: chart.addLineSeries({
+      color: '#FF5722',      // 橙红色
+      lineWidth: 1,
+      priceScaleId: kdjScaleId
+    })
+  }
+
+  // 初始化ATR（使用独立的price scale）
+  const atrScaleId = 'atr'
+  atrSeries = chart.addHistogramSeries({
+    color: '#4CAF50',        // 绿色
+    priceFormat: { type: 'price' },
+    priceScaleId: atrScaleId,
+    scaleMargins: {
+      top: 0.85,              // 底部15%区域
+      bottom: 0
+    }
+  })
+
+  // 响应式调整
+  const resizeObserver = new ResizeObserver(entries => {
+    if (chart && chartContainer.value) {
+      const { width, height } = entries[0].contentRect
+      chart.applyOptions({ width, height })
+    }
+  })
+
+  resizeObserver.observe(chartContainer.value)
+
+  emit('ready')
+}
+
+// 获取实时行情
+const fetchRealtimeQuote = async () => {
+  if (!props.stockCode) return
+
+  try {
+    const response = await fetch(`/api/v1/market/stock/${props.stockCode}/quote`)
+    const result = await response.json()
+
+    if (result.success && result.data) {
+      realtimeData.value = {
+        current_price: result.data.current_price || 0,
+        change_percent: result.data.change_percent || 0
+      }
+    }
+  } catch (error) {
+    console.error('获取实时行情失败:', error)
+  }
+}
+
+// WebSocket K线更新处理
+const handleKlineUpdate = (update: any) => {
+  if (update.symbol !== props.stockCode || update.period !== selectedPeriod.value) {
+    return
+  }
+
+  console.log('[TradingViewKLineChart] 收到K线更新:', update)
+
+  if (update.data && Array.isArray(update.data) && update.data.length > 0) {
+    // 转换新增的K线数据
+    const newData = update.data.map((item: any) => ({
+      timestamp: new Date(item.date).getTime(),
+      open: item.open,
+      high: item.high,
+      low: item.low,
+      close: item.close,
+      volume: item.volume,
+      ma5: item.ma5,
+      ma10: item.ma10,
+      ma20: item.ma20,
+      ma30: item.ma30,
+      ma60: item.ma60,
+      boll_upper: item.boll_upper,
+      boll_middle: item.boll_middle,
+      boll_lower: item.boll_lower,
+      macd: item.macd,
+      macd_signal: item.macd_signal,
+      macd_hist: item.macd_hist,
+      rsi6: item.rsi6,
+      rsi12: item.rsi12,
+      rsi24: item.rsi24,
+      k: item.k,
+      d: item.d,
+      j: item.j,
+      atr14: item.atr14
+    }))
+
+    // 合并数据（去重，替换相同时间戳的数据）
+    const existingData = internalData.value
+    const existingTimestamps = new Set(existingData.map(d => d.timestamp))
+
+    for (const item of newData) {
+      if (existingTimestamps.has(item.timestamp)) {
+        // 替换现有数据
+        const index = existingData.findIndex(d => d.timestamp === item.timestamp)
+        if (index !== -1) {
+          existingData[index] = item
+        }
+      } else {
+        // 添加新数据
+        existingData.push(item)
+      }
+    }
+
+    // 按时间戳排序
+    existingData.sort((a, b) => a.timestamp - b.timestamp)
+
+    // 限制数据量（保留最新的500条）
+    if (existingData.length > 500) {
+      existingData.splice(0, existingData.length - 500)
+    }
+
+    // 更新图表
+    updateChartData()
+  }
+}
+
+// WebSocket行情更新处理
+const handleQuoteUpdate = (update: any) => {
+  if (update.symbol !== props.stockCode) {
+    return
+  }
+
+  console.log('[TradingViewKLineChart] 收到行情更新:', update)
+
+  if (update.data) {
+    realtimeData.value = {
+      current_price: update.data.current_price || realtimeData.value?.current_price || 0,
+      change_percent: update.data.change_percent || realtimeData.value?.change_percent || 0
+    }
+  }
+}
+
+// 订阅WebSocket数据
+const subscribeWebSocket = () => {
+  if (!props.stockCode || !wsEnabled.value) {
+    return
+  }
+
+  // 订阅行情
+  ws.subscribeQuotes([props.stockCode])
+
+  // 订阅K线数据
+  ws.subscribeKlines(props.stockCode, selectedPeriod.value, 100)
+
+  // 设置回调
+  ws.onKlineUpdate.value = handleKlineUpdate
+  ws.onQuoteUpdate.value = handleQuoteUpdate
+
+  console.log('[TradingViewKLineChart] 已订阅WebSocket数据:', props.stockCode, selectedPeriod.value)
+}
+
+// 取消订阅WebSocket数据
+const unsubscribeWebSocket = () => {
+  if (!props.stockCode) {
+    return
+  }
+
+  // 取消订阅行情
+  ws.unsubscribeQuotes([props.stockCode])
+
+  // 取消订阅K线
+  ws.unsubscribeKlines(props.stockCode)
+
+  // 清除回调
+  ws.onKlineUpdate.value = () => {}
+  ws.onQuoteUpdate.value = () => {}
+
+  console.log('[TradingViewKLineChart] 已取消订阅WebSocket数据:', props.stockCode)
+}
+
+// 获取K线数据
+const fetchKlineData = async () => {
+  if (!props.stockCode) return
+
+  internalLoading.value = true
+  try {
+    // 使用market API获取K线数据
+    const response = await fetch(`/api/v1/market/kline-data?symbol=${props.stockCode}&period=${selectedPeriod.value}&days=120`)
+    const result = await response.json()
+
+    if (result.success && result.data && result.data.length > 0) {
+      // 转换数据格式
+      internalData.value = result.data.map((item: any) => ({
+        timestamp: new Date(item.datetime).getTime(),
+        open: item.open,
+        high: item.high,
+        low: item.low,
+        close: item.close,
+        volume: item.volume
+        // 注意：market API不返回技术指标
+      }))
+      console.log(`✅ K线数据加载成功: ${props.stockCode}, ${internalData.value.length}条`)
+    } else {
+      console.error('❌ K线数据格式错误或为空:', result)
+      internalData.value = []
+    }
+  } catch (error) {
+    console.error('❌ 获取K线数据失败:', error)
+    internalLoading.value = false
+  }
+}
+
+// 更新图表数据
+const updateChartData = () => {
+  if (!candlestickSeries || !volumeSeries || !displayData.value.length) return
+
+  // 转换K线数据
+  const candlestickData: CandlestickData[] = displayData.value.map(item => ({
+    time: item.timestamp / 1000 as any, // lightweight-charts使用秒
+    open: item.open,
+    high: item.high,
+    low: item.low,
+    close: item.close
+  }))
+
+  // 转换成交量数据
+  const volumeData = displayData.value.map(item => ({
+    time: item.timestamp / 1000 as any,
+    value: item.volume,
+    color: item.close >= item.open ? colors.volumeUpColor : colors.volumeDownColor
+  }))
+
+  // 设置K线数据
+  candlestickSeries.setData(candlestickData)
+
+  // 设置成交量数据
+  if (activeIndicators.has('VOL')) {
+    volumeSeries.setData(volumeData)
+  } else {
+    volumeSeries.setData([])
+  }
+
+  // 更新MA均线
+  updateMASeries()
+
+  // 自适应视图
+  if (chart) {
+    chart.timeScale().fitContent()
+  }
+}
+
+// 更新MA均线数据
+const updateMASeries = () => {
+  const maConfigs = [
+    { key: 'MA5', dataKey: 'ma5' as const },
+    { key: 'MA10', dataKey: 'ma10' as const },
+    { key: 'MA20', dataKey: 'ma20' as const },
+    { key: 'MA30', dataKey: 'ma30' as const },
+    { key: 'MA60', dataKey: 'ma60' as const }
+  ]
+
+  maConfigs.forEach(({ key, dataKey }) => {
+    const series = maSeries[key]
+    if (!series) return
+
+    if (activeIndicators.has(key)) {
+      const lineData: LineData[] = displayData.value
+        .filter(item => item[dataKey] !== undefined)
+        .map(item => ({
+          time: item.timestamp / 1000 as any,
+          value: item[dataKey]!
+        }))
+
+      series.setData(lineData)
+    } else {
+      series.setData([])
+    }
+  })
+
+  // 更新布林带
+  if (activeIndicators.has('BOLL')) {
+    const upperData: LineData[] = displayData.value
+      .filter(item => item.boll_upper !== undefined)
+      .map(item => ({
+        time: item.timestamp / 1000 as any,
+        value: item.boll_upper!
+      }))
+
+    const middleData: LineData[] = displayData.value
+      .filter(item => item.boll_middle !== undefined)
+      .map(item => ({
+        time: item.timestamp / 1000 as any,
+        value: item.boll_middle!
+      }))
+
+    const lowerData: LineData[] = displayData.value
+      .filter(item => item.boll_lower !== undefined)
+      .map(item => ({
+        time: item.timestamp / 1000 as any,
+        value: item.boll_lower!
+      }))
+
+    bollSeries.upper.setData(upperData)
+    bollSeries.middle.setData(middleData)
+    bollSeries.lower.setData(lowerData)
+  } else {
+    bollSeries.upper.setData([])
+    bollSeries.middle.setData([])
+    bollSeries.lower.setData([])
+  }
+
+  // 更新MACD
+  if (activeIndicators.has('MACD')) {
+    const macdData: LineData[] = displayData.value
+      .filter(item => item.macd !== undefined)
+      .map(item => ({
+        time: item.timestamp / 1000 as any,
+        value: item.macd!
+      }))
+
+    const signalData: LineData[] = displayData.value
+      .filter(item => item.macd_signal !== undefined)
+      .map(item => ({
+        time: item.timestamp / 1000 as any,
+        value: item.macd_signal!
+      }))
+
+    const histData: HistogramData[] = displayData.value
+      .filter(item => item.macd_hist !== undefined)
+      .map(item => ({
+        time: item.timestamp / 1000 as any,
+        value: item.macd_hist!,
+        color: item.macd_hist! >= 0 ? '#ef4444' : '#10b981'
+      }))
+
+    macdSeries.macd.setData(macdData)
+    macdSeries.signal.setData(signalData)
+    macdSeries.hist.setData(histData)
+  } else {
+    macdSeries.macd.setData([])
+    macdSeries.signal.setData([])
+    macdSeries.hist.setData([])
+  }
+
+  // 更新RSI
+  if (activeIndicators.has('RSI')) {
+    const rsi6Data: LineData[] = displayData.value
+      .filter(item => item.rsi6 !== undefined)
+      .map(item => ({
+        time: item.timestamp / 1000 as any,
+        value: item.rsi6!
+      }))
+
+    const rsi12Data: LineData[] = displayData.value
+      .filter(item => item.rsi12 !== undefined)
+      .map(item => ({
+        time: item.timestamp / 1000 as any,
+        value: item.rsi12!
+      }))
+
+    const rsi24Data: LineData[] = displayData.value
+      .filter(item => item.rsi24 !== undefined)
+      .map(item => ({
+        time: item.timestamp / 1000 as any,
+        value: item.rsi24!
+      }))
+
+    rsiSeries.rsi6.setData(rsi6Data)
+    rsiSeries.rsi12.setData(rsi12Data)
+    rsiSeries.rsi24.setData(rsi24Data)
+  } else {
+    rsiSeries.rsi6.setData([])
+    rsiSeries.rsi12.setData([])
+    rsiSeries.rsi24.setData([])
+  }
+
+  // 更新KDJ
+  if (activeIndicators.has('KDJ')) {
+    const kData: LineData[] = displayData.value
+      .filter(item => item.k !== undefined)
+      .map(item => ({
+        time: item.timestamp / 1000 as any,
+        value: item.k!
+      }))
+
+    const dData: LineData[] = displayData.value
+      .filter(item => item.d !== undefined)
+      .map(item => ({
+        time: item.timestamp / 1000 as any,
+        value: item.d!
+      }))
+
+    const jData: LineData[] = displayData.value
+      .filter(item => item.j !== undefined)
+      .map(item => ({
+        time: item.timestamp / 1000 as any,
+        value: item.j!
+      }))
+
+    kdjSeries.k.setData(kData)
+    kdjSeries.d.setData(dData)
+    kdjSeries.j.setData(jData)
+  } else {
+    kdjSeries.k.setData([])
+    kdjSeries.d.setData([])
+    kdjSeries.j.setData([])
+  }
+
+  // 更新ATR
+  if (activeIndicators.has('ATR') && atrSeries) {
+    const atrData: HistogramData[] = displayData.value
+      .filter(item => item.atr14 !== undefined)
+      .map(item => ({
+        time: item.timestamp / 1000 as any,
+        value: item.atr14!,
+        color: '#4CAF50'
+      }))
+
+    atrSeries.setData(atrData)
+  } else if (atrSeries) {
+    atrSeries.setData([])
+  }
+}
+
+// 切换时间周期
+const changePeriod = (period: string) => {
+  // 取消旧的订阅
+  if (props.stockCode && wsEnabled.value) {
+    ws.unsubscribeKlines(props.stockCode)
+  }
+
+  selectedPeriod.value = period
+  emit('periodChange', period)
+
+  // 重新订阅
+  if (props.stockCode && wsEnabled.value) {
+    nextTick(() => {
+      ws.subscribeKlines(props.stockCode!, period, 100)
+    })
+  }
+
+  // 重新获取数据
+  fetchKlineData()
+}
+
+// 切换指标
+const toggleIndicator = (indicator: string) => {
+  if (activeIndicators.value.has(indicator)) {
+    activeIndicators.value.delete(indicator)
+  } else {
+    activeIndicators.value.add(indicator)
+  }
+
+  // 所有技术指标都通过updateMASeries更新
+  updateMASeries()
+
+  emit('indicatorToggle', indicator, activeIndicators.value.has(indicator))
+}
+
+// 重置图表
+const resetChart = () => {
+  if (chart) {
+    chart.timeScale().fitContent()
+  }
+}
+
+// 获取价格变化颜色类
+const getPriceChangeClass = (change?: number) => {
+  if (!change) return 'price-flat'
+  if (change > 0) return 'price-up'
+  if (change < 0) return 'price-down'
+  return 'price-flat'
+}
+
+// 格式化价格变化
+const formatPriceChange = (change?: number) => {
+  if (!change) return '--'
+  const sign = change > 0 ? '+' : ''
+  return `${sign}${change.toFixed(2)}%`
+}
+
+// 监听数据变化
+watch(() => props.data, () => {
+  nextTick(() => {
+    updateChartData()
+  })
+}, { deep: true })
+
+// 监听stockCode变化，自动获取数据
+watch(() => props.stockCode, (newCode, oldCode) => {
+  // 取消旧股票的订阅
+  if (oldCode) {
+    unsubscribeWebSocket()
+  }
+
+  // 获取新股票的数据
+  if (newCode && !props.data) {
+    fetchKlineData()
+  }
+
+  // 订阅新股票的WebSocket数据
+  if (newCode && wsEnabled.value) {
+    nextTick(() => {
+      subscribeWebSocket()
+    })
+  }
+}, { immediate: true })
+
+// 监听WebSocket连接状态
+watch(() => wsEnabled.value, (enabled) => {
+  if (enabled && props.stockCode) {
+    subscribeWebSocket()
+  } else if (!enabled && props.stockCode) {
+    unsubscribeWebSocket()
+  }
+})
+
+// 生命周期
+onMounted(() => {
+  initChart()
+  if (props.data && props.data.length > 0) {
+    updateChartData()
+  }
+})
+
+onUnmounted(() => {
+  // 清理WebSocket订阅
+  unsubscribeWebSocket()
+
+  // 清理图表
+  if (chart) {
+    chart.remove()
+  }
+})
+
+// 暴露方法
+defineExpose({
+  resetChart,
+  getChart: () => chart,
+  refreshData: fetchKlineData
+})
+</script>
+
+<style scoped lang="scss">
+.tv-kline-container {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: #0f0f23;
+  position: relative;
+}
+
+// 工具栏
+.tv-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 16px;
+  background: #1a1a2e;
+  border-bottom: 1px solid #334155;
+  min-height: 50px;
+
+  .toolbar-left {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+
+    .stock-info {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+
+      .stock-name {
+        font-size: 16px;
+        font-weight: 700;
+        color: #f8fafc;
+      }
+
+      .stock-code {
+        font-size: 12px;
+        color: #94a3b8;
+        font-family: 'Roboto Mono', monospace;
+        padding: 2px 8px;
+        background: #252530;
+        border-radius: 4px;
+      }
+    }
+
+    .price-info {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+
+      .current-price {
+        font-size: 24px;
+        font-weight: 700;
+        font-family: 'Roboto Mono', monospace;
+
+        &.price-up {
+          color: #ef4444;
+        }
+
+        &.price-down {
+          color: #10b981;
+        }
+
+        &.price-flat {
+          color: #94a3b8;
+        }
+      }
+
+      .price-change {
+        font-size: 14px;
+        font-weight: 600;
+        font-family: 'Roboto Mono', monospace;
+        padding: 4px 8px;
+        border-radius: 4px;
+
+        &.price-up {
+          color: #ef4444;
+          background: rgba(239, 68, 68, 0.1);
+        }
+
+        &.price-down {
+          color: #10b981;
+          background: rgba(16, 185, 129, 0.1);
+        }
+
+        &.price-flat {
+          color: #94a3b8;
+        }
+      }
+    }
+  }
+
+  .toolbar-center {
+    flex: 1;
+    display: flex;
+    justify-content: center;
+
+    .time-range-tabs {
+      display: flex;
+      gap: 2px;
+      background: #252530;
+      padding: 3px;
+      border-radius: 6px;
+
+      .tab-btn {
+        padding: 6px 16px;
+        border: none;
+        background: transparent;
+        color: #94a3b8;
+        font-size: 12px;
+        font-weight: 500;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: all 0.2s;
+
+        &:hover {
+          color: #f8fafc;
+          background: rgba(255, 255, 255, 0.05);
+        }
+
+        &.active {
+          background: #667eea;
+          color: #ffffff;
+          font-weight: 600;
+        }
+      }
+    }
+  }
+
+  .toolbar-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+
+    .indicator-tabs {
+      display: flex;
+      gap: 4px;
+
+      .indicator-btn {
+        padding: 6px 10px;
+        border: none;
+        background: #252530;
+        color: #94a3b8;
+        font-size: 11px;
+        font-weight: 500;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: all 0.2s;
+
+        &:hover {
+          background: #2a2a3e;
+          color: #f8fafc;
+        }
+
+        &.active {
+          background: rgba(102, 126, 234, 0.2);
+          color: #667eea;
+          border: 1px solid rgba(102, 126, 234, 0.3);
+        }
+      }
+    }
+
+    .action-btn {
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: none;
+      background: #252530;
+      color: #94a3b8;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s;
+
+      &:hover {
+        background: #2a2a3e;
+        color: #f8fafc;
+      }
+
+      i {
+        font-size: 14px;
+      }
+    }
+  }
+}
+
+// 图表容器
+.tv-chart {
+  flex: 1;
+  width: 100%;
+}
+
+// 加载状态
+.chart-loading {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(15, 15, 35, 0.8);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+
+  .spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid #334155;
+    border-top-color: #667eea;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin-bottom: 16px;
+  }
+
+  p {
+    color: #94a3b8;
+    font-size: 14px;
+    margin: 0;
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+// 响应式
+@media (max-width: 1200px) {
+  .tv-toolbar {
+    flex-wrap: wrap;
+    gap: 8px;
+
+    .toolbar-left,
+    .toolbar-center,
+    .toolbar-right {
+      flex: 1;
+      min-width: 200px;
+    }
+
+    .toolbar-center {
+      order: 3;
+      width: 100%;
+    }
+  }
+}
+</style>

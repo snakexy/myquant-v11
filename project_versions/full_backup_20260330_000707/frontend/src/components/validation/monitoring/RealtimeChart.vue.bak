@@ -1,0 +1,68 @@
+<template>
+  <el-card class="chart-card" shadow="never">
+    <template #header>
+      <div class="card-header">
+        <span class="title">📈 收益曲线</span>
+        <div class="actions">
+          <el-button-group>
+            <el-button size="small">1H</el-button>
+            <el-button size="small">1D</el-button>
+            <el-button size="small">1W</el-button>
+            <el-button size="small">ALL</el-button>
+          </el-button-group>
+        </div>
+      </div>
+    </template>
+
+    <div class="chart-placeholder">
+      <el-icon size="64" color="#909399">
+        <TrendCharts />
+      </el-icon>
+      <p class="placeholder-text">实时收益曲线图表开发中...</p>
+      <p class="placeholder-hint">WebSocket实时推送数据</p>
+    </div>
+  </el-card>
+</template>
+
+<script setup lang="ts">
+import { TrendCharts } from '@element-plus/icons-vue'
+</script>
+
+<style scoped lang="scss">
+.chart-card {
+  .card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+
+    .title {
+      font-size: 16px;
+      font-weight: 600;
+      color: #303133;
+    }
+  }
+
+  .chart-placeholder {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 60px 20px;
+    background-color: #f5f7fa;
+    border-radius: 8px;
+    min-height: 300px;
+
+    .placeholder-text {
+      margin-top: 16px;
+      font-size: 16px;
+      color: #909399;
+    }
+
+    .placeholder-hint {
+      margin-top: 8px;
+      font-size: 13px;
+      color: #c0c4cc;
+    }
+  }
+}
+</style>

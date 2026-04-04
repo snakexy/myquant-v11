@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>强制缓存清理</title>
+    <style>
+        body { font-family: monospace; padding: 20px; background: #1e1e1e; color: #d4d4d4; }
+        button { background: #0e639c; color: white; border: none; padding: 15px 25px; cursor: pointer; margin: 5px; font-size: 16px; }
+        button:hover { background: #1177bb; }
+        button.danger { background: #c94022; }
+        button.danger:hover { background: #d13a2b; }
+        pre { background: #252526; padding: 15px; overflow-x: auto; font-size: 14px; }
+        .success { color: #4ec9b0; }
+        .error { color: #f48771; }
+        .warning { color: #dcdcaa; }
+        h2 { color: #4ec9b0; margin-bottom: 10px; }
+        .step { margin: 20px 0; padding: 15px; background: #252526; border-left: 3px solid #4ec9b0; }
+    </style>
+</head>
+<body>
+    <h2>🧹 完整缓存清理方案</h2>
+
+    <div class="step">
+        <strong>步骤 1:</strong> 点击下面的按钮清除所有前端缓存
+        <br><br>
+        <button class="danger" onclick="forceCleanAll()">🔥 强制清除所有缓存</button>
+    </div>
+
+    <div class="step">
+        <strong>步骤 2:</strong> 点击下面的按钮刷新页面（会清除内存中的缓存）
+        <br><br>
+        <button onclick="hardReload()">🔄 强制刷新页面</button>
+    </div>
+
+    <div class="step">
+        <strong>步骤 3:</strong> 如果还是不行，关闭所有浏览器标签，重新打开
+        <br><br>
+        <button onclick="showManualSteps()">📋 查看完整手动步骤</button>
+    </div>
+
+    <pre id="output">点击按钮开始清理...</pre>
+
+    <script>
+        function forceCleanAll() {
+            const output = document.getElementById('output');
+            let results = [];
+
+            // 1. 清除 myquant_cache
+            try {
+                const cache = localStorage.getItem('myquant_cache');
+                if (cache) {
+                    const parsed = JSON.parse(cache);
+                    const klineItems = parsed.filter(([k]) => k.includes('kline'));
+                    results.push(`✓ 清除 myquant_cache (${klineItems.length} 个K线项)`);
+                } else {
+                    results.push('✓ myquant_cache 不存在');
+                }
+                localStorage.removeItem('myquant_cache');
+            } catch (e) {
+                results.push(`❌ 清除 myquant_cache 失败: ${e.message}`);
+            }
+
+            // 2. 清除所有可能的缓存键
+            const keysToRemove = [];
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                if (key && (key.includes('cache') || key.includes('kline') || key.includes('myquant'))) {
+                    keysToRemove.push(key);
+                }
+            }
+            keysToRemove.forEach(key => localStorage.removeItem(key));
+            results.push(`✓ 清除 ${keysToRemove.length} 个相关缓存项`);
+
+            // 3. 清除 sessionStorage
+            try {
+                sessionStorage.clear();
+                results.push('✓ 清除 sessionStorage');
+            } catch (e) {
+                results.push(`⚠️ 清除 sessionStorage 失败: ${e.message}`);
+            }
+
+            // 4. 设置一个标志，通知页面下次加载时跳过缓存
+            localStorage.setItem('force_refresh_' + Date.now(), 'true');
+
+            output.innerHTML = `<span class="success">${results.join('\n')}\n\n缓存已清除！请点击"强制刷新页面"按钮。</span>`;
+        }
+
+        function hardReload() {
+            // 强制重新加载，跳过所有缓存
+            window.location.reload(true);
+        }
+
+        function showManualSteps() {
+            const output = document.getElementById('output');
+            output.innerHTML = `<span class="warning">
+====================================
+完整手动清理步骤
+====================================
+
+如果自动清理无效，请按以下步骤操作：
+
+1. 清除浏览器缓存：
+   - Chrome/Edge: Ctrl+Shift+Delete
+   - 选择"缓存的图片和文件"
+   - 时间范围选"全部"
+   - 点击"清除数据"
+
+2. 或者使用无痕模式：
+   - Chrome/Edge: Ctrl+Shift+N
+   - 在无痕窗口中打开应用
+
+3. 或者清除特定站点数据：
+   - 打开开发者工具 (F12)
+   - Application → Storage → Clear site data
+   - 点击"Clear site data"按钮
+
+4. 完成后，关闭所有标签页，重新打开应用
+
+====================================</span>`;
+        }
+
+        // 页面加载时自动检测并提示
+        window.addEventListener('load', () => {
+            const output = document.getElementById('output');
+            let issues = [];
+
+            // 检查是否有缓存
+            const cache = localStorage.getItem('myquant_cache');
+            if (cache) {
+                try {
+                    const parsed = JSON.parse(cache);
+                    const klineCache = parsed.filter(([k]) => k.includes('kline'));
+                    if (klineCache.length > 0) {
+                        issues.push(`发现 ${klineCache.length} 个K线缓存项（可能导致显示旧数据）`);
+                    }
+                } catch (e) {}
+            }
+
+            if (issues.length > 0) {
+                output.innerHTML = `<span class="warning">⚠️ 检测到以下问题:\n${issues.join('\n')}\n\n建议点击"强制清除所有缓存"按钮</span>`;
+            }
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>前端API测试</title>
+    <style>
+        body { font-family: monospace; padding: 20px; background: #1e1e1e; color: #d4d4d4; }
+        button { background: #0e639c; color: white; border: none; padding: 10px 20px; cursor: pointer; margin: 5px; }
+        button:hover { background: #1177bb; }
+        pre { background: #252526; padding: 10px; overflow-x: auto; max-height: 500px; }
+        .success { color: #4ec9b0; }
+        .error { color: #f48771; }
+        .warning { color: #dcdcaa; }
+    </style>
+</head>
+<body>
+    <h2>🔍 前端API数据测试</h2>
+
+    <div>
+        <button onclick="testDailyAPI()">测试日K API</button>
+        <button onclick="testMonthlyAPI()">测试月K API</button>
+        <button onclick="checkCache()">检查缓存</button>
+        <button onclick="clearAllCache()">清除所有缓存</button>
+    </div>
+
+    <pre id="output">点击按钮开始测试...</pre>
+
+    <script>
+        const API_BASE = 'http://localhost:8000';
+
+        async function testDailyAPI() {
+            const output = document.getElementById('output');
+            output.textContent = '正在测试日K API...';
+
+            try {
+                const response = await fetch(`${API_BASE}/api/v1/data/unified`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        data_type: 'kline',
+                        symbols: ['600519.SH'],
+                        params: { period: 'day', count: 20 }
+                    })
+                });
+
+                const result = await response.json();
+
+                let outputText = `=== 日K API 测试结果 ===\\n\\n`;
+                outputText += `Code: ${result.code}\\n`;
+                outputText += `Message: ${result.message}\\n`;
+                outputText += `Data count: ${result.data?.length || 0}\\n`;
+                outputText += `Source: ${result.metadata?.source || 'unknown'}\\n\\n`;
+
+                if (result.data && result.data.length > 0) {
+                    outputText += `前10条数据:\\n`;
+                    result.data.slice(0, 10).forEach((item, i) => {
+                        outputText += `  ${i+1}. ${item.time}  O=${item.open.toFixed(2)} H=${item.high.toFixed(2)} L=${item.low.toFixed(2)} C=${item.close.toFixed(2)} V=${item.volume.toFixed(0)}\\n`;
+                    });
+
+                    // 分析数据类型
+                    const dates = result.data.map(d => d.time.slice(0, 10));
+                    const uniqueDays = new Set(dates).size;
+                    const dateSpan = Math.ceil((new Date(dates[dates.length-1]) - new Date(dates[0])) / (1000 * 60 * 60 * 24));
+
+                    outputText += `\\n=== 数据分析 ===\\n`;
+                    outputText += `唯一日期数: ${uniqueDays}\\n`;
+                    outputText += `总记录数: ${result.data.length}\\n`;
+                    outputText += `日期跨度: ${dateSpan} 天\\n`;
+                    outputText += `平均每天记录数: ${(result.data.length / uniqueDays).toFixed(2)}\\n\\n`;
+
+                    if (uniqueDays === result.data.length && dateSpan >= result.data.length * 0.8) {
+                        outputText += `✅ 结论: 这是日线数据！`;
+                        output.innerHTML = `<span class="success">${outputText}</span>`;
+                    } else if (uniqueDays < result.data.length * 0.5) {
+                        outputText += `❌ 结论: 这不是日线数据！`;
+                        output.innerHTML = `<span class="error">${outputText}</span>`;
+                    } else {
+                        outputText += `⚠️ 结论: 数据类型不明确`;
+                        output.innerHTML = `<span class="warning">${outputText}</span>`;
+                    }
+                } else {
+                    output.innerHTML = `<span class="error">${outputText}没有数据！</span>`;
+                }
+            } catch (error) {
+                output.innerHTML = `<span class="error">错误: ${error.message}</span>`;
+            }
+        }
+
+        async function testMonthlyAPI() {
+            const output = document.getElementById('output');
+            output.textContent = '正在测试月K API...';
+
+            try {
+                const response = await fetch(`${API_BASE}/api/v1/data/unified`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        data_type: 'kline',
+                        symbols: ['600519.SH'],
+                        params: { period: 'month', count: 12 }
+                    })
+                });
+
+                const result = await response.json();
+
+                let outputText = `=== 月K API 测试结果 ===\\n\\n`;
+                outputText += `Code: ${result.code}\\n`;
+                outputText += `Data count: ${result.data?.length || 0}\\n`;
+                outputText += `Source: ${result.metadata?.source || 'unknown'}\\n\\n`;
+
+                if (result.data && result.data.length > 0) {
+                    outputText += `数据:\\n`;
+                    result.data.forEach((item, i) => {
+                        outputText += `  ${i+1}. ${item.time}  C=${item.close.toFixed(2)}\\n`;
+                    });
+
+                    // 分析月份
+                    const months = result.data.map(d => d.time.slice(0, 7));
+                    const uniqueMonths = new Set(months).size;
+
+                    outputText += `\\n唯一月份数: ${uniqueMonths}\\n`;
+                    outputText += `总记录数: ${result.data.length}\\n`;
+                    outputText += `结论: ${uniqueMonths === result.data.length ? '✅ 月线数据' : '❌ 不是月线数据'}`;
+                }
+
+                output.innerHTML = `<span class="success">${outputText}</span>`;
+            } catch (error) {
+                output.innerHTML = `<span class="error">错误: ${error.message}</span>`;
+            }
+        }
+
+        function checkCache() {
+            const output = document.getElementById('output');
+            try {
+                const cacheStr = localStorage.getItem('myquant_cache');
+                if (!cacheStr) {
+                    output.innerHTML = '<span class="success">✓ 没有缓存数据</span>';
+                    return;
+                }
+
+                const cache = JSON.parse(cacheStr);
+                const keys = cache.map(([key]) => key);
+
+                let outputText = `缓存项数量: ${cache.length}\\n\\n`;
+
+                // 查找 K线缓存
+                const klineKeys = keys.filter(k => k.includes('kline'));
+                if (klineKeys.length > 0) {
+                    outputText += `K线缓存项:\\n`;
+                    klineKeys.forEach(key => {
+                        const item = cache.find(([k]) => k === key);
+                        const dataCount = item[1].data?.data?.length || 'N/A';
+                        const source = item[1].data?.metadata?.source || 'unknown';
+                        outputText += `  ${key}: ${dataCount}条, source=${source}\\n`;
+                    });
+                } else {
+                    outputText += `没有 K线缓存项\\n`;
+                }
+
+                output.innerHTML = `<span class="warning">${outputText}</span>`;
+            } catch (error) {
+                output.innerHTML = `<span class="error">读取缓存失败: ${error.message}</span>`;
+            }
+        }
+
+        function clearAllCache() {
+            const output = document.getElementById('output');
+            localStorage.removeItem('myquant_cache');
+            output.innerHTML = '<span class="success">✓ 已清除缓存！请重新测试API。</span>';
+        }
+    </script>
+</body>
+</html>

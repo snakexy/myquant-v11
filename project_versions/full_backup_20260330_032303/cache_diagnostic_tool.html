@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>缓存诊断工具</title>
+    <style>
+        body { font-family: monospace; padding: 20px; background: #1e1e1e; color: #d4d4d4; }
+        button { background: #0e639c; color: white; border: none; padding: 10px 20px; cursor: pointer; margin: 5px 5px 5px 0; }
+        button:hover { background: #1177bb; }
+        button.danger { background: #c94022; }
+        button.danger:hover { background: #d13a2b; }
+        pre { background: #252526; padding: 10px; overflow-x: auto; max-height: 400px; }
+        .success { color: #4ec9b0; }
+        .error { color: #f48771; }
+        .warning { color: #dcdcaa; }
+        .info { color: #569cd6; }
+    </style>
+</head>
+<body>
+    <h2>🔍 缓存诊断工具</h2>
+
+    <div>
+        <button onclick="analyzeCache()">分析缓存</button>
+        <button onclick="clearSpecificCache()" class="danger">清除K线缓存</button>
+        <button onclick="clearAllCache()" class="danger">清除所有缓存</button>
+        <button onclick="reloadPage()">刷新页面</button>
+    </div>
+
+    <pre id="output">点击按钮开始...</pre>
+
+    <script>
+        const API_BASE = 'http://localhost:8000';
+
+        async function analyzeCache() {
+            const output = document.getElementById('output');
+            let result = '';
+
+            // 1. 检查 localStorage 缓存
+            const cacheStr = localStorage.getItem('myquant_cache');
+            if (!cacheStr) {
+                result += '✓ localStorage 中没有 myquant_cache\n\n';
+            } else {
+                try {
+                    const cache = JSON.parse(cacheStr);
+                    result += `⚠️ localStorage 中找到 ${cache.length} 个缓存项\n\n`;
+
+                    // 查找 600519.SH 相关的缓存
+                    const relevantCache = cache.filter(([key]) =>
+                        key.includes('600519') || key.includes('kline')
+                    );
+
+                    if (relevantCache.length > 0) {
+                        result += '相关的K线缓存项:\n';
+                        relevantCache.forEach(([key, item]) => {
+                            const data = item.data;
+                            const count = data?.data?.length || 0;
+                            const source = data?.metadata?.source || 'unknown';
+                            const period = key.match(/kline_\w+_(\w+)/)?.[1] || 'unknown';
+
+                            // 分析数据是否是月线
+                            let dataAnalysis = '';
+                            if (count > 0 && data?.data) {
+                                const dates = data.data.map(d => d.time?.slice(0, 7)); // YYYY-MM
+                                const uniqueMonths = new Set(dates).size;
+                                const ratio = count / uniqueMonths;
+                                dataAnalysis = ` (月线比例: ${ratio.toFixed(2)})`;
+                            }
+
+                            result += `  - ${key}\n`;
+                            result += `    周期: ${period}, 数量: ${count}, 来源: ${source}${dataAnalysis}\n`;
+                        });
+                    }
+                } catch (e) {
+                    result += `❌ 解析缓存失败: ${e.message}\n`;
+                }
+            }
+
+            // 2. 实际调用 API 检查
+            result += '\n=== 实际 API 测试 ===\n\n';
+
+            try {
+                // 测试日线
+                result += '测试日K API...\n';
+                const dailyResponse = await fetch(`${API_BASE}/api/v1/data/unified`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        data_type: 'kline',
+                        symbols: ['600519.SH'],
+                        params: { period: 'day', count: 10 }
+                    })
+                });
+                const dailyData = await dailyResponse.json();
+
+                if (dailyData.data && dailyData.data.length > 0) {
+                    const dates = dailyData.data.map(d => d.time.slice(0, 10));
+                    const uniqueDays = new Set(dates).size;
+                    result += `  返回: ${dailyData.data.length} 条, 唯一日期: ${uniqueDays}\n`;
+                    result += `  前5条: ${dailyData.data.slice(0, 5).map(d => d.time.slice(0, 10)).join(', ')}\n`;
+
+                    if (uniqueDays === dailyData.data.length) {
+                        result += `  ✅ API 返回的是日线数据\n\n`;
+                    } else {
+                        result += `  ❌ API 返回的不是日线数据！\n\n`;
+                    }
+                }
+
+                // 测试月线
+                result += '测试月K API...\n';
+                const monthlyResponse = await fetch(`${API_BASE}/api/v1/data/unified`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        data_type: 'kline',
+                        symbols: ['600519.SH'],
+                        params: { period: 'month', count: 6 }
+                    })
+                });
+                const monthlyData = await monthlyResponse.json();
+
+                if (monthlyData.data && monthlyData.data.length > 0) {
+                    const months = monthlyData.data.map(d => d.time.slice(0, 7));
+                    const uniqueMonths = new Set(months).size;
+                    result += `  返回: ${monthlyData.data.length} 条, 唯一月份: ${uniqueMonths}\n`;
+                    result += `  前3条: ${monthlyData.data.slice(0, 3).map(d => d.time.slice(0, 10)).join(', ')}\n`;
+                    result += `  ✅ API 返回的是月线数据\n\n`;
+                }
+
+            } catch (e) {
+                result += `❌ API 测试失败: ${e.message}\n\n`;
+            }
+
+            // 3. 结论
+            result += '=== 结论 ===\n';
+            result += '如果 API 返回日线数据，但前端显示月线，说明:\n';
+            result += '  1. 可能是缓存问题 - 请点击"清除K线缓存"\n';
+            result += '  2. 可能是前端组件内部状态问题 - 请刷新页面\n';
+            result += '  3. 可能是浏览器 HTTP 缓存 - 请使用 Ctrl+F5 强制刷新\n';
+
+            output.innerHTML = `<span class="info">${result}</span>`;
+        }
+
+        function clearSpecificCache() {
+            const output = document.getElementById('output');
+            let result = '';
+
+            const cacheStr = localStorage.getItem('myquant_cache');
+            if (!cacheStr) {
+                result = '没有缓存需要清除';
+            } else {
+                try {
+                    const cache = JSON.parse(cacheStr);
+                    const originalLength = cache.length;
+
+                    // 只清除 K线相关缓存
+                    const filteredCache = cache.filter(([key]) => !key.includes('kline'));
+
+                    if (filteredCache.length < originalLength) {
+                        localStorage.setItem('myquant_cache', JSON.stringify(filteredCache));
+                        result = `✓ 已清除 ${originalLength - filteredCache.length} 个 K线缓存项\n`;
+                        result += `剩余缓存项: ${filteredCache.length}\n`;
+                        result += '\n请点击"刷新页面"重新加载！';
+                    } else {
+                        result = '没有找到 K线缓存项';
+                    }
+                } catch (e) {
+                    result = `❌ 清除失败: ${e.message}`;
+                }
+            }
+
+            output.innerHTML = `<span class="success">${result}</span>`;
+        }
+
+        function clearAllCache() {
+            const output = document.getElementById('output');
+            localStorage.removeItem('myquant_cache');
+            output.innerHTML = '<span class="success">✓ 已清除所有缓存！\n\n请点击"刷新页面"重新加载！</span>';
+        }
+
+        function reloadPage() {
+            window.location.reload();
+        }
+    </script>
+</body>
+</html>

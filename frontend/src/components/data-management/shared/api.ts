@@ -15,6 +15,7 @@ import type {
 } from './types'
 import { API_ENDPOINTS } from './constants'
 import { API_BASE_URL } from '@/config/api'
+import { getBoardList, getBoardComponents, getBoardKline } from '@/api/market'
 
 // ==================== 基础请求函数 ====================
 
@@ -198,12 +199,10 @@ export async function getConversionProgress(taskId: string): Promise<ApiResponse
  * const boards = await getBoardList('一级行业', true)
  */
 export async function fetchSectorList(): Promise<ApiResponse<any>> {
-  // 重定向到新的统一API
+  // 使用静态导入的 getBoardList
   try {
-    const { getBoardList } = await import('@/api/market')
     return await getBoardList()
   } catch (error) {
-    // 如果导入失败，使用旧版API（向后兼容）
     console.warn('建议使用 @/api/market 的 getBoardList 替代 fetchSectorList')
     return get<any>('/sector/list')
   }
@@ -220,13 +219,10 @@ export async function fetchSectorList(): Promise<ApiResponse<any>> {
 export async function fetchSectorStocks(
   sectorName: string
 ): Promise<ApiResponse<any>> {
-  // 尝试使用新的统一API
+  // 使用静态导入的 getBoardComponents
   try {
-    const { getBoardComponents } = await import('@/api/market')
-    // 注意：sectorName 可能是名称而非代码，需要转换
     return await getBoardComponents(sectorName, 100)
   } catch (error) {
-    // 降级到旧版API
     return post<any>('/sector/stocks', {
       sector_name: sectorName
     })
@@ -296,7 +292,7 @@ export async function getKlineData(
   // 检测是否为板块代码（8开头）
   if (code.startsWith('8')) {
     try {
-      const { getBoardKline } = await import('@/api/market')
+      // 使用静态导入的 getBoardKline
       const response = await getBoardKline(code, startDate, endDate, 500)
 
       // 转换返回格式

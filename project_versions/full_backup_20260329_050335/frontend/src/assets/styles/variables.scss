@@ -1,0 +1,235 @@
+// 颜色系统
+:root {
+  // 主色板
+  --primary: #2563eb;      // 主蓝色 - 核心操作
+  --secondary: #2962ff;    // 辅助蓝色 - AI功能
+  --success: #10b981;      // 成功绿色 - 完成状态
+  --warning: #f59e0b;      // 警告橙色 - 运行中
+  --danger: #ef4444;       // 错误红色 - 警报
+  --info: #3b82f6;         // 信息蓝 - 提示
+
+  // 添加别名
+  --primary-color: #2563eb;
+  --secondary-color: #2962ff;
+  --success-color: #10b981;
+  --warning-color: #f59e0b;
+  --danger-color: #ef4444;
+  --info-color: #3b82f6;
+  --primary-hover: #1d4ed8;
+
+  // 数据流颜色
+  --data-input: #00ff88;    // 数据输入 - 亮绿
+  --data-process: #ffaa00;  // 数据处理 - 橙色
+  --data-output: #0088ff;   // 数据输出 - 亮蓝
+  --data-error: #ff0066;    // 错误 - 亮红
+
+  // 中国股市颜色规范（红涨绿跌）
+  --market-rise: #ef4444;      // 红色（上涨）
+  --market-fall: #10b981;      // 绿色（下跌）
+  --market-neutral: #6b7280;   // 灰色（平盘）
+
+  // TradingView颜色规范（绿涨红跌）
+  --tv-rise: #26A69A;          // TradingView绿色（上涨）
+  --tv-fall: #EF5350;          // TradingView红色（下跌）
+  --tv-neutral: #787B86;       // TradingView灰色（平盘）
+  --tv-brand: #2962FF;         // TradingView品牌蓝
+
+  // TradingView背景色
+  --tv-bg-primary: #131722;      // 主背景
+  --tv-bg-secondary: #1E222D;    // 次级背景
+  --tv-bg-tertiary: #2A2E39;     // 卡片背景
+  --tv-bg-hover: #363C45;        // 悬停背景
+
+  // TradingView文字色
+  --tv-text-primary: #B2B5BE;     // 主文字
+  --tv-text-secondary: #787B86;   // 次级文字
+  --tv-text-tertiary: #575E6A;    // 三级文字
+
+  // TradingView边框色
+  --tv-border: #2A2E39;
+  --tv-border-light: #363C45;
+
+  // 风险等级颜色（绿低黄中红高）
+  --risk-low: #10b981;         // 绿色（低风险）
+  --risk-medium: #f59e0b;      // 黄色（中风险）
+  --risk-high: #ef4444;        // 红色（高风险）
+
+  // 可行性等级颜色（红高黄中绿低）
+  --feasibility-high: #ef4444;   // 红色（高可行性）
+  --feasibility-medium: #f59e0b; // 黄色（中可行性）
+  --feasibility-low: #10b981;    // 绿色（低可行性）
+
+  // 评级颜色映射（5级）
+  --rating-excellent: #ef4444;   // 优秀（红）
+  --rating-good: #f97316;        // 良好（橙）
+  --rating-average: #f59e0b;     // 平均（黄）
+  --rating-poor: #10b981;        // 较差（绿）
+  --rating-bad: #06b6d4;         // 差（青）
+
+  // 功能卡片专用颜色
+  --data-management: #2563eb;    // 数据管理 - 蓝色
+  --backtest: #2962ff;          // 回测功能 - 蓝色
+  --strategy: #10b981;          // 策略生成 - 绿色
+  --trading: #f59e0b;          // 实盘交易 - 橙色
+  --monitoring: #06b6d4;        // 系统监控 - 青色
+  --model-management: #ec4899;   // 模型管理 - 粉色
+
+  // 背景色
+  --bg-deep: #0f0f23;          // 深色背景
+  --bg-surface: #1a1a2e;        // 表面背景
+  --bg-elevated: #252530;      // 抬升背景
+  --bg-overlay: rgba(0, 0, 0, 0.8); // 遮罩背景
+  
+  // 添加别名
+  --surface-color: #1a1a2e;     // 表面颜色别名
+  --bg-color: #252530;          // 背景颜色别名
+
+  // 文本色
+  --text-primary: #f8fafc;       // 主要文本
+  --text-secondary: #cbd5e1;     // 次要文本
+  --text-disabled: #64748b;      // 禁用文本
+  --text-inverse: #1a1a2e;       // 反色文本
+
+  // 边框和分割线
+  --border-color: #334155;        // 边框色
+  --border-light: #475569;       // 浅边框
+  --divider-color: #334155;      // 分割线色
+
+  // 阴影
+  --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.1);
+  --shadow-md: 0 4px 8px rgba(0, 0, 0, 0.15);
+  --shadow-lg: 0 8px 16px rgba(0, 0, 0, 0.2);
+  --shadow-glow: 0 0 20px rgba(0, 0, 0, 0.3);
+
+  // 玻璃拟态效果
+  --glass-bg: rgba(255, 255, 255, 0.05);
+  --glass-border: rgba(255, 255, 255, 0.1);
+  --glass-blur: 10px;
+
+  // 霓虹光效果
+  --neon-glow: 0 0 10px currentColor, 0 0 20px currentColor, 0 0 30px currentColor;
+  --neon-border: 0 0 5px currentColor;
+
+  // ========================================
+  // 统一间距系统 (4px 基准单位)
+  // ========================================
+  // 基础间距（所有组件使用这些变量）
+  --spacing-0: 0;
+  --spacing-1: 4px;     // 极小间距 - 图标与文字、紧凑元素
+  --spacing-2: 8px;     // 小间距 - 组件内部元素、按钮内边距
+  --spacing-3: 12px;    // 中小间距 - 列表项、表单字段间距
+  --spacing-4: 16px;    // 标准间距 - 组件间默认间距、卡片内边距
+  --spacing-5: 20px;    // 中大间距 - 卡片内边距、区块间距
+  --spacing-6: 24px;    // 大间距 - 页面区块间、页面内边距
+  --spacing-8: 32px;    // 超大间距 - 大区块分隔
+  --spacing-10: 40px;   // 特大间距 - 页面顶部/底部边距
+  --spacing-12: 48px;   // 巨大间距 - 特殊场景
+
+  // 语义化间距别名
+  --spacing-xs: var(--spacing-1);    // 4px
+  --spacing-sm: var(--spacing-2);    // 8px
+  --spacing-md: var(--spacing-4);    // 16px
+  --spacing-lg: var(--spacing-6);    // 24px
+  --spacing-xl: var(--spacing-8);    // 32px
+
+  // ========================================
+  // 组件专用间距规范
+  // ========================================
+  // 卡片内边距
+  --card-padding: var(--spacing-5);       // 20px - 卡片标准内边距
+  --card-padding-sm: var(--spacing-4);    // 16px - 小卡片/紧凑卡片
+  --card-padding-lg: var(--spacing-6);    // 24px - 大卡片
+
+  // 组件间距 (gap)
+  --gap-xs: var(--spacing-1);    // 4px - 紧密排列的元素
+  --gap-sm: var(--spacing-2);    // 8px - 按钮组、标签组
+  --gap-md: var(--spacing-4);    // 16px - 卡片网格、表单行
+  --gap-lg: var(--spacing-5);    // 20px - 区块分隔
+  --gap-xl: var(--spacing-6);    // 24px - 大区块分隔
+
+  // 元素底部间距
+  --margin-section: var(--spacing-4);     // 16px - 区块底部间距
+  --margin-block: var(--spacing-6);       // 24px - 大区块底部间距
+  --margin-page-bottom: var(--spacing-8); // 32px - 页面底部间距
+
+  // ========================================
+  // 侧边栏尺寸标准
+  // ========================================
+  --sidebar-width: 280px;           // 标准侧边栏宽度
+  --sidebar-width-collapsed: 64px;  // 折叠后宽度
+  --sidebar-width-mini: 48px;       // 迷你模式宽度（仅图标）
+  --right-sidebar-width: 280px;     // 右侧边栏宽度
+
+  // ========================================
+  // 响应式断点
+  // ========================================
+  --breakpoint-xs: 480px;    // 超小屏幕（手机竖屏）
+  --breakpoint-sm: 640px;    // 小屏幕（手机横屏）
+  --breakpoint-md: 768px;    // 中等屏幕（平板竖屏）
+  --breakpoint-lg: 1024px;   // 大屏幕（平板横屏/小型笔记本）
+  --breakpoint-xl: 1280px;   // 超大屏幕（桌面）
+  --breakpoint-2xl: 1536px;  // 特大屏幕（大桌面）
+
+  // ========================================
+  // 导航和头部高度
+  // ========================================
+  --header-height: 64px;      // 顶部导航栏高度
+  --footer-height: 48px;      // 底部状态栏高度
+  --tab-height: 40px;         // 标签栏高度
+
+  // 字体系统
+  --font-family-primary: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-family-mono: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+
+  --font-size-xs: 12px;    // 辅助文本
+  --font-size-sm: 14px;    // 正文
+  --font-size-base: 16px;  // 标题
+  --font-size-lg: 20px;    // 大标题
+  --font-size-xl: 24px;    // 特大标题
+
+  // 圆角
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --border-radius-sm: 4px;  // 添加别名
+  --border-radius-base: 8px;  // 添加别名
+  --border-radius-lg: 12px;  // 添加别名
+
+  // 动画
+  --transition-fast: 150ms ease-out;
+  --transition-normal: 300ms ease-in-out;
+  --transition-slow: 500ms ease;
+  --transition-duration-base: 300ms ease-in-out;  // 添加别名
+
+  // Z-index层级
+  --z-dropdown: 1000;
+  --z-sticky: 1020;
+  --z-fixed: 1030;
+  --z-modal-backdrop: 1040;
+  --z-modal: 1050;
+  --z-notification: 1060;
+  --z-tooltip: 1070;
+}
+
+// 暗色主题变量
+[data-theme="dark"] {
+  --bg-deep: #0a0a0f;
+  --bg-surface: #1a1a2e;
+  --bg-elevated: #252530;
+  --text-primary: #f8fafc;
+  --text-secondary: #cbd5e1;
+  --border-color: #334155;
+  --divider-color: #334155;
+}
+
+// 亮色主题变量
+[data-theme="light"] {
+  --bg-deep: #ffffff;
+  --bg-surface: #f8fafc;
+  --bg-elevated: #ffffff;
+  --text-primary: #1a202c;
+  --text-secondary: #4b5563;
+  --border-color: #e2e8f0;
+  --divider-color: #e2e8f0;
+}

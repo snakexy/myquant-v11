@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>K线数据诊断</title>
+    <style>
+        body { font-family: monospace; padding: 20px; background: #1e1e1e; color: #d4d4d4; }
+        h2 { color: #4ec9b0; }
+        .section { background: #252526; padding: 15px; margin: 10px 0; border-radius: 5px; }
+        .success { color: #4ec9b0; }
+        .error { color: #f48771; }
+        .warning { color: #dcdcaa; }
+        pre { background: #1e1e1e; padding: 10px; overflow-x: auto; }
+        button { background: #0e639c; color: white; border: none; padding: 10px 20px; cursor: pointer; margin: 5px; }
+        button:hover { background: #1177bb; }
+    </style>
+</head>
+<body>
+    <h2>📊 K线数据诊断工具</h2>
+
+    <div class="section">
+        <h3>1. 测试后端 API (period=day)</h3>
+        <button onclick="testDayKline()">测试日K数据</button>
+        <pre id="dayResult">点击按钮测试...</pre>
+    </div>
+
+    <div class="section">
+        <h3>2. 测试后端 API (period=month)</h3>
+        <button onclick="testMonthKline()">测试月K数据</button>
+        <pre id="monthResult">点击按钮测试...</pre>
+    </div>
+
+    <div class="section">
+        <h3>3. 检查前端缓存</h3>
+        <button onclick="checkCache()">检查缓存状态</button>
+        <pre id="cacheResult">点击按钮检查...</pre>
+    </div>
+
+    <div class="section">
+        <h3>4. 清除所有缓存</h3>
+        <button onclick="clearAllCache()" style="background: #c94022;">清除所有缓存</button>
+        <pre id="clearResult">点击按钮清除...</pre>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8000';
+
+        async function testDayKline() {
+            const result = document.getElementById('dayResult');
+            result.textContent = '正在测试...';
+
+            try {
+                const response = await fetch(`${API_BASE}/api/v1/data/unified`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        data_type: 'kline',
+                        symbols: ['600519.SH'],
+                        params: { period: 'day', count: 10 }
+                    })
+                });
+
+                const data = await response.json();
+
+                let output = `Code: ${data.code}\n`;
+                output += `Source: ${data.metadata?.source || 'unknown'}\n`;
+                output += `Data count: ${data.data?.length || 0}\n\n`;
+
+                if (data.data && data.data.length > 0) {
+                    output += '前5条数据:\n';
+                    data.data.slice(0, 5).forEach((item, i) => {
+                        output += `  ${i+1}. ${item.time}: close=${item.close.toFixed(2)}, vol=${item.volume.toFixed(0)}\n`;
+                    });
+
+                    // 分析数据类型
+                    const dates = data.data.map(d => d.time.slice(0, 10));
+                    const uniqueDays = new Set(dates).size;
+                    const isDayK = uniqueDays > data.data.length * 0.5;
+
+                    output += `\n分析: ${uniqueDays}个不同日期\n`;
+                    output += `结论: ${isDayK ? '✅ 日K数据' : '❌ 不是日K数据'}`;
+                }
+
+                result.innerHTML = `<span class="${data.code === 200 ? 'success' : 'error'}">${output}</span>`;
+            } catch (error) {
+                result.innerHTML = `<span class="error">错误: ${error.message}</span>`;
+            }
+        }
+
+        async function testMonthKline() {
+            const result = document.getElementById('monthResult');
+            result.textContent = '正在测试...';
+
+            try {
+                const response = await fetch(`${API_BASE}/api/v1/data/unified`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        data_type: 'kline',
+                        symbols: ['600519.SH'],
+                        params: { period: 'month', count: 5 }
+                    })
+                });
+
+                const data = await response.json();
+
+                let output = `Code: ${data.code}\n`;
+                output += `Source: ${data.metadata?.source || 'unknown'}\n`;
+                output += `Data count: ${data.data?.length || 0}\n\n`;
+
+                if (data.data && data.data.length > 0) {
+                    output += '数据:\n';
+                    data.data.forEach((item, i) => {
+                        output += `  ${i+1}. ${item.time}: close=${item.close.toFixed(2)}, vol=${item.volume.toFixed(0)}\n`;
+                    });
+                }
+
+                result.innerHTML = `<span class="${data.code === 200 ? 'success' : 'error'}">${output}</span>`;
+            } catch (error) {
+                result.innerHTML = `<span class="error">错误: ${error.message}</span>`;
+            }
+        }
+
+        function checkCache() {
+            const result = document.getElementById('cacheResult');
+            try {
+                const cacheStr = localStorage.getItem('myquant_cache');
+                if (!cacheStr) {
+                    result.innerHTML = '<span class="success">✅ 没有缓存数据</span>';
+                    return;
+                }
+
+                const cache = JSON.parse(cacheStr);
+                const keys = Object.keys(cache);
+
+                let output = `缓存项数量: ${keys.length}\n\n`;
+                output += 'K线相关缓存:\n';
+
+                const klineKeys = keys.filter(k => k.includes('kline'));
+                if (klineKeys.length === 0) {
+                    output += '  (无)\n';
+                } else {
+                    klineKeys.forEach(key => {
+                        const item = cache[key];
+                        const dataCount = item.data?.data?.length || 'N/A';
+                        output += `  - ${key}: ${dataCount}条数据\n`;
+                    });
+                }
+
+                output += `\n总共 ${keys.length} 个缓存项，建议定期清除`;
+
+                result.innerHTML = `<span class="warning">${output}</span>`;
+            } catch (error) {
+                result.innerHTML = `<span class="error">读取缓存失败: ${error.message}</span>`;
+            }
+        }
+
+        function clearAllCache() {
+            const result = document.getElementById('clearResult');
+            try {
+                localStorage.removeItem('myquant_cache');
+                result.innerHTML = '<span class="success">✅ 已清除所有缓存！请刷新页面重新加载。</span>';
+            } catch (error) {
+                result.innerHTML = `<span class="error">清除失败: ${error.message}</span>`;
+            }
+        }
+    </script>
+</body>
+</html>

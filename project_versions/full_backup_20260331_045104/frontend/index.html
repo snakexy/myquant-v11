@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark">
+    <!-- Font Awesome Icons - 使用多个CDN源确保加载 -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
+          onerror="this.href='https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.5.1/css/all.min.css'">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.5.1/css/all.min.css" media="none" onload="if(media!='all')media='all'">
+    <title>MyQuant v9.0 - 智能量化交易平台</title>
+    <style>
+      /* 全局强制深色模式 */
+      :root {
+        color-scheme: dark;
+      }
+      html, body {
+        color-scheme: dark !important;
+      }
+      /* 覆盖 Element Plus 的默认样式 - 统一边框颜色 */
+      .el-input__wrapper,
+      .el-select .el-input__wrapper,
+      .el-date-editor .el-input__wrapper,
+      .el-select--small .el-input__wrapper,
+      .el-date-editor--small .el-input__wrapper,
+      .el-tooltip__trigger,
+      .el-tooltip__trigger.el-input__wrapper {
+        background-color: rgba(102, 126, 234, 0.08) !important;
+        box-shadow: none !important;
+        border: 1px solid rgba(255, 255, 255, 0.15) !important;
+        color-scheme: dark !important;
+      }
+      .el-input__wrapper:hover,
+      .el-select .el-input__wrapper:hover,
+      .el-date-editor .el-input__wrapper:hover,
+      .el-tooltip__trigger:hover,
+      .el-tooltip__trigger.el-input__wrapper:hover {
+        background-color: rgba(102, 126, 234, 0.08) !important;
+        border-color: rgba(255, 255, 255, 0.2) !important;
+      }
+      .el-input__wrapper.is-focus,
+      .el-select .el-input__wrapper.is-focus,
+      .el-date-editor .el-input__wrapper.is-focus,
+      .el-tooltip__trigger.is-focus,
+      .el-tooltip__trigger.el-input__wrapper.is-focus {
+        background-color: rgba(102, 126, 234, 0.08) !important;
+        border-color: #2962ff !important;
+      }
+      /* Slider tooltip 样式 - 最高优先级 */
+      .slider-tooltip-dark.el-popper,
+      .el-popper.slider-tooltip-dark,
+      body > .slider-tooltip-dark,
+      div.slider-tooltip-dark.el-popper,
+      #el-popper-container-0 .slider-tooltip-dark,
+      div[id^="el-popper-container"] .slider-tooltip-dark.el-popper {
+        background-color: transparent !important;
+        background: transparent !important;
+        border: none !important;
+        box-shadow: none !important;
+      }
+      .slider-tooltip-dark.el-popper span,
+      .el-popper.slider-tooltip-dark span,
+      body > .slider-tooltip-dark span,
+      #el-popper-container-0 .slider-tooltip-dark span,
+      div[id^="el-popper-container"] .slider-tooltip-dark span {
+        color: #2962ff !important;
+        font-size: 24px !important;
+        font-weight: bold !important;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

@@ -182,7 +182,7 @@ interface Props {
 
 const props = withDefaults(defineProps<Props>(), {
   selectedStock: '',
-  miniChartsData: () => ({})
+  miniChartsData: undefined
 })
 
 const emit = defineEmits<{

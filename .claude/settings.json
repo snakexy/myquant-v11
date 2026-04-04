@@ -1,7 +1,5 @@
 {
-  
-  
-   "permissions": {
+  "permissions": {
     "allow": [
       "Bash",
       "Read",
@@ -23,7 +21,26 @@
         "hooks": [
           {
             "type": "command",
-            "command": "echo '{\"hookSpecificOutput\": {\"hookEventName\": \"PreToolUse\", \"additionalContext\": \"⚠️ 写代码前必须确认：(1)已用Read读取相关文件 (2)理解现有代码结构 (3)复杂任务已用EnterPlanMode制定计划并经用户确认。未完成以上步骤则停止，先读文件。\"}}'"
+            "command": "echo '{\"hookSpecificOutput\": {\"hookEventName\": \"PreToolUse\", \"additionalContext\": \"⚠️ 改代码前必读规则：\\n→ 架构约束: .claude/rules/architecture.md\\n→ 代码风格: .claude/rules/coding-style.md\\n→ 测试规范: .claude/rules/testing.md\\n\\n改任何文件前，先问用户。\"}}'"
+          },
+          {
+            "type": "command",
+            "command": "powershell -ExecutionPolicy Bypass -File .claude/scripts/plan-check.ps1 -File \"$FILE\" -Tool \"$TOOL\""
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell -ExecutionPolicy Bypass -File .claude/scripts/check-file-scope.ps1 -File \"$FILE\""
+          },
+          {
+            "type": "command",
+            "command": "powershell -ExecutionPolicy Bypass -File .claude/scripts/check-architecture.ps1"
           }
         ]
       }

@@ -37,12 +37,195 @@
               >
                 {{ isZh ? '前复权' : 'Adj' }}
               </button>
+              <div class="toolbar-divider-v"></div>
+              <!-- 价格预警工具按钮 -->
+              <button
+                :class="['timeframe-btn', { active: priceLineToolActive }]"
+                @click="togglePriceLineTool"
+                @contextmenu="showPriceLineContextMenu"
+                :title="priceLineToolActive ? '点击图表添加价格线（再次按钮退出）' : '左键：画线工具 / 右键：管理价格线'"
+              >
+                ✏️
+              </button>
+            </div>
+          </div>
+
+          <!-- 价格线右键菜单 -->
+          <teleport to="body">
+            <div
+              v-if="showContextMenu"
+              class="price-line-context-menu"
+              :style="{ left: contextMenuPosition.x + 'px', top: contextMenuPosition.y + 'px' }"
+              @click.stop
+            >
+              <div class="context-menu-header">价格线管理</div>
+              <div class="context-menu-content">
+                <div class="price-alert-input-row">
+                  <input
+                    v-model.number="priceAlertInput"
+                    type="number"
+                    step="0.01"
+                    placeholder="输入目标价格"
+                    class="price-alert-input"
+                    @keyup.enter="addPriceAlertFromMenu"
+                  />
+                  <button class="price-alert-add-btn" @click="addPriceAlertFromMenu">添加</button>
+                </div>
+                <div class="price-alert-list">
+                  <div
+                    v-for="alert in getPriceAlerts()"
+                    :key="alert.id"
+                    class="price-alert-item"
+                  >
+                    <span class="price-alert-price">{{ alert.price.toFixed(2) }}</span>
+                    <button class="price-alert-remove-btn" @click="removePriceAlert(alert.id); closeContextMenu()">&times;</button>
+                  </div>
+                  <div v-if="getPriceAlerts().length === 0" class="price-alert-empty">
+                    暂无价格提醒
+                  </div>
+                </div>
+                <button v-if="getPriceAlerts().length > 0" class="price-alert-clear-btn" @click="clearAllPriceAlerts(); closeContextMenu()">
+                  清除全部
+                </button>
+              </div>
+            </div>
+            <div v-if="showContextMenu" class="context-menu-overlay" @click="closeContextMenu"></div>
+          </teleport>
+
+          <!-- 价格预警面板 -->
+          <div v-if="showPriceAlertPanel" class="price-alert-panel">
+            <div class="price-alert-header">
+              <span>价格提醒</span>
+              <button class="price-alert-close" @click="showPriceAlertPanel = false">&times;</button>
+            </div>
+            <div class="price-alert-content">
+              <div class="price-alert-input-row">
+                <input
+                  v-model.number="priceAlertInput"
+                  type="number"
+                  step="0.01"
+                  placeholder="输入目标价格"
+                  class="price-alert-input"
+                  @keyup.enter="addPriceAlert"
+                />
+                <button class="price-alert-add-btn" @click="addPriceAlert">添加</button>
+              </div>
+              <div class="price-alert-list">
+                <div
+                  v-for="alert in getPriceAlerts()"
+                  :key="alert.id"
+                  class="price-alert-item"
+                >
+                  <span class="price-alert-price">{{ alert.price.toFixed(2) }}</span>
+                  <button class="price-alert-remove-btn" @click="removePriceAlert(alert.id)">&times;</button>
+                </div>
+                <div v-if="getPriceAlerts().length === 0" class="price-alert-empty">
+                  暂无价格提醒
+                </div>
+              </div>
+              <button v-if="getPriceAlerts().length > 0" class="price-alert-clear-btn" @click="clearAllPriceAlerts">
+                清除全部
+              </button>
             </div>
           </div>
 
           <!-- K线图容器（副图指标通过 chart.addPane() 在同一实例内开） -->
           <div class="chart-container">
             <div ref="chartContainer" class="kline-chart"></div>
+
+            <!-- 价格标签交互层（覆盖在原生标签上） -->
+            <div class="price-labels-left" :key="priceAlertsKey">
+              <div
+                v-for="alert in getPriceAlerts()"
+                :key="alert.id"
+                class="price-label-left"
+                :style="{ top: getAlertLabelPosition(alert.price) + 'px', background: alert.color }"
+                :class="{
+                  dragging: isDragging && draggedAlertId === alert.id,
+                  editing: editingAlertId === alert.id,
+                  'alert-flash': flashingAlerts.has(alert.id)
+                }"
+                :data-alert-id="alert.id"
+                @dblclick="startEditPriceAlert(alert.id, alert.price)"
+                @contextmenu.prevent="showLabelContextMenu(alert, $event)"
+                @mousedown="startDragAlert(alert.id, $event)"
+                @touchstart.prevent="startDragAlert(alert.id, $event)"
+              >
+                <input
+                  v-if="editingAlertId === alert.id"
+                  :ref="el => editingAlertId === alert.id && (editingInput = el)"
+                  v-model="editingAlertPrice"
+                  type="number"
+                  step="0.01"
+                  class="price-label-input"
+                  @blur="finishEditPriceAlert(alert.id)"
+                  @keyup.enter="finishEditPriceAlert(alert.id)"
+                  @keyup.esc="cancelEditPriceAlert"
+                  @mousedown.stop
+                />
+                <span v-else class="label-text">{{ alert.price.toFixed(2) }}</span>
+              </div>
+            </div>
+
+            <!-- 标签右键菜单 -->
+            <teleport to="body">
+              <div
+                v-if="labelContextMenu.show"
+                class="label-context-menu"
+                :style="{ left: labelContextMenu.x + 'px', top: labelContextMenu.y + 'px' }"
+                @click.stop
+              >
+                <div class="label-menu-header">价格线设置</div>
+                <div class="label-menu-content">
+                  <div class="label-menu-row">
+                    <label>目标价格：</label>
+                    <input
+                      v-model.number="labelContextMenu.currentPrice"
+                      type="number"
+                      step="0.01"
+                      class="label-menu-input"
+                    />
+                  </div>
+                  <div class="label-menu-row">
+                    <label>标签名称：</label>
+                    <input
+                      v-model="labelContextMenu.currentTitle"
+                      type="text"
+                      class="label-menu-input"
+                      placeholder="留空显示价格"
+                    />
+                  </div>
+                  <div class="label-menu-row">
+                    <label>线条颜色：</label>
+                    <div class="color-picker">
+                      <div
+                        v-for="color in presetColors"
+                        :key="color"
+                        class="color-option"
+                        :class="{ active: labelContextMenu.currentColor === color }"
+                        :style="{ background: color }"
+                        @click="labelContextMenu.currentColor = color"
+                      ></div>
+                    </div>
+                  </div>
+                  <div class="label-menu-row">
+                    <label class="checkbox-label">
+                      <input
+                        v-model="labelContextMenu.enableAlert"
+                        type="checkbox"
+                        class="checkbox-input"
+                      />
+                      <span>价格到达时闪烁提醒</span>
+                    </label>
+                  </div>
+                  <div class="label-menu-actions">
+                    <button class="label-menu-btn cancel" @click="closeLabelContextMenu">取消</button>
+                    <button class="label-menu-btn confirm" @click="applyLabelSettings">确定</button>
+                  </div>
+                </div>
+              </div>
+              <div v-if="labelContextMenu.show" class="context-menu-overlay" @click="closeLabelContextMenu"></div>
+            </teleport>
 
             <!-- OHLCV legend 悬浮在图表左上角 -->
             <div v-if="hoverBar" class="chart-legend-overlay">
@@ -244,6 +427,8 @@ import {
 import { createKlineWebSocket, type KlineBar } from '@/services/klineWebSocket'
 import { createKlineAggregator, type Timeframe } from '@/services/klineAggregator'
 import { initScheduler, getScheduler, type RefreshScheduler } from '@/utils/refreshScheduler'
+import { useKlineData } from '@/composables/useKlineData'
+import { UserPriceAlerts } from '@/components/charts/plugins'
 
 // 类型定义
 type ChartApi = any
@@ -292,6 +477,23 @@ const currentTimeframe = ref('1d')
 const appStore = useAppStore()
 const dataStore = useDataStore()
 const isZh = computed(() => appStore.language === 'zh')
+
+// ========== useKlineData: K线数据管理（新增，与现有逻辑并存）==========
+const {
+  bars: klineBars,
+  loading: klineLoading,
+  isConnected: klineWsConnected,
+  loadHistory: loadKlineHistory,
+  switchSymbol: switchKlineSymbol,
+  switchTimeframe: switchKlineTimeframe,
+  connect: connectKlineWsNew,
+  disconnect: disconnectKlineWsNew
+} = useKlineData(selectedStock, currentTimeframe, {
+  initialCount: 800,
+  adjustType: 'none',
+  enableWebSocket: true,
+  autoLoad: false
+})
 
 // 智能刷新调度器
 let scheduler: RefreshScheduler | null = null
@@ -361,9 +563,37 @@ const chartContainer = ref<HTMLElement>()
 let chart: ChartApi | null = null
 let candleSeries: SeriesApi | null = null
 let volumeSeries: SeriesApi | null = null
-let updateTimer: number | null = null
 let statusTimer: number | null = null
 let chartResizeObserver: ResizeObserver | null = null
+
+// ========== 价格预警相关 ==========
+let userPriceAlerts: UserPriceAlerts | null = null
+const showPriceAlertPanel = ref(false)
+const priceAlertInput = ref<number | null>(null)
+const priceLineToolActive = ref(false)
+const isDragging = ref(false)
+const draggedAlertId = ref<string | null>(null)
+const draggedAlertTempPrice = ref<number | null>(null)
+const editingAlertId = ref<string | null>(null)
+const editingAlertPrice = ref<string>('')
+const editingInput = ref<HTMLInputElement | null>(null)
+const priceAlertsList = ref<any[]>([])
+const priceAlertsKey = ref(0)
+const showContextMenu = ref(false)
+const contextMenuPosition = ref({ x: 0, y: 0 })
+const labelContextMenu = ref({
+  show: false,
+  alertId: '',
+  x: 0,
+  y: 0,
+  currentPrice: 0,
+  currentTitle: '',
+  currentColor: '',
+  enableAlert: false,
+})
+const triggeredAlerts = ref<Set<string>>(new Set())
+const flashingAlerts = ref<Set<string>>(new Set())
+let priceAlertRafId: number | null = null
 
 // WebSocket 实例（1分钟线实时推送）
 let klineWs: any = null  // KlineWebSocket
@@ -458,9 +688,20 @@ const preloadWatchlistKlines = async () => {
 
 // 迷你折线图：获取自选股的当天 1 分钟收盘价
 const loadMiniCharts = async () => {
-  const tasks = dataStore.watchlist.map(async (stock) => {
+  // 收集所有分组中的股票（去重）
+  const allStocksMap = new Map<string, string>()
+  for (const group of dataStore.watchlistGroups) {
+    for (const stock of group.stocks) {
+      allStocksMap.set(stock.symbol, stock.symbol)
+    }
+  }
+  const allStocks = Array.from(allStocksMap.values())
+
+  console.log(`[RealtimeQuotes] 加载迷你分时图: ${allStocks.length} 只股票`)
+
+  const tasks = allStocks.map(async (symbol) => {
     try {
-      const res = await fetchKline(stock.symbol, '1m', 240, 'none')  // 1分钟，全天240根
+      const res = await fetchKline(symbol, '1m', 240, 'none')  // 1分钟，全天240根
       if (res.data && res.data.length >= 5) {
         // 转换为带时间戳的数据，并按时间排序
         const barsWithTime = res.data
@@ -477,13 +718,19 @@ const loadMiniCharts = async () => {
 
         // 只保留当天开盘之后的数据
         const todayBars = barsWithTime.filter(b => b.time >= dayOpen)
-        miniChartsData.value[stock.symbol] = todayBars
+        miniChartsData.value[symbol] = todayBars
+        console.log(`[RealtimeQuotes] 迷你图加载成功: ${symbol}, ${todayBars.length} 条数据`)
       } else {
-        miniChartsData.value[stock.symbol] = []
+        miniChartsData.value[symbol] = []
+        console.log(`[RealtimeQuotes] 迷你图无数据: ${symbol}`)
       }
-    } catch {}
+    } catch (error) {
+      console.error(`[RealtimeQuotes] 迷你图加载失败: ${symbol}`, error)
+      miniChartsData.value[symbol] = []
+    }
   })
   await Promise.all(tasks)
+  console.log(`[RealtimeQuotes] 迷你图加载完成`)
 }
 
 // 将带时间戳的价格数组转为 SVG polyline points 字符串
@@ -679,6 +926,117 @@ const initChart = () => {
   })
   chartResizeObserver.observe(chartContainer.value)
 
+  // 初始化价格预警插件
+  if (!userPriceAlerts && candleSeries) {
+    userPriceAlerts = new UserPriceAlerts({
+      color: '#2196F3',
+      lineWidth: 1,
+      lineStyle: 2,
+      axisLabelVisible: true,
+    })
+    userPriceAlerts.attach(chart, candleSeries)
+    if (selectedStock.value) {
+      userPriceAlerts.loadFromStorage(selectedStock.value)
+      refreshPriceAlertsList()
+    }
+  }
+
+  // 点击图表 → 添加价格线或执行其他操作
+  chart.subscribeClick((param: any) => {
+    if (!param.point || !candleSeries || !chart) return
+
+    // 工具激活模式：直接添加价格线
+    if (priceLineToolActive.value) {
+      // 优先使用十字光标位置的K线收盘价
+      const bar = param.seriesData.get(candleSeries) as any
+      let price: number | null = null
+
+      if (bar && bar.close) {
+        // 检查鼠标Y坐标是否接近收盘价
+        const closeCoord = candleSeries.priceToCoordinate(bar.close)
+        const yDiff = Math.abs(closeCoord - param.point.y)
+
+        // 10像素内直接使用收盘价
+        if (yDiff < 10) {
+          price = parseFloat(bar.close.toFixed(2))
+        }
+      }
+
+      // 如果没有命中收盘价，使用精确计算
+      if (price === null) {
+        price = getPriceFromYCoordinate(param.point.y)
+      }
+
+      if (price === null) return
+
+      userPriceAlerts?.addAlert(price, {
+        title: `目标: ${price.toFixed(2)}`,
+      })
+      refreshPriceAlertsList()
+
+      // 保存到本地存储
+      if (selectedStock.value && userPriceAlerts) {
+        userPriceAlerts.saveToStorage(selectedStock.value)
+      }
+
+      console.log(`[价格预警] 已添加价格线: ${price.toFixed(2)}`)
+
+      // 添加后自动退出工具模式
+      priceLineToolActive.value = false
+      if (chartContainer.value) {
+        chartContainer.value.style.cursor = 'default'
+      }
+      return
+    }
+
+    // 普通 Shift+点击 添加价格线
+    if (param.shiftKey) {
+      const bar = param.seriesData.get(candleSeries) as any
+      let price: number | null = null
+
+      if (bar && bar.close) {
+        const closeCoord = candleSeries.priceToCoordinate(bar.close)
+        const yDiff = Math.abs(closeCoord - param.point.y)
+
+        if (yDiff < 10) {
+          price = parseFloat(bar.close.toFixed(2))
+        }
+      }
+
+      if (price === null) {
+        price = getPriceFromYCoordinate(param.point.y)
+      }
+
+      if (price === null) return
+
+      userPriceAlerts?.addAlert(price, {
+        title: `目标: ${price.toFixed(2)}`,
+      })
+      refreshPriceAlertsList()
+
+      // 保存到本地存储
+      if (selectedStock.value && userPriceAlerts) {
+        userPriceAlerts.saveToStorage(selectedStock.value)
+      }
+
+      console.log(`[价格预警] 已添加价格线: ${price.toFixed(2)}`)
+    }
+  })
+
+  // 使用 requestAnimationFrame 实时更新标签位置
+  let lastUpdateTime = 0
+  const updateLabels = () => {
+    const now = performance.now()
+    if (now - lastUpdateTime > 16) {
+      if (priceAlertsList.value.length > 0) {
+        priceAlertsKey.value++
+      }
+      lastUpdateTime = now
+    }
+    priceAlertRafId = requestAnimationFrame(updateLabels)
+  }
+  priceAlertRafId = requestAnimationFrame(updateLabels)
+
   // 十字光标移动 → 更新 hoverBar
   chart.subscribeCrosshairMove((param: any) => {
     if (!param.time || !candleSeries) {
@@ -706,6 +1064,521 @@ const initChart = () => {
       hoverBar.value = null
     }
   })
+}
+
+// ==================== 价格预警功能 ====================
+
+/**
+ * 显示价格线右键菜单
+ */
+const showPriceLineContextMenu = (e: MouseEvent) => {
+  e.preventDefault()
+  contextMenuPosition.value = { x: e.clientX, y: e.clientY }
+  showContextMenu.value = true
+}
+
+/**
+ * 关闭右键菜单
+ */
+const closeContextMenu = () => {
+  showContextMenu.value = false
+}
+
+/**
+ * 切换价格线工具模式
+ */
+const togglePriceLineTool = () => {
+  priceLineToolActive.value = !priceLineToolActive.value
+
+  // 更新鼠标样式
+  if (chartContainer.value) {
+    chartContainer.value.style.cursor = priceLineToolActive.value ? 'crosshair' : 'default'
+  }
+}
+
+/**
+ * 切换价格预警面板显示
+ */
+const togglePriceAlertPanel = () => {
+  showPriceAlertPanel.value = !showPriceAlertPanel.value
+}
+
+/**
+ * 添加价格预警（从右键菜单）
+ */
+const addPriceAlertFromMenu = () => {
+  if (!userPriceAlerts || !priceAlertInput.value) return
+
+  const price = Number(priceAlertInput.value)
+  if (isNaN(price) || price <= 0) {
+    alert('请输入有效的价格')
+    return
+  }
+
+  userPriceAlerts.addAlert(price, {
+    title: `目标: ${price.toFixed(2)}`,
+  })
+
+  // 保存到本地存储
+  if (selectedStock.value) {
+    userPriceAlerts.saveToStorage(selectedStock.value)
+  }
+
+  priceAlertInput.value = null
+}
+
+/**
+ * 添加价格预警
+ */
+const addPriceAlert = () => {
+  if (!userPriceAlerts || !priceAlertInput.value) return
+
+  const price = Number(priceAlertInput.value)
+  if (isNaN(price) || price <= 0) {
+    alert('请输入有效的价格')
+    return
+  }
+
+  userPriceAlerts.addAlert(price, {
+    title: `目标: ${price.toFixed(2)}`,
+  })
+
+  // 保存到本地存储
+  if (selectedStock.value) {
+    userPriceAlerts.saveToStorage(selectedStock.value)
+  }
+
+  priceAlertInput.value = null
+}
+
+/**
+ * 获取价格线标签的位置（相对于图表顶部）
+ */
+const getAlertLabelPosition = (price: number): number => {
+  if (!chart || !candleSeries) return 0
+
+  try {
+    const coord = candleSeries.priceToCoordinate(price)
+    if (coord === null || coord === undefined) return 0
+
+    return Math.max(0, coord)
+  } catch (e) {
+    return 0
+  }
+}
+
+/**
+ * 从鼠标Y坐标计算价格（使用 priceToCoordinate 反向计算）
+ * 支持K线价格吸附（优先级：收盘 > 开盘 > 最高/最低）
+ */
+const getPriceFromYCoordinate = (y: number): number | null => {
+  if (!chart || !candleSeries) return null
+
+  try {
+    // 获取系列数据
+    const data = candleSeries.data()
+    if (!data || data.length === 0) return null
+
+    // 获取时间轴的可见范围
+    const timeScale = chart.timeScale()
+    const visibleLogicalRange = timeScale.getVisibleLogicalRange()
+    if (!visibleLogicalRange) return null
+
+    // 获取可见范围内的数据
+    const from = Math.max(0, Math.floor(visibleLogicalRange.from))
+    const to = Math.min(data.length - 1, Math.ceil(visibleLogicalRange.to))
+
+    if (from > to) return null
+
+    // 吸附功能：找到最近的K线价格
+    let bestPrice = null
+    let minDiff = Infinity
+    const SNAP_THRESHOLD = 20  // 20像素内吸附
+
+    for (let i = from; i <= to; i++) {
+      const bar = data[i] as any
+      if (!bar) continue
+
+      // 尝试吸附到这些价格点
+      const pricePoints = [
+        { price: bar.close, priority: 1 },    // 收盘价（最优先）
+        { price: bar.open, priority: 2 },
+        { price: bar.high, priority: 3 },
+        { price: bar.low, priority: 3 }
+      ]
+
+      for (const point of pricePoints) {
+        try {
+          const coord = candleSeries.priceToCoordinate(point.price)
+          if (coord !== null) {
+            const diff = Math.abs(coord - y)
+
+            // 在吸附范围内，优先吸附到收盘价
+            if (diff < SNAP_THRESHOLD) {
+              // 收盘价优先级更高，权重加倍
+              const weightedDiff = diff / (point.priority === 1 ? 2 : 1)
+              if (weightedDiff < minDiff) {
+                minDiff = weightedDiff
+                bestPrice = point.price
+              }
+            }
+          }
+        } catch (e) {
+          continue
+        }
+      }
+    }
+
+    // 如果找到吸附的价格，直接返回
+    if (bestPrice !== null && minDiff < SNAP_THRESHOLD) {
+      return parseFloat(bestPrice.toFixed(2))
+    }
+
+    // 没有吸附到K线，使用精确计算
+    // 二分查找方法
+    let minPrice = Infinity
+    let maxPrice = -Infinity
+
+    for (let i = from; i <= to; i++) {
+      const bar = data[i] as any
+      if (bar) {
+        minPrice = Math.min(minPrice, bar.low)
+        maxPrice = Math.max(maxPrice, bar.high)
+      }
+    }
+
+    if (minPrice === Infinity || maxPrice === -Infinity) return null
+
+    // 扩展价格范围
+    const priceRange = maxPrice - minPrice
+    minPrice -= priceRange * 0.2
+    maxPrice += priceRange * 0.2
+
+    // 二分查找
+    bestPrice = (minPrice + maxPrice) / 2
+    minDiff = Infinity
+
+    for (let i = 0; i < 50; i++) {
+      const midPrice = (minPrice + maxPrice) / 2
+
+      try {
+        const coord = candleSeries.priceToCoordinate(midPrice)
+        if (coord === null) break
+
+        const diff = coord - y
+
+        if (Math.abs(diff) < minDiff) {
+          minDiff = Math.abs(diff)
+          bestPrice = midPrice
+        }
+
+        if (Math.abs(diff) < 0.1) break
+
+        if (diff > 0) {
+          maxPrice = midPrice
+        } else {
+          minPrice = midPrice
+        }
+      } catch (e) {
+        break
+      }
+    }
+
+    return parseFloat(bestPrice.toFixed(2))
+  } catch (e) {
+    console.error('[getPriceFromYCoordinate] Error:', e)
+    return null
+  }
+}
+
+/**
+ * 开始拖动价格线标签
+ */
+const startDragAlert = (alertId: string, event: MouseEvent | TouchEvent) => {
+  event.preventDefault()
+  event.stopPropagation()
+
+  isDragging.value = true
+  draggedAlertId.value = alertId
+
+  console.log(`[价格预警] 开始拖动价格线标签`)
+
+  const onMove = (e: MouseEvent | TouchEvent) => {
+    if (!isDragging.value || !draggedAlertId.value) return
+
+    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY
+    const chartRect = chartContainer.value?.getBoundingClientRect()
+    if (!chartRect) return
+
+    const y = clientY - chartRect.top
+    const price = getPriceFromYCoordinate(y)
+
+    // 实时更新价格线位置
+    if (price) {
+      userPriceAlerts?.updateAlertPrice(draggedAlertId.value, price)
+      // 直接更新列表中对应项的价格，避免等待响应式更新
+      const alert = priceAlertsList.value.find(a => a.id === draggedAlertId.value)
+      if (alert) {
+        alert.price = price
+      }
+    }
+  }
+
+  const onEnd = () => {
+    if (isDragging.value && draggedAlertId.value) {
+      // 拖动结束时刷新列表并保存
+      refreshPriceAlertsList()
+      if (selectedStock.value && userPriceAlerts) {
+        userPriceAlerts.saveToStorage(selectedStock.value)
+      }
+      console.log(`[价格预警] 价格线已更新`)
+    }
+
+    isDragging.value = false
+    draggedAlertId.value = null
+    draggedAlertTempPrice.value = null
+
+    window.removeEventListener('mousemove', onMove)
+    window.removeEventListener('mouseup', onEnd)
+    window.removeEventListener('touchmove', onMove)
+    window.removeEventListener('touchend', onEnd)
+  }
+
+  window.addEventListener('mousemove', onMove)
+  window.addEventListener('mouseup', onEnd)
+  window.addEventListener('touchmove', onMove, { passive: false })
+  window.addEventListener('touchend', onEnd)
+}
+
+/**
+ * 删除价格预警
+ */
+const removePriceAlert = (id: string) => {
+  if (!userPriceAlerts) return
+
+  userPriceAlerts.removeAlert(id)
+  refreshPriceAlertsList()
+
+  // 更新本地存储
+  if (selectedStock.value) {
+    userPriceAlerts.saveToStorage(selectedStock.value)
+  }
+}
+
+/**
+ * 双击开始编辑价格预警
+ */
+const startEditPriceAlert = (id: string, currentPrice: number) => {
+  editingAlertId.value = id
+  editingAlertPrice.value = currentPrice.toFixed(2)
+
+  // 聚焦输入框
+  nextTick(() => {
+    if (editingInput.value) {
+      editingInput.value.focus()
+      editingInput.value.select()
+    }
+  })
+}
+
+/**
+ * 完成编辑价格预警
+ */
+const finishEditPriceAlert = (id: string) => {
+  if (!editingAlertId.value) return
+
+  const newPrice = parseFloat(editingAlertPrice.value)
+  if (isNaN(newPrice) || newPrice <= 0) {
+    // 无效价格，恢复原值
+    cancelEditPriceAlert()
+    return
+  }
+
+  // 更新价格线
+  userPriceAlerts?.updateAlertPrice(id, newPrice)
+  refreshPriceAlertsList()
+
+  // 保存到本地存储
+  if (selectedStock.value && userPriceAlerts) {
+    userPriceAlerts.saveToStorage(selectedStock.value)
+  }
+
+  console.log(`[价格预警] 已编辑价格线: ${newPrice.toFixed(2)}`)
+
+  // 清理编辑状态
+  editingAlertId.value = null
+  editingAlertPrice.value = ''
+}
+
+/**
+ * 取消编辑价格预警
+ */
+const cancelEditPriceAlert = () => {
+  editingAlertId.value = null
+  editingAlertPrice.value = ''
+}
+
+// 预置颜色列表
+const presetColors = [
+  '#2196F3',  // 蓝色
+  '#4CAF50',  // 绿色
+  '#FF9800',  // 橙色
+  '#F44336',  // 红色
+  '#9C27B0',  // 紫色
+  '#FFEB3B',  // 黄色
+  '#00BCD4',  // 青色
+  '#FF5722',  // 深橙色
+]
+
+/**
+ * 显示标签右键菜单
+ */
+const showLabelContextMenu = (alert: any, event: MouseEvent) => {
+  event.preventDefault()
+  event.stopPropagation()
+
+  labelContextMenu.value = {
+    show: true,
+    alertId: alert.id,
+    x: event.clientX,
+    y: event.clientY,
+    currentPrice: alert.price,
+    currentTitle: alert.title || '',
+    currentColor: alert.color || '#2196F3',
+    enableAlert: alert.enableAlert || false,
+  }
+}
+
+/**
+ * 关闭标签右键菜单
+ */
+const closeLabelContextMenu = () => {
+  labelContextMenu.value.show = false
+}
+
+/**
+ * 应用标签设置
+ */
+const applyLabelSettings = () => {
+  if (!userPriceAlerts || !labelContextMenu.value.alertId) return
+
+  const { alertId, currentPrice, currentTitle, currentColor, enableAlert } = labelContextMenu.value
+
+  // 如果价格改变了，先更新价格
+  const alert = priceAlertsList.value.find(a => a.id === alertId)
+  if (alert && currentPrice !== undefined && currentPrice !== alert.price) {
+    userPriceAlerts.updateAlertPrice(alertId, currentPrice)
+  }
+
+  // 更新价格线样式（标题、颜色、提醒开关）
+  userPriceAlerts.updateAlert(alertId, {
+    title: currentTitle,
+    color: currentColor,
+    enableAlert: enableAlert,
+  })
+
+  // 清除此价格线的提醒记录（重新设置）
+  if (!enableAlert) {
+    triggeredAlerts.value.delete(alertId)
+  }
+
+  refreshPriceAlertsList()
+  priceAlertsKey.value++  // 强制重新渲染整个标签容器
+
+  // 保存到本地存储
+  if (selectedStock.value) {
+    userPriceAlerts.saveToStorage(selectedStock.value)
+  }
+
+  console.log(`[价格预警] 已更新标签设置: 价格=${currentPrice}, 标题=${currentTitle || '(无)'}, 颜色=${currentColor}, 提醒=${enableAlert}`)
+
+  closeLabelContextMenu()
+}
+
+/**
+ * 检查价格提醒（在行情更新时调用）
+ */
+const checkPriceAlerts = () => {
+  if (!userPriceAlerts || !selectedStock.value) return
+
+  const alerts = userPriceAlerts.getAlerts()
+  const currentQuote = dataStore.quotes[selectedStock.value]
+
+  if (!currentQuote) return
+
+  const currentPrice = currentQuote.close || currentQuote.price || 0
+  if (!currentPrice) return
+
+  // 检查每个启用了提醒的价格线
+  alerts.forEach(alert => {
+    if (!alert.enableAlert) return
+
+    const { price, id, title } = alert
+    const threshold = 0.01  // 0.01% 容差
+
+    // 检查是否到达目标价格
+    const triggered = (currentPrice >= price * (1 - threshold) && currentPrice <= price * (1 + threshold))
+
+    if (triggered && !triggeredAlerts.value.has(id)) {
+      // 第一次触发，记录并闪烁
+      triggeredAlerts.value.add(id)
+      triggerAlertFlash(id)
+      console.log(`[价格预警] ${title || price.toFixed(2)} 到达目标价! 当前价格: ${currentPrice.toFixed(2)}`)
+    } else if (!triggered) {
+      // 价格远离目标价格，清除触发记录
+      triggeredAlerts.value.delete(id)
+    }
+  })
+}
+
+/**
+ * 触发价格提醒闪烁
+ */
+const triggerAlertFlash = (alertId: string) => {
+  // 标记该标签需要闪烁
+  flashingAlerts.value.add(alertId)
+  priceAlertsKey.value++
+  console.log(`[价格预警] 触发闪烁: ${alertId}`)
+
+  // 3秒后停止闪烁（动画总时长 = 0.5s × 3次 = 1.5s，留余量3秒）
+  setTimeout(() => {
+    flashingAlerts.value.delete(alertId)
+    priceAlertsKey.value++
+  }, 3000)
+}
+
+/**
+ * 获取所有价格预警（返回响应式列表）
+ */
+const getPriceAlerts = () => {
+  return priceAlertsList.value
+}
+
+/**
+ * 刷新价格预警列表（保持响应式）
+ */
+const refreshPriceAlertsList = () => {
+  if (!userPriceAlerts) {
+    priceAlertsList.value = []
+    return
+  }
+  // 创建新数组触发 Vue 响应式更新
+  priceAlertsList.value = [...userPriceAlerts.getAlerts()]
+}
+
+/**
+ * 清除所有价格预警
+ */
+const clearAllPriceAlerts = () => {
+  if (!userPriceAlerts) return
+
+  userPriceAlerts.clearAll()
+  refreshPriceAlertsList()
+
+  // 清除本地存储
+  if (selectedStock.value) {
+    localStorage.removeItem(`price_alerts_${selectedStock.value}`)
+  }
 }
 
 // 加载K线数据（优化版：优先加载K线，其他数据延后）
@@ -843,6 +1716,50 @@ const loadKlineData = async () => {
     loading.value = false
   }
 }
+
+// ─────────────────────────────────────────────
+// watch: 使用 useKlineData 的数据更新图表（新逻辑）
+// ─────────────────────────────────────────────
+watch(klineBars, (bars) => {
+  if (!bars || bars.length === 0 || !candleSeries || !volumeSeries) return
+
+  // 转换数据格式
+  const chartData = bars.map(bar => ({
+    time: bar.time,
+    open: bar.open,
+    high: bar.high,
+    low: bar.low,
+    close: bar.close,
+    volume: bar.volume
+  }))
+
+  // 更新图表
+  candleSeries.setData(chartData)
+
+  // 成交量
+  const volumeData = chartData.map(d => ({
+    time: d.time,
+    value: d.volume,
+    color: d.close >= d.open ? '#ef535080' : '#26a69a80'
+  }))
+  volumeSeries.setData(volumeData)
+
+  // 首次加载时设置显示范围
+  if (isInitialLoad.value && chartData.length > 0) {
+    const total = chartData.length
+    chart?.timeScale().setVisibleLogicalRange({
+      from: Math.max(0, total - 200),
+      to: total - 1 + 10,
+    })
+    chart?.priceScale('right').applyOptions({ autoScale: true })
+    setTimeout(() => {
+      chart?.priceScale('right').applyOptions({ autoScale: false })
+    }, 200)
+    isInitialLoad.value = false
+  }
+
+  console.log('[RealtimeQuotes] useKlineData 更新图表:', bars.length, '根')
+}, { deep: true })
 
 // ─────────────────────────────────────────────
 // WebSocket 消息处理函数
@@ -1082,20 +1999,26 @@ const refreshSnapshots = async () => {
     // 批量更新所有自选股的价格到 DataStore
     if (batchRes.data && batchRes.data.length > 0) {
       // 转换 QuoteSnapshot 到 Quote 格式
-      const quotes = batchRes.data.map((q: any) => ({
-        symbol: q.symbol || q.code,
-        name: q.name,
-        price: q.price,
-        change: q.change,
-        change_percent: q.change_percent,
-        open: q.open,
-        high: q.high,
-        low: q.low,
-        close: q.prev_close,
-        volume: q.volume,
-        amount: q.amount,
-        timestamp: q.timestamp || Date.now()
-      }))
+      const quotes = batchRes.data.map((q: any) => {
+        const symbol = q.symbol || q.code
+        // 后端返回的字段是 change_pct，前端需要 change_percent
+        const changePercent = q.change_percent !== undefined ? q.change_percent : q.change_pct
+        console.log(`[RealtimeQuotes] 处理 quote: symbol=${symbol}, code=${q.code}, price=${q.price}, change_pct=${q.change_pct}, changePercent=${changePercent}`)
+        return {
+          symbol: symbol,
+          name: q.name,
+          price: q.price,
+          change: q.change,
+          change_percent: changePercent,
+          open: q.open,
+          high: q.high,
+          low: q.low,
+          close: q.prev_close,
+          volume: q.volume,
+          amount: q.amount,
+          timestamp: q.timestamp || Date.now()
+        }
+      })
       console.log('[RealtimeQuotes] Updating DataStore quotes:', quotes)
       dataStore.updateQuotes(quotes)
       console.log('[RealtimeQuotes] After update, dataStore.quotes keys:', Object.keys(dataStore.quotes))
@@ -1114,6 +2037,7 @@ const refreshSnapshots = async () => {
     }
   } catch (error) {
     console.error('刷新快照失败:', error)
+    checkPriceAlerts()
   }
 }
 
@@ -1206,6 +2130,12 @@ const disconnectKlineWs = () => {
 const selectStock = (code: string) => {
   selectedStock.value = code
   isInitialLoad.value = true  // 切换股票时重新适应显示范围
+  // 切换价格预警：清除旧的，加载新的
+  if (userPriceAlerts) {
+    userPriceAlerts.clearAll()
+    userPriceAlerts.loadFromStorage(code)
+    refreshPriceAlertsList()
+  }
 
   // 取消之前的预加载任务
   if (preloadAbortController) {
@@ -1261,7 +2191,17 @@ const startRealtimeUpdate = async () => {
   }
 
   const updateStatus = async () => {
-    marketStatusCache.value = await getStatus()
+    const status = await getStatus()
+    marketStatusCache.value = status
+
+    // 根据市场状态控制调度器
+    if (scheduler) {
+      if (status?.is_open) {
+        scheduler.resume()
+      } else {
+        scheduler.pause()
+      }
+    }
   }
 
   // 初始获取状态
@@ -1272,18 +2212,9 @@ const startRealtimeUpdate = async () => {
 
   // 初始化智能刷新调度器
   scheduler = initScheduler(async (stocks: string[]) => {
-    const status = marketStatusCache.value
-    const isOpen = status?.is_open ?? false
-
-    // 收盘后不刷新
-    if (!isOpen) {
-      return
-    }
-
     // 批量刷新指定股票的快照数据
     if (stocks.length > 0) {
       try {
-        console.log(`[RealtimeQuotes] 调度器刷新 ${stocks.length} 只股票`)
         const batchRes = await fetchSnapshotBatch(stocks)
         if (batchRes.data && batchRes.data.length > 0) {
           const quotes = batchRes.data.map((q: any) => ({
@@ -1308,6 +2239,12 @@ const startRealtimeUpdate = async () => {
     }
   })
 
+  // 调度器初始化后，根据当前市场状态暂停/恢复
+  const currentStatus = marketStatusCache.value
+  if (currentStatus && !currentStatus.is_open) {
+    scheduler.pause()
+  }
+
   // 为每个分组注册刷新任务
   const registerGroups = () => {
     if (!scheduler) return
@@ -1320,12 +2257,14 @@ const startRealtimeUpdate = async () => {
     // 注册新任务
     for (const group of dataStore.watchlistGroups) {
       if (group.stocks.length > 0) {
+        // 如果 refreshInterval 未定义，使用默认值 3000ms
+        const interval = group.refreshInterval ?? 3000
         scheduler.register({
           groupId: group.id,
           groupName: group.name,
           stocks: group.stocks.map(s => s.symbol),
-          interval: group.refreshInterval,
-          priority: group.refreshInterval < 5000 ? 1 : 2,
+          interval: interval,
+          priority: interval < 5000 ? 1 : 2,
           lastRefresh: 0
         })
       }
@@ -1341,27 +2280,6 @@ const startRealtimeUpdate = async () => {
   watch(() => dataStore.watchlistGroups, () => {
     registerGroups()
   }, { deep: true })
-
-  // 当前选中股票的K线刷新（独立于分组调度器）
-  updateTimer = window.setInterval(async () => {
-    if (!selectedStock.value) return
-
-    const status = marketStatusCache.value
-    const isOpen = status?.is_open ?? false
-
-    if (!isOpen) {
-      return
-    }
-
-    // 只刷新当前选中股票的K线
-    if (wsConnected.value) {
-      // WebSocket 已连接：K线由 WS 推送，只需刷新快照
-      refreshSnapshots()
-    } else {
-      // WebSocket 未连接：用 HTTP 加载 K线
-      loadKlineData()
-    }
-  }, 5000)
 }
 
 onMounted(() => {
@@ -1403,9 +2321,6 @@ onMounted(() => {
     // 连接 WebSocket 并加载历史数据（所有周期：HTTP加载历史，WS实时更新）
     connectKlineWs()
 
-    // 立即加载一次快照数据
-    refreshSnapshots()
-
     // 等待数据加载后，初始化选中股票
     setTimeout(() => {
       if (!selectedStock.value) {
@@ -1421,6 +2336,8 @@ onMounted(() => {
         if (targetSymbol) {
           console.log('[RealtimeQuotes] 初始化选中股票:', targetSymbol)
           selectStock(targetSymbol)
+          // 选中股票后立即刷新快照数据
+          setTimeout(() => refreshSnapshots(), 100)
         }
       }
     }, 200)
@@ -1428,7 +2345,6 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
-  if (updateTimer) clearInterval(updateTimer)
   if (statusTimer) clearInterval(statusTimer)
   if (scheduler) {
     scheduler.destroy()
@@ -1436,6 +2352,9 @@ onBeforeUnmount(() => {
   }
   disconnectKlineWs()  // 断开 WebSocket
   chartResizeObserver?.disconnect()
+  if (priceAlertRafId !== null) {
+    cancelAnimationFrame(priceAlertRafId)
+  }
   if (chart) chart.remove()
 })
 </script>
@@ -1993,4 +2912,371 @@ onBeforeUnmount(() => {
   background: #434651;
 }
 
+
+/* ==================== 价格预警面板 ==================== */
+.price-alert-panel {
+  position: absolute;
+  top: 52px;
+  right: 14px;
+  background: #1e222d;
+  border: 1px solid #2a2e39;
+  border-radius: 8px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  z-index: 100;
+  min-width: 240px;
+}
+
+/* ==================== 价格线右键菜单 ==================== */
+.price-line-context-menu {
+  position: fixed;
+  background: #1e222d;
+  border: 1px solid #2a2e39;
+  border-radius: 8px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+  z-index: 1000;
+  min-width: 260px;
+  max-width: 320px;
+}
+
+.context-menu-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 999;
+}
+
+.context-menu-header {
+  padding: 10px 14px;
+  border-bottom: 1px solid #2a2e39;
+  font-size: 13px;
+  font-weight: 600;
+  color: #d1d4dc;
+}
+
+.context-menu-content {
+  padding: 12px;
+}
+
+.price-alert-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid #2a2e39;
+  font-size: 13px;
+  font-weight: 600;
+  color: #d1d4dc;
+}
+
+.price-alert-close {
+  background: transparent;
+  border: none;
+  color: #787b86;
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+  padding: 0;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+}
+
+.price-alert-close:hover {
+  background: #2a2e39;
+  color: #d1d4dc;
+}
+
+.price-alert-content {
+  padding: 12px;
+}
+
+.price-alert-input-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.price-alert-input {
+  flex: 1;
+  background: #131722;
+  border: 1px solid #363a45;
+  border-radius: 4px;
+  padding: 8px 10px;
+  color: #d1d4dc;
+  font-size: 13px;
+  outline: none;
+}
+
+.price-alert-input:focus {
+  border-color: #2196F3;
+}
+
+.price-alert-input::placeholder {
+  color: #787b86;
+}
+
+.price-alert-add-btn {
+  background: #2196F3;
+  border: none;
+  border-radius: 4px;
+  padding: 8px 14px;
+  color: white;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.price-alert-add-btn:hover {
+  background: #1976D2;
+}
+
+.price-alert-list {
+  max-height: 180px;
+  overflow-y: auto;
+  margin-bottom: 8px;
+}
+
+.price-alert-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  background: #131722;
+  border-radius: 4px;
+  margin-bottom: 6px;
+}
+
+.price-alert-price {
+  color: #d1d4dc;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.price-alert-remove-btn {
+  background: transparent;
+  border: none;
+  color: #787b86;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+}
+
+.price-alert-remove-btn:hover {
+  background: #2a2e39;
+  color: #ef5350;
+}
+
+.price-alert-empty {
+  text-align: center;
+  padding: 20px 10px;
+  color: #787b86;
+  font-size: 12px;
+}
+
+.price-alert-clear-btn {
+  width: 100%;
+  background: transparent;
+  border: 1px solid #363a45;
+  border-radius: 4px;
+  padding: 8px;
+  color: #787b86;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.price-alert-clear-btn:hover {
+  background: #2a2e39;
+  border-color: #ef5350;
+  color: #ef5350;
+}
+
+/* ==================== 价格标签交互层 ==================== */
+.price-labels-left {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  z-index: 50;
+}
+
+.price-label-left {
+  position: absolute;
+  right: 65px;
+  transform: translateY(-50%);
+  border: none;
+  color: #d1d4dc;
+  padding: 2px 4px;
+  border-radius: 2px;
+  font-size: 11px;
+  font-weight: 400;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  pointer-events: auto;
+  cursor: ns-resize;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.price-label-left:hover {
+  opacity: 0.9;
+}
+
+.price-label-left.dragging {
+  background: #FF9800 !important;
+}
+
+/* 价格提醒闪烁动画 */
+.price-label-left.alert-flash {
+  animation: flash 0.5s ease-in-out 3;
+}
+
+@keyframes flash {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.2; box-shadow: 0 0 10px 2px rgba(255, 152, 0, 0.8); }
+}
+
+.price-label-left .label-text {
+  display: block;
+}
+
+.price-label-left.editing {
+  background: #1976D2;
+  padding: 0;
+}
+
+.price-label-input {
+  width: 70px;
+  height: 20px;
+  background: #ffffff;
+  border: none;
+  border-radius: 2px;
+  color: #131722;
+  font-size: 12px;
+  font-weight: 500;
+  text-align: center;
+  outline: none;
+}
+
+/* ==================== 标签右键菜单 ==================== */
+.label-context-menu {
+  position: fixed;
+  background: #1e222d;
+  border: 1px solid #2a2e39;
+  border-radius: 8px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+  z-index: 1001;
+  min-width: 240px;
+}
+
+.label-menu-header {
+  padding: 10px 14px;
+  border-bottom: 1px solid #2a2e39;
+  font-size: 13px;
+  font-weight: 600;
+  color: #d1d4dc;
+}
+
+.label-menu-content {
+  padding: 12px;
+}
+
+.label-menu-row {
+  margin-bottom: 12px;
+}
+
+.label-menu-row label {
+  display: block;
+  font-size: 11px;
+  color: #787b86;
+  margin-bottom: 6px;
+}
+
+.label-menu-input {
+  width: 100%;
+  background: #131722;
+  border: 1px solid #363a45;
+  border-radius: 4px;
+  padding: 6px 10px;
+  color: #d1d4dc;
+  font-size: 12px;
+  outline: none;
+}
+
+.label-menu-input:focus {
+  border-color: #2196F3;
+}
+
+.color-picker {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.color-option {
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  cursor: pointer;
+  border: 2px solid transparent;
+  transition: all 0.15s;
+}
+
+.color-option:hover {
+  transform: scale(1.1);
+}
+
+.color-option.active {
+  border-color: #ffffff;
+  box-shadow: 0 0 0 2px #2196F3;
+}
+
+.label-menu-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.label-menu-btn {
+  flex: 1;
+  padding: 6px 12px;
+  border: none;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.label-menu-btn.cancel {
+  background: #2a2e39;
+  color: #d1d4dc;
+}
+
+.label-menu-btn.cancel:hover {
+  background: #363a45;
+}
+
+.label-menu-btn.confirm {
+  background: #2196F3;
+  color: white;
+}
+
+.label-menu-btn.confirm:hover {
+  background: #1976D2;
+}
 </style>

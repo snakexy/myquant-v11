@@ -210,7 +210,8 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted, onUnmounted } from 'vue'
-import { ElMessage, ElMessageBox, FormInstance, FormRules } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import type { FormInstance, FormRules } from 'element-plus'
 import { Plus, Refresh } from '@element-plus/icons-vue'
 import { alertApi } from '@/api/modules/alerts'
 import type { AlertRule, CreateRuleRequest, UpdateRuleRequest } from '@/api/modules/alerts'

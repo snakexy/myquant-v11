@@ -6,6 +6,7 @@
  * 2. 批量合并 - 减少API调用次数
  * 3. 并发控制 - 防止请求阻塞
  * 4. 优先级队列 - 高频分组优先处理
+ * 5. 暂停/恢复 - 市场休市时暂停，开盘时恢复
  */
 
 interface RefreshTask {
@@ -34,9 +35,50 @@ export class RefreshScheduler {
   private pendingBatch: BatchRequest | null = null
   private batchTimer: NodeJS.Timeout | null = null
   private refreshCallback: RefreshCallback
+  private paused: boolean = false // 是否暂停
 
   constructor(callback: RefreshCallback) {
     this.refreshCallback = callback
+  }
+
+  /**
+   * 暂停调度器（市场休市时调用）
+   */
+  pause(): void {
+    if (this.paused) return
+    this.paused = true
+    console.log('[Scheduler] ⏸ 调度器已暂停')
+    // 清除所有定时器
+    for (const timer of this.timers.values()) {
+      clearTimeout(timer)
+      clearInterval(timer)
+    }
+    this.timers.clear()
+    // 清除批量窗口定时器
+    if (this.batchTimer) {
+      clearTimeout(this.batchTimer)
+      this.batchTimer = null
+    }
+    // 清除待处理的批量队列
+    this.pendingBatch = null
+  }
+
+  /**
+   * 恢复调度器（市场开盘时调用）
+   */
+  resume(): void {
+    if (!this.paused) return
+    this.paused = false
+    console.log('[Scheduler] ▶ 调度器已恢复')
+    // 重新注册所有任务
+    for (const task of this.tasks.values()) {
+      const offset = this.calculateOffset(task.groupId)
+      const timer = setTimeout(() => {
+        this.startTask(task.groupId)
+        this.setIntervalTask(task.groupId, task.interval)
+      }, offset)
+      this.timers.set(task.groupId, timer)
+    }
   }
 
   /**
@@ -95,17 +137,13 @@ export class RefreshScheduler {
 
   /**
    * 计算错峰偏移量
-   * 基于分组ID的hash值，确保不同分组错开触发
    */
   private calculateOffset(groupId: string): number {
-    // 简单的 hash 函数
     let hash = 0
     for (let i = 0; i < groupId.length; i++) {
       hash = ((hash << 5) - hash) + groupId.charCodeAt(i)
       hash |= 0
     }
-
-    // 取绝对值，对 1000 取模（最大错峰 1 秒）
     return Math.abs(hash) % 1000
   }
 
@@ -138,8 +176,13 @@ export class RefreshScheduler {
    * 执行任务
    */
   private async executeTask(task: RefreshTask): Promise<void> {
-    // 如果没有股票，跳过
+    // 如果没有股票或已暂停，跳过
     if (!task.stocks || task.stocks.length === 0) {
+      return
+    }
+
+    if (this.paused) {
+      // 已暂停，静默跳过
       return
     }
 
@@ -191,18 +234,14 @@ export class RefreshScheduler {
       return
     }
 
-    const batch = this.pendingBatch
-    this.pendingBatch = null
-
-    // 并发控制
-    if (this.activeRequests >= this.maxConcurrent) {
-      console.log(`[Scheduler] 并发数已达上限 (${this.maxConcurrent})，等待...`)
-      // 等待 100ms 后重试
-      setTimeout(() => {
-        this.flushBatch()
-      }, 100)
+    // 如果已暂停或并发数已达上限，直接返回，等待下次定时器触发
+    if (this.paused || this.activeRequests >= this.maxConcurrent) {
+      console.log(`[Scheduler] 跳过刷新（暂停:${this.paused}, 并发:${this.activeRequests}/${this.maxConcurrent}）`)
       return
     }
+
+    const batch = this.pendingBatch
+    this.pendingBatch = null
 
     this.activeRequests++
     const startTime = Date.now()

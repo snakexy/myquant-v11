@@ -1,0 +1,1334 @@
+import { createApp } from 'vue'
+import { createPinia } from 'pinia'
+
+import App from './App.vue'
+import router from './router/index'
+import pinia from './stores'
+
+// 导入Element Plus
+import ElementPlus from 'element-plus'
+import * as ElementPlusIconsVue from '@element-plus/icons-vue'
+// 先导入 Element Plus 默认样式
+import 'element-plus/dist/index.css'
+// 再导入我们的深色主题覆盖样式
+import './styles/element-plus-dark.css'
+
+// 导入FontAwesome
+import { library } from '@fortawesome/fontawesome-svg-core'
+import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome'
+import {
+  faSave,
+  faFolderOpen,
+  faUndo,
+  faSyncAlt,
+  faSpinner,
+  faPlay,
+  faThumbtack,
+  faRotateLeft,
+  faChartPie,
+  faChartLine,
+  faChartArea,
+  faChartBar,
+  faDatabase,
+  faHdd,
+  faCog,
+  faMicroscope,
+  faExpandAlt,
+  faCompressAlt,
+  faFolder,
+  faList,
+  faListOl,
+  faCubes,
+  faCheckDouble,
+  faBuilding,
+  faPercentage,
+  faCopy,
+  faWrench,
+  faFillDrip,
+  faExclamationCircle,
+  faPlusCircle,
+  faBroom,
+  faEye,
+  faTrash,
+  faSearch,
+  faCaretDown,
+  faDownload,
+  faClock,
+  faTimesCircle,
+  faEdit,
+  faCheck,
+  faArrowRight,
+  faPiggyBank,
+  faLayerGroup,
+  faMoneyBillWave,
+  faCalendarAlt,
+  faCalendarDay,
+  faCalendarWeek,
+  faCalendarCheck,
+  faCheckCircle,
+  faExclamationTriangle,
+  faCalendar,
+  faInfoCircle,
+  faCheckSquare,
+  faTimes,
+  faRocket
+} from '@fortawesome/free-solid-svg-icons'
+
+// 注册FontAwesome图标
+library.add(
+  faSave,
+  faFolderOpen,
+  faUndo,
+  faSyncAlt,
+  faSpinner,
+  faPlay,
+  faThumbtack,
+  faRotateLeft,
+  faChartPie,
+  faChartLine,
+  faChartArea,
+  faChartBar,
+  faDatabase,
+  faHdd,
+  faCog,
+  faMicroscope,
+  faExpandAlt,
+  faCompressAlt,
+  faFolder,
+  faList,
+  faCalendarAlt,
+  faCalendarDay,
+  faCalendarWeek,
+  faCalendarCheck,
+  faCheckCircle,
+  faExclamationTriangle,
+  faListOl,
+  faCubes,
+  faCheckDouble,
+  faBuilding,
+  faPercentage,
+  faCopy,
+  faWrench,
+  faFillDrip,
+  faExclamationCircle,
+  faPlusCircle,
+  faBroom,
+  faEye,
+  faTrash,
+  faSearch,
+  faCaretDown,
+  faDownload,
+  faClock,
+  faTimesCircle,
+  faEdit,
+  faCheck,
+  faArrowRight,
+  faPiggyBank,
+  faLayerGroup,
+  faMoneyBillWave,
+  faCalendar,
+  faInfoCircle,
+  faCheckSquare,
+  faTimes,
+  faRocket
+)
+
+// 导入全局样式
+import './assets/styles/main.scss'
+
+// 创建应用实例
+const app = createApp(App)
+
+// 注册FontAwesome组件
+app.component('font-awesome-icon', FontAwesomeIcon)
+
+// 注册Element Plus图标
+for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
+  app.component(key, component)
+}
+
+// 使用插件
+app.use(pinia)
+app.use(router)
+app.use(ElementPlus, {
+  // 设置全局 z-index
+  zIndex: 30000,
+})
+
+// 配置 Naive UI 自定义暗色主题
+import customDarkTheme from './themes/naive-ui-theme'
+app.provide('naive-ui-theme', customDarkTheme)
+
+// 初始化应用状态
+const initializeApp = () => {
+  // 这里可以添加应用初始化逻辑
+  console.log('Quant-UI 应用已启动')
+
+  // 开发环境验证API配置
+  if (import.meta.env.DEV) {
+    console.log('\n*** 开发模式：正在验证前端API配置 ***')
+    import('./utils/verifyApi').then(({ generateApiReport }) => {
+      setTimeout(() => {
+        generateApiReport()
+      }, 1000)
+    })
+
+    // API集成测试
+    console.log('\n*** 开发模式：正在运行API集成测试 ***')
+    import('./utils/apiIntegrationTest').then(({ apiIntegrationTester }) => {
+      setTimeout(() => {
+        apiIntegrationTester.runAllTests().then(() => {
+          console.log('\n🔗 API集成测试完成，研究阶段API已验证')
+        })
+      }, 2000)
+    })
+
+    // 测试真实API数据
+    console.log('\n*** 开发模式：正在测试真实API数据源 ***')
+    import('./utils/testRealApi').then(() => {
+      // 测试会自动执行
+    })
+  }
+  
+  // 清理可能残留的浮动面板
+  const existingPanels = document.querySelectorAll('.floating-panel')
+  if (existingPanels.length > 0) {
+    console.log(`清理 ${existingPanels.length} 个残留的浮动面板`)
+    existingPanels.forEach(panel => {
+      if (panel.parentNode) {
+        panel.parentNode.removeChild(panel)
+      }
+    })
+  }
+  
+  // 清理可能残留的最小化面板栏
+  const existingMinimizedBar = document.querySelector('.minimized-panels')
+  if (existingMinimizedBar && existingMinimizedBar.parentNode) {
+    console.log('清理残留的最小化面板栏')
+    existingMinimizedBar.parentNode.removeChild(existingMinimizedBar)
+  }
+}
+
+// 挂载应用
+app.mount('#app')
+
+// 执行初始化
+initializeApp()
+
+// 强制设置所有输入框的深色样式
+const forceDarkInputStyles = () => {
+  const style = document.createElement('style')
+  style.id = 'force-dark-inputs'
+  style.innerHTML = `
+    /* 强制所有对话框在导航栏之上 - 使用超高 z-index */
+    body .el-overlay,
+    body .el-overlay-message-box {
+      z-index: 29999 !important;
+    }
+
+    body .el-dialog,
+    body .el-dialog__wrapper {
+      z-index: 30000 !important;
+    }
+
+    body .el-dialog__header {
+      z-index: 30001 !important;
+    }
+
+    body .el-dialog__body {
+      z-index: 30000 !important;
+    }
+
+    /* Drawer 抽屉组件 - 更高的 z-index，包括所有包装层 */
+    body .el-drawer__container,
+    body .el-drawer__wrapper,
+    body .el-drawer,
+    body > .el-drawer {
+      z-index: 35000 !important;
+    }
+
+    body .el-drawer__header {
+      z-index: 35001 !important;
+    }
+
+    body .el-drawer__body {
+      z-index: 35000 !important;
+    }
+
+    /* 强制深色模式 */
+    * {
+      color-scheme: dark !important;
+    }
+
+    /* Naive UI 下拉菜单深色主题 - 统一使用卡片颜色 */
+    body .n-base-select-menu,
+    body [class*="n-select-menu"],
+    body > div[class*="n-base-select-menu"] {
+      background-color: #1a1a2e !important;
+      background: #1a1a2e !important;
+      border: 1px solid #334155 !important;
+      backdrop-filter: blur(10px) !important;
+      box-shadow: 0 8px 16px rgba(0, 0, 0, 0.15) !important;
+      color-scheme: dark !important;
+    }
+
+    body .n-base-select-menu-item,
+    body [class*="n-select-menu-item"],
+    body .n-virtual-list-item,
+    body [class*="n-virtual-list-item"],
+    body .n-virtual-list__item,
+    body [class*="virtual-list__item"] {
+      background: transparent !important;
+      color: #cbd5e1 !important;
+    }
+
+    body .n-base-select-menu-item:hover,
+    body [class*="n-select-menu-item"]:hover,
+    body .n-virtual-list-item:hover,
+    body [class*="n-virtual-list-item"]:hover,
+    body .n-virtual-list__item:hover,
+    body [class*="virtual-list__item"]:hover {
+      background-color: rgba(139, 92, 246, 0.2) !important;
+      background: rgba(139, 92, 246, 0.2) !important;
+    }
+
+    body .n-base-select-menu-item--selected,
+    body [class*="n-select-menu-item--selected"],
+    body .n-base-select-menu-item.n-base-select-menu-item--selected,
+    body .n-virtual-list-item--selected,
+    body [class*="n-virtual-list-item--selected"] {
+      background-color: rgba(139, 92, 246, 0.3) !important;
+      background: rgba(139, 92, 246, 0.3) !important;
+      color: #a78bfa !important;
+    }
+
+    /* 虚拟列表容器 */
+    body .n-virtual-list,
+    body [class*="n-virtual-list"] {
+      background: transparent !important;
+    }
+
+    /* 滚动容器 */
+    body .n-scrollbar,
+    body [class*="n-scrollbar"] {
+      background: transparent !important;
+    }
+
+    /* Naive UI 数据选择器下拉菜单 */
+    body .n-data-picker-menu,
+    body [class*="n-data-picker"] {
+      background-color: rgba(30, 41, 59, 0.98) !important;
+      background: rgba(30, 41, 59, 0.98) !important;
+      border: 1px solid rgba(100, 116, 139, 0.3) !important;
+      color-scheme: dark !important;
+    }
+
+    /* Naive UI 时间选择器 */
+    body .n-time-picker-menu,
+    body [class*="n-time-picker"] {
+      background-color: rgba(30, 41, 59, 0.98) !important;
+      background: rgba(30, 41, 59, 0.98) !important;
+      border: 1px solid rgba(100, 116, 139, 0.3) !important;
+      color-scheme: dark !important;
+    }
+
+    /* Naive UI Select 下拉框 - 统一使用卡片颜色 */
+    body .n-base-select-menu,
+    body [class*="n-base-select-menu"],
+    body [class*="n-select-menu"] {
+      background-color: #1a1a2e !important;
+      background: #1a1a2e !important;
+      border: 1px solid #334155 !important;
+      backdrop-filter: blur(10px) !important;
+      box-shadow: 0 8px 16px rgba(0, 0, 0, 0.15) !important;
+      color-scheme: dark !important;
+    }
+
+    /* 下拉框选项 */
+    body .n-base-select-menu-item,
+    body [class*="n-base-select-menu-item"],
+    body [class*="n-select-menu-item"] {
+      background: transparent !important;
+      background-color: transparent !important;
+      color: #cbd5e1 !important;
+    }
+
+    /* 下拉框选项 hover */
+    body .n-base-select-menu-item:hover,
+    body [class*="n-base-select-menu-item"]:hover,
+    body [class*="n-select-menu-item"]:hover {
+      background-color: rgba(139, 92, 246, 0.2) !important;
+      background: rgba(139, 92, 246, 0.2) !important;
+      color: #ffffff !important;
+    }
+
+    /* 下拉框选中项 */
+    body .n-base-select-menu-item--selected,
+    body [class*="n-base-select-menu-item--selected"],
+    body [class*="n-select-menu-item--selected"] {
+      background-color: rgba(139, 92, 246, 0.3) !important;
+      background: rgba(139, 92, 246, 0.3) !important;
+      color: #a78bfa !important;
+    }
+
+    /* Naive UI Select 输入框 */
+    body .n-base-selection,
+    body [class*="n-base-selection"] {
+      background-color: rgba(255, 255, 255, 0.05) !important;
+      background: rgba(255, 255, 255, 0.05) !important;
+      border: 1px solid rgba(100, 116, 139, 0.3) !important;
+      color-scheme: dark !important;
+    }
+
+    body .n-base-selection:hover,
+    body [class*="n-base-selection"]:hover {
+      background-color: rgba(255, 255, 255, 0.08) !important;
+      background: rgba(255, 255, 255, 0.08) !important;
+      border-color: rgba(139, 92, 246, 0.4) !important;
+    }
+
+    body .n-base-selection--active,
+    body [class*="n-base-selection--active"] {
+      background-color: rgba(255, 255, 255, 0.08) !important;
+      background: rgba(255, 255, 255, 0.08) !important;
+    }
+
+    /* Select 输入框文字 */
+    body .n-base-selection__label,
+    body [class*="n-base-selection__label"] {
+      color: #e2e8f0 !important;
+    }
+
+    body .n-base-selection__placeholder,
+    body [class*="n-base-selection__placeholder"] {
+      color: #64748b !important;
+    }
+
+    /* 最强力的选择器 - 使用属性选择器和通配符 */
+    *.el-input__wrapper,
+    *[class*="el-input__wrapper"],
+    *.el-select .el-input__wrapper,
+    *[class*="el-select"] *[class*="el-input__wrapper"],
+    *.el-date-editor .el-input__wrapper,
+    *[class*="el-date-editor"] *[class*="el-input__wrapper"],
+    *.timeline-controls .el-input__wrapper,
+    *[class*="timeline-controls"] *[class*="el-input__wrapper"] {
+      background-color: rgba(102, 126, 234, 0.08) !important;
+      background: rgba(102, 126, 234, 0.08) !important;
+      box-shadow: none !important;
+      border: 1px solid rgba(102, 126, 234, 0.3) !important;
+      color-scheme: dark !important;
+    }
+
+    *.el-input__wrapper:hover,
+    *[class*="el-input__wrapper"]:hover {
+      background-color: rgba(102, 126, 234, 0.12) !important;
+      background: rgba(102, 126, 234, 0.12) !important;
+    }
+
+    *.el-input__wrapper.is-focus,
+    *[class*="el-input__wrapper"].is-focus {
+      background-color: rgba(102, 126, 234, 0.15) !important;
+      background: rgba(102, 126, 234, 0.15) !important;
+      border-color: #667eea !important;
+    }
+
+    /* ==================== 全局统一按钮样式 ==================== */
+    /* Element Plus 按钮 - 现代简洁设计 */
+    *.el-button,
+    *[class*="el-button"] {
+      border-radius: 8px !important;
+      background: transparent !important;
+      border: 1px solid rgba(139, 92, 246, 0.3) !important;
+      color: #a78bfa !important;
+      transition: all 0.2s ease !important;
+      font-weight: 500 !important;
+    }
+
+    *.el-button:hover,
+    *[class*="el-button"]:hover {
+      background: rgba(139, 92, 246, 0.1) !important;
+      border-color: rgba(139, 92, 246, 0.5) !important;
+      color: #c4b5fd !important;
+      box-shadow: 0 2px 8px rgba(139, 92, 246, 0.15) !important;
+    }
+
+    *.el-button--primary,
+    *[class*="el-button--primary"] {
+      background: rgba(139, 92, 246, 0.15) !important;
+      border: 1px solid rgba(139, 92, 246, 0.4) !important;
+      color: #a78bfa !important;
+    }
+
+    *.el-button--primary:hover,
+    *[class*="el-button--primary"]:hover {
+      background: rgba(139, 92, 246, 0.25) !important;
+      border-color: rgba(139, 92, 246, 0.6) !important;
+      color: #c4b5fd !important;
+      box-shadow: 0 4px 12px rgba(139, 92, 246, 0.25) !important;
+    }
+
+    *.el-button--primary:active,
+    *[class*="el-button--primary"]:active {
+      background: rgba(139, 92, 246, 0.2) !important;
+      border-color: rgba(139, 92, 246, 0.5) !important;
+    }
+
+    /* Element Plus Warning 按钮 */
+    *.el-button--warning,
+    *[class*="el-button--warning"] {
+      background: transparent !important;
+      border: 1px solid rgba(245, 158, 11, 0.3) !important;
+      color: #fbbf24 !important;
+    }
+
+    *.el-button--warning:hover,
+    *[class*="el-button--warning"]:hover {
+      background: rgba(245, 158, 11, 0.1) !important;
+      border-color: rgba(245, 158, 11, 0.5) !important;
+      color: #fcd34d !important;
+    }
+
+    /* Element Plus Danger 按钮 */
+    *.el-button--danger,
+    *[class*="el-button--danger"] {
+      background: transparent !important;
+      border: 1px solid rgba(239, 68, 68, 0.3) !important;
+      color: #f87171 !important;
+    }
+
+    *.el-button--danger:hover,
+    *[class*="el-button--danger"]:hover {
+      background: rgba(239, 68, 68, 0.1) !important;
+      border-color: rgba(239, 68, 68, 0.5) !important;
+      color: #fca5a5 !important;
+    }
+
+    /* Element Plus Info 按钮 */
+    *.el-button--info,
+    *[class*="el-button--info"] {
+      background: transparent !important;
+      border: 1px solid rgba(59, 130, 246, 0.3) !important;
+      color: #60a5fa !important;
+    }
+
+    *.el-button--info:hover,
+    *[class*="el-button--info"]:hover {
+      background: rgba(59, 130, 246, 0.1) !important;
+      border-color: rgba(59, 130, 246, 0.5) !important;
+      color: #93c5fd !important;
+    }
+
+    /* Element Plus Success 按钮 */
+    *.el-button--success,
+    *[class*="el-button--success"] {
+      background: transparent !important;
+      border: 1px solid rgba(16, 185, 129, 0.3) !important;
+      color: #34d399 !important;
+    }
+
+    *.el-button--success:hover,
+    *[class*="el-button--success"]:hover {
+      background: rgba(16, 185, 129, 0.1) !important;
+      border-color: rgba(16, 185, 129, 0.5) !important;
+      color: #6ee7b7 !important;
+    }
+
+    /* Element Plus Default 按钮 */
+    *.el-button--default,
+    *[class*="el-button--default"] {
+      background: transparent !important;
+      border: 1px solid rgba(255, 255, 255, 0.1) !important;
+      color: #e5e7eb !important;
+    }
+
+    *.el-button--default:hover,
+    *[class*="el-button--default"]:hover {
+      background: rgba(255, 255, 255, 0.05) !important;
+      border-color: rgba(255, 255, 255, 0.2) !important;
+      color: #f3f4f6 !important;
+    }
+
+    /* Naive UI 按钮 - 保留原生设计，只微调颜色主题 */
+    /* 不强制覆盖边框和背景，让 Naive UI 保持自己的精美设计 */
+    body button.n-button {
+      color: #a78bfa !important;
+    }
+    body button.n-button:hover {
+      color: #c4b5fd !important;
+    }
+
+    /* ==================== 全局统一图标样式 ==================== */
+    /* Naive UI Icon - 移除边框和背景 */
+    body .n-icon,
+    body [class*="n-icon"],
+    body *.n-icon,
+    body *[class*="n-icon"] {
+      border: none !important;
+      background: transparent !important;
+      box-shadow: none !important;
+      outline: none !important;
+    }
+
+    /* 特别处理：移除所有图标相关的边框 */
+    body .n-button .n-icon,
+    body [class*="n-button"] .n-icon,
+    body .n-button [class*="n-icon"],
+    body [class*="n-button"] [class*="n-icon"],
+    body .n-card .n-icon,
+    body [class*="n-card"] .n-icon,
+    body .n-card [class*="n-icon"],
+    body [class*="n-card"] [class*="n-icon"] {
+      border: none !important;
+      background: transparent !important;
+      box-shadow: none !important;
+      outline: none !important;
+    }
+
+    /* ==================== 全局统一弹出层样式 ==================== */
+    /* Element Plus Dialog - 统一卡片颜色 */
+    body .el-dialog,
+    body .el-dialog__wrapper,
+    body [class*="el-dialog"] {
+      background-color: #1a1a2e !important;
+      background: #1a1a2e !important;
+      border: 1px solid #334155 !important;
+      box-shadow: 0 8px 16px rgba(0, 0, 0, 0.15) !important;
+    }
+
+    body .el-dialog__header {
+      background: transparent !important;
+      border-bottom: 1px solid #334155 !important;
+      color: #f8fafc !important;
+    }
+
+    body .el-dialog__title {
+      color: #f8fafc !important;
+    }
+
+    body .el-dialog__body {
+      background: transparent !important;
+      color: #f8fafc !important;
+    }
+
+    body .el-dialog__footer {
+      background: transparent !important;
+      border-top: 1px solid #334155 !important;
+    }
+
+    /* Element Plus Dialog 遮罩层 */
+    body .el-overlay,
+    body .el-overlay-message-box {
+      background: rgba(15, 15, 20, 0.85) !important;
+    }
+
+    /* Naive UI Modal - 统一卡片颜色 */
+    body .n-modal,
+    body [class*="n-modal"] {
+      background-color: rgba(15, 15, 20, 0.85) !important;
+      background: rgba(15, 15, 20, 0.85) !important;
+    }
+
+    body .n-card,
+    body [class*="n-card"] {
+      background-color: #1a1a2e !important;
+      background: #1a1a2e !important;
+      border: 1px solid #334155 !important;
+      box-shadow: 0 8px 16px rgba(0, 0, 0, 0.15) !important;
+    }
+
+    body .n-modal .n-card,
+    body [class*="n-modal"] [class*="n-card"] {
+      background: #1a1a2e !important;
+      border: 1px solid #334155 !important;
+    }
+
+    /* Naive UI Drawer - 统一卡片颜色 */
+    body .n-drawer,
+    body .n-drawer__container,
+    body [class*="n-drawer"] {
+      background-color: #1a1a2e !important;
+      background: #1a1a2e !important;
+    }
+
+    /* Naive UI Popover/Tooltip - 统一卡片颜色 */
+    body .n-popover,
+    body .n-tooltip,
+    body [class*="n-popover"],
+    body [class*="n-tooltip"] {
+      background-color: #1a1a2e !important;
+      background: #1a1a2e !important;
+      border: 1px solid #334155 !important;
+      color: #f8fafc !important;
+    }
+
+    /* ==================== 全局统一输入框样式 ==================== */
+    /* Element Plus Input/Select/DatePicker - 统一卡片颜色，与下拉菜单完全一致 */
+    *.el-input__wrapper,
+    *[class*="el-input__wrapper"] {
+      background-color: #1a1a2e !important;
+      background: #1a1a2e !important;
+      border: 1px solid #334155 !important;
+      box-shadow: none !important;
+      transition: all 0.3s ease !important;
+    }
+
+    *.el-input__wrapper:hover,
+    *[class*="el-input__wrapper"]:hover {
+      background-color: #1a1a2e !important;
+      background: #1a1a2e !important;
+      border-color: rgba(139, 92, 246, 0.4) !important;
+    }
+
+    *.el-input__wrapper.is-focus,
+    *[class*="el-input__wrapper"].is-focus {
+      background-color: #1a1a2e !important;
+      background: #1a1a2e !important;
+      border-color: #8b5cf6 !important;
+      box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.1) !important;
+    }
+
+    *.el-input__inner,
+    *[class*="el-input__inner"] {
+      color: #f8fafc !important;
+      background: transparent !important;
+    }
+
+    *.el-input__inner::placeholder,
+    *[class*="el-input__inner"]::placeholder {
+      color: #64748b !important;
+    }
+
+    /* Naive UI Input/Select - 统一卡片颜色，与下拉菜单完全一致 */
+    body .n-input,
+    body .n-base-selection,
+    body [class*="n-input"],
+    body [class*="n-base-selection"] {
+      background-color: #1a1a2e !important;
+      background: #1a1a2e !important;
+      border: 1px solid #334155 !important;
+      transition: all 0.3s ease !important;
+    }
+
+    body .n-input:hover,
+    body .n-base-selection:hover,
+    body [class*="n-input"]:hover,
+    body [class*="n-base-selection"]:hover {
+      background-color: #1a1a2e !important;
+      background: #1a1a2e !important;
+      border-color: rgba(139, 92, 246, 0.4) !important;
+    }
+
+    body .n-input--focus,
+    body .n-base-selection--active,
+    body [class*="n-input--focus"],
+    body [class*="n-base-selection--active"] {
+      background-color: #1a1a2e !important;
+      background: #1a1a2e !important;
+      border-color: #8b5cf6 !important;
+      box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.1) !important;
+    }
+
+    body .n-input__input-el,
+    body .n-base-selection__label,
+    body [class*="n-input__input-el"],
+    body [class*="n-base-selection__label"] {
+      color: #f8fafc !important;
+    }
+
+    body .n-input__placeholder,
+    body .n-base-selection__placeholder,
+    body [class*="n-input__placeholder"],
+    body [class*="n-base-selection__placeholder"] {
+      color: #64748b !important;
+    }
+
+    /* ==================== 全局统一下拉框样式 ==================== */
+    /* Element Plus Select Dropdown */
+    *.el-select-dropdown,
+    *[class*="el-select-dropdown"] {
+      background-color: #1a1a2e !important;
+      background: #1a1a2e !important;
+      border: 1px solid #334155 !important;
+      box-shadow: 0 8px 16px rgba(0, 0, 0, 0.15) !important;
+    }
+
+    *.el-select-dropdown__item,
+    *[class*="el-select-dropdown__item"] {
+      color: #cbd5e1 !important;
+      background: transparent !important;
+    }
+
+    *.el-select-dropdown__item:hover,
+    *[class*="el-select-dropdown__item"]:hover {
+      background-color: rgba(139, 92, 246, 0.2) !important;
+      background: rgba(139, 92, 246, 0.2) !important;
+      color: #ffffff !important;
+    }
+
+    *.el-select-dropdown__item.selected,
+    *[class*="el-select-dropdown__item"].selected {
+      background-color: rgba(139, 92, 246, 0.3) !important;
+      background: rgba(139, 92, 246, 0.3) !important;
+      color: #a78bfa !important;
+    }
+
+    /* Element Plus DatePicker Dropdown */
+    *.el-picker-panel,
+    *[class*="el-picker-panel"] {
+      background-color: #1a1a2e !important;
+      background: #1a1a2e !important;
+      border: 1px solid #334155 !important;
+      color: #f8fafc !important;
+    }
+
+    /* Naive UI Select Dropdown - 已在上面定义，这里确保完整性 */
+    body .n-base-select-menu,
+    body .n-select-menu,
+    body [class*="n-base-select-menu"],
+    body [class*="n-select-menu"] {
+      background-color: #1a1a2e !important;
+      background: #1a1a2e !important;
+      border: 1px solid #334155 !important;
+      box-shadow: 0 8px 16px rgba(0, 0, 0, 0.15) !important;
+    }
+
+    body .n-base-select-menu-item,
+    body .n-virtual-list-item,
+    body [class*="n-base-select-menu-item"],
+    body [class*="n-virtual-list-item"] {
+      color: #cbd5e1 !important;
+      background: transparent !important;
+    }
+
+    body .n-base-select-menu-item:hover,
+    body .n-virtual-list-item:hover,
+    body [class*="n-base-select-menu-item"]:hover,
+    body [class*="n-virtual-list-item"]:hover {
+      background-color: rgba(139, 92, 246, 0.2) !important;
+      background: rgba(139, 92, 246, 0.2) !important;
+      color: #ffffff !important;
+    }
+
+    body .n-base-select-menu-item--selected,
+    body .n-virtual-list-item--selected,
+    body [class*="n-base-select-menu-item--selected"],
+    body [class*="n-virtual-list-item--selected"] {
+      background-color: rgba(139, 92, 246, 0.3) !important;
+      background: rgba(139, 92, 246, 0.3) !important;
+      color: #a78bfa !important;
+    }
+
+    /* ==================== 全局统一 Switch/Checkbox/Radio 样式 ==================== */
+    /* Element Plus Switch */
+    *.el-switch__core,
+    *[class*="el-switch__core"] {
+      background-color: rgba(139, 92, 246, 0.2) !important;
+      border: 1px solid rgba(139, 92, 246, 0.3) !important;
+    }
+
+    *.el-switch.is-checked .el-switch__core,
+    *[class*="el-switch"].is-checked [class*="el-switch__core"] {
+      background-color: #8b5cf6 !important;
+      border-color: #8b5cf6 !important;
+    }
+
+    /* Naive UI Switch */
+    body .n-switch__rail,
+    body [class*="n-switch__rail"] {
+      background-color: rgba(139, 92, 246, 0.2) !important;
+      border: 1px solid rgba(139, 92, 246, 0.3) !important;
+    }
+
+    body .n-switch--active .n-switch__rail,
+    body [class*="n-switch--active"] [class*="n-switch__rail"] {
+      background-color: #8b5cf6 !important;
+      border-color: #8b5cf6 !important;
+      box-shadow: 0 0 12px rgba(139, 92, 246, 0.5) !important;
+    }
+
+    /* Element Plus Checkbox */
+    *.el-checkbox__inner,
+    *[class*="el-checkbox__inner"] {
+      background-color: rgba(139, 92, 246, 0.1) !important;
+      border: 1px solid rgba(139, 92, 246, 0.3) !important;
+    }
+
+    *.el-checkbox__input.is-checked .el-checkbox__inner,
+    *[class*="el-checkbox__input"].is-checked [class*="el-checkbox__inner"] {
+      background-color: rgba(139, 92, 246, 0.3) !important;
+      border-color: #8b5cf6 !important;
+    }
+
+    /* Naive UI Checkbox */
+    body .n-checkbox__box,
+    body [class*="n-checkbox__box"] {
+      background-color: rgba(139, 92, 246, 0.1) !important;
+      border: 1px solid rgba(139, 92, 246, 0.3) !important;
+    }
+
+    body .n-checkbox--checked .n-checkbox__box,
+    body [class*="n-checkbox--checked"] [class*="n-checkbox__box"] {
+      background-color: rgba(139, 92, 246, 0.3) !important;
+      border-color: #8b5cf6 !important;
+      box-shadow: 0 0 8px rgba(139, 92, 246, 0.4) !important;
+    }
+
+    /* Element Plus Radio */
+    *.el-radio__inner,
+    *[class*="el-radio__inner"] {
+      background-color: rgba(139, 92, 246, 0.1) !important;
+      border: 1px solid rgba(139, 92, 246, 0.3) !important;
+    }
+
+    *.el-radio__input.is-checked .el-radio__inner,
+    *[class*="el-radio__input"].is-checked [class*="el-radio__inner"] {
+      background-color: rgba(139, 92, 246, 0.3) !important;
+      border-color: #8b5cf6 !important;
+    }
+
+    /* Naive UI Radio */
+    body .n-radio__dot,
+    body [class*="n-radio__dot"] {
+      background-color: rgba(139, 92, 246, 0.3) !important;
+      border-color: #8b5cf6 !important;
+    }
+
+    /* ==================== 全局统一 Slider/Progress 样式 ==================== */
+    /* Element Plus Slider */
+    *.el-slider__runway,
+    *[class*="el-slider__runway"] {
+      background-color: rgba(139, 92, 246, 0.1) !important;
+    }
+
+    *.el-slider__bar,
+    *[class*="el-slider__bar"] {
+      background-color: #8b5cf6 !important;
+    }
+
+    *.el-slider__button,
+    *[class*="el-slider__button"] {
+      border: 2px solid #8b5cf6 !important;
+    }
+
+    /* Naive UI Slider */
+    body .n-slider-rail,
+    body [class*="n-slider-rail"] {
+      background-color: rgba(139, 92, 246, 0.1) !important;
+    }
+
+    body .n-slider-rail__fill,
+    body [class*="n-slider-rail__fill"] {
+      background-color: #8b5cf6 !important;
+    }
+
+    body .n-slider-handle,
+    body [class*="n-slider-handle"] {
+      background-color: #8b5cf6 !important;
+      border: 2px solid #8b5cf6 !important;
+    }
+
+    /* Element Plus Progress */
+    *.el-progress-bar__inner,
+    *[class*="el-progress-bar__inner"] {
+      background-color: #8b5cf6 !important;
+    }
+
+    /* Naive UI Progress */
+    body .n-progress-rail,
+    body [class*="n-progress-rail"] {
+      background-color: rgba(139, 92, 246, 0.1) !important;
+    }
+
+    body .n-progress-rail__fill,
+    body [class*="n-progress-rail__fill"] {
+      background-color: #8b5cf6 !important;
+    }
+
+    /* ==================== 全局统一 Tag/Label 样式 ==================== */
+    /* Element Plus Tag - 移除边框，保持简洁 */
+    *.el-tag,
+    *[class*="el-tag"] {
+      background-color: rgba(139, 92, 246, 0.15) !important;
+      border: none !important;
+      color: #a78bfa !important;
+      border-radius: 4px !important;
+    }
+
+    /* Naive UI Tag - 移除边框，保持简洁 */
+    body .n-tag,
+    body [class*="n-tag"] {
+      background-color: rgba(139, 92, 246, 0.15) !important;
+      border: none !important;
+      color: #a78bfa !important;
+      border-radius: 4px !important;
+    }
+
+    /* ==================== 全局统一 Table 样式 ==================== */
+    /* Element Plus Table */
+    *.el-table,
+    *[class*="el-table"] {
+      background-color: #1a1a2e !important;
+      color: #f8fafc !important;
+    }
+
+    *.el-table th,
+    *[class*="el-table"] th {
+      background-color: rgba(139, 92, 246, 0.08) !important;
+      color: #f8fafc !important;
+      border-bottom: 1px solid #334155 !important;
+    }
+
+    *.el-table td,
+    *[class*="el-table"] td {
+      border-bottom: 1px solid #334155 !important;
+    }
+
+    *.el-table--enable-row-hover .el-table__body tr:hover > td,
+    *[class*="el-table--enable-row-hover"] [class*="el-table__body"] tr:hover > td {
+      background-color: rgba(139, 92, 246, 0.08) !important;
+    }
+
+    *.el-table tr.current-row > td,
+    *[class*="el-table"] tr.current-row > td {
+      background-color: rgba(139, 92, 246, 0.15) !important;
+    }
+
+    /* Naive UI DataTable */
+    body .n-data-table,
+    body [class*="n-data-table"] {
+      background-color: #1a1a2e !important;
+      color: #f8fafc !important;
+    }
+
+    body .n-data-table-th,
+    body [class*="n-data-table-th"] {
+      background-color: rgba(139, 92, 246, 0.08) !important;
+      color: #f8fafc !important;
+      border-bottom: 1px solid #334155 !important;
+    }
+
+    body .n-data-table-td,
+    body [class*="n-data-table-td"] {
+      border-bottom: 1px solid #334155 !important;
+    }
+
+    body .n-data-table-tr:hover,
+    body [class*="n-data-table-tr"]:hover {
+      background-color: rgba(139, 92, 246, 0.08) !important;
+    }
+
+    body .n-data-table-tr.n-data-table-tr--selected,
+    body [class*="n-data-table-tr--selected"] {
+      background-color: rgba(139, 92, 246, 0.15) !important;
+    }
+
+    /* ==================== 全局统一 Loading/Spinner 样式 ==================== */
+    /* Element Plus Loading */
+    *.el-loading-spinner .path,
+    *[class*="el-loading-spinner"] .path {
+      stroke: #8b5cf6 !important;
+    }
+
+    *.el-loading-mask,
+    *[class*="el-loading-mask"] {
+      background-color: rgba(15, 15, 20, 0.85) !important;
+    }
+
+    /* Naive UI Spin/Loading */
+    body .n-spin,
+    body [class*="n-spin"] {
+      color: #8b5cf6 !important;
+    }
+
+    body .n-spin__icon,
+    body [class*="n-spin__icon"] {
+      color: #8b5cf6 !important;
+    }
+
+    /* ==================== 全局统一 Message/Notification 样式 ==================== */
+    /* Element Plus Message - 优化为更美观的设计 */
+    *.el-message,
+    *[class*="el-message"] {
+      background: linear-gradient(135deg, #1a1a2e 0%, #252530 100%) !important;
+      border: 1px solid rgba(139, 92, 246, 0.2) !important;
+      border-radius: 12px !important;
+      color: #f8fafc !important;
+      box-shadow: 0 8px 24px rgba(139, 92, 246, 0.15) !important;
+      padding: 12px 20px !important;
+      backdrop-filter: blur(10px) !important;
+    }
+
+    /* 移除 Message 内部所有元素的边框 */
+    *.el-message *,
+    *[class*="el-message"] * {
+      border: none !important;
+      box-shadow: none !important;
+    }
+
+    *.el-message--success,
+    *[class*="el-message--success"] {
+      background: linear-gradient(135deg, rgba(16, 185, 129, 0.15) 0%, rgba(16, 185, 129, 0.05) 100%) !important;
+      border: 1px solid rgba(16, 185, 129, 0.4) !important;
+    }
+
+    *.el-message--success .el-message__icon,
+    *[class*="el-message--success"] [class*="icon"] {
+      color: #34d399 !important;
+      border: none !important;
+      background: transparent !important;
+    }
+
+    *.el-message--warning,
+    *[class*="el-message--warning"] {
+      background: linear-gradient(135deg, rgba(245, 158, 11, 0.15) 0%, rgba(245, 158, 11, 0.05) 100%) !important;
+      border: 1px solid rgba(245, 158, 11, 0.4) !important;
+    }
+
+    *.el-message--warning .el-message__icon,
+    *[class*="el-message--warning"] [class*="icon"] {
+      color: #fbbf24 !important;
+      border: none !important;
+      background: transparent !important;
+    }
+
+    *.el-message--error,
+    *[class*="el-message--error"] {
+      background: linear-gradient(135deg, rgba(239, 68, 68, 0.15) 0%, rgba(239, 68, 68, 0.05) 100%) !important;
+      border: 1px solid rgba(239, 68, 68, 0.4) !important;
+    }
+
+    *.el-message--error .el-message__icon,
+    *[class*="el-message--error"] [class*="icon"] {
+      color: #f87171 !important;
+      border: none !important;
+      background: transparent !important;
+    }
+
+    *.el-message--info,
+    *[class*="el-message--info"] {
+      background: linear-gradient(135deg, rgba(59, 130, 246, 0.15) 0%, rgba(59, 130, 246, 0.05) 100%) !important;
+      border: 1px solid rgba(59, 130, 246, 0.4) !important;
+    }
+
+    *.el-message--info .el-message__icon,
+    *[class*="el-message--info"] [class*="icon"] {
+      color: #60a5fa !important;
+      border: none !important;
+      background: transparent !important;
+    }
+
+    /* Naive UI Message - 优化为更美观的设计 */
+    body .n-message,
+    body [class*="n-message"] {
+      background: linear-gradient(135deg, #1a1a2e 0%, #252530 100%) !important;
+      border: 1px solid rgba(139, 92, 246, 0.2) !important;
+      border-radius: 12px !important;
+      color: #f8fafc !important;
+      box-shadow: 0 8px 24px rgba(139, 92, 246, 0.15) !important;
+      backdrop-filter: blur(10px) !important;
+    }
+
+    /* 移除 Naive UI Message 内部所有元素的边框 */
+    body .n-message *,
+    body [class*="n-message"] * {
+      border: none !important;
+      box-shadow: none !important;
+    }
+
+    /* Element Plus Notification - 优化为更美观的设计 */
+    *.el-notification,
+    *[class*="el-notification"] {
+      background: linear-gradient(135deg, #1a1a2e 0%, #252530 100%) !important;
+      border: 1px solid rgba(139, 92, 246, 0.2) !important;
+      border-radius: 12px !important;
+      color: #f8fafc !important;
+      box-shadow: 0 8px 24px rgba(139, 92, 246, 0.15) !important;
+      backdrop-filter: blur(10px) !important;
+    }
+
+    /* 移除 Notification 内部所有元素的边框 */
+    *.el-notification *,
+    *[class*="el-notification"] * {
+      border: none !important;
+      box-shadow: none !important;
+    }
+
+    /* Naive UI Notification - 优化为更美观的设计 */
+    body .n-notification,
+    body [class*="n-notification"] {
+      background: linear-gradient(135deg, #1a1a2e 0%, #252530 100%) !important;
+      border: 1px solid rgba(139, 92, 246, 0.2) !important;
+      border-radius: 12px !important;
+      color: #f8fafc !important;
+      box-shadow: 0 8px 24px rgba(139, 92, 246, 0.15) !important;
+      backdrop-filter: blur(10px) !important;
+    }
+
+    /* 移除 Naive UI Notification 内部所有元素的边框 */
+    body .n-notification *,
+    body [class*="n-notification"] * {
+      border: none !important;
+      box-shadow: none !important;
+    }
+  `
+  document.head.appendChild(style)
+
+  // 强制设置 HTML 元素的 color-scheme
+  document.documentElement.style.colorScheme = 'dark'
+  document.documentElement.style.setProperty('color-scheme', 'dark', 'important')
+
+  // 使用 MutationObserver 监听 DOM 变化，动态修复白色背景的输入框
+  const fixWhiteInputs = () => {
+    // 更全面的选择器，包括 el-tooltip__trigger
+    const inputWrappers = document.querySelectorAll(
+      '.el-input__wrapper, ' +
+      '[class*="el-input__wrapper"], ' +
+      '.el-select .el-input__wrapper, ' +
+      '[class*="el-select"] [class*="el-input__wrapper"], ' +
+      '.timeline-controls *, ' +
+      '.el-tooltip__trigger, ' +
+      '[class*="el-tooltip__trigger"]'
+    )
+    let fixedCount = 0
+
+    inputWrappers.forEach(wrapper => {
+      // 强制设置内联样式
+      wrapper.style.setProperty('background-color', 'rgba(102, 126, 234, 0.08)', 'important')
+      wrapper.style.setProperty('background', 'rgba(102, 126, 234, 0.08)', 'important')
+      wrapper.style.setProperty('box-shadow', 'none', 'important')
+      wrapper.style.setProperty('color-scheme', 'dark', 'important')
+      wrapper.style.setProperty('border-color', 'rgba(102, 126, 234, 0.3)', 'important')
+
+      // 验证是否修复成功
+      const computedStyle = window.getComputedStyle(wrapper)
+      const bgColor = computedStyle.backgroundColor
+
+      if (bgColor === 'rgb(255, 255, 255)' || bgColor === '#ffffff' || bgColor === '#fff' || bgColor === 'rgba(255, 255, 255, 1)') {
+        fixedCount++
+        console.log('[深色主题] 发现白色背景:', wrapper.className, '背景色:', bgColor)
+
+        // 再次强制设置
+        wrapper.setAttribute('style', `
+          background-color: rgba(102, 126, 234, 0.08) !important;
+          background: rgba(102, 126, 234, 0.08) !important;
+          box-shadow: none !important;
+          border: 1px solid rgba(102, 126, 234, 0.3) !important;
+          color-scheme: dark !important;
+        `)
+      }
+    })
+
+    if (fixedCount > 0) {
+      console.log(`[深色主题] 警告：仍有 ${fixedCount} 个输入框为白色背景`)
+    }
+
+    // 修复 Naive UI 下拉菜单
+    const fixNaiveUIDropdowns = () => {
+      // 查找所有可能的下拉菜单元素
+      const dropdowns = document.querySelectorAll(
+        '[class*="n-select-menu"], ' +
+        '[class*="n-base-select-menu"], ' +
+        'div[class*="select-menu"], ' +
+        '.n-virtual-list, ' +
+        '[class*="n-virtual-list"]'
+      )
+
+      let dropdownFixed = 0
+
+      dropdowns.forEach(dropdown => {
+        if (!(dropdown instanceof HTMLElement)) return
+
+        const computedStyle = window.getComputedStyle(dropdown)
+        const bgColor = computedStyle.backgroundColor
+
+        // 检查是否为白色背景
+        if (bgColor === 'rgb(255, 255, 255)' || bgColor === '#ffffff' || bgColor === '#fff' || bgColor === 'rgba(255, 255, 255, 1)') {
+          dropdownFixed++
+          console.log('[深色主题] 发现白色下拉菜单:', dropdown.className, '背景色:', bgColor)
+
+          // 强制设置深色背景
+          dropdown.style.setProperty('background-color', 'rgba(30, 41, 59, 0.98)', 'important')
+          dropdown.style.setProperty('background', 'rgba(30, 41, 59, 0.98)', 'important')
+          dropdown.style.setProperty('border', '1px solid rgba(100, 116, 139, 0.3)', 'important')
+          dropdown.style.setProperty('backdrop-filter', 'blur(10px)', 'important')
+          dropdown.style.setProperty('color-scheme', 'dark', 'important')
+
+          // 修复所有子菜单项
+          const items = dropdown.querySelectorAll('[class*="menu-item"], [class*="list-item"], [class*="option"]')
+          items.forEach(item => {
+            if (!(item instanceof HTMLElement)) return
+            item.style.setProperty('color', '#cbd5e1', 'important')
+            item.style.setProperty('background', 'transparent', 'important')
+          })
+        }
+      })
+
+      if (dropdownFixed > 0) {
+        console.log(`[深色主题] 修复了 ${dropdownFixed} 个白色下拉菜单`)
+      }
+    }
+
+    // 执行下拉菜单修复
+    fixNaiveUIDropdowns()
+  }
+
+  // 立即执行一次
+  setTimeout(fixWhiteInputs, 100)
+
+  // 持续定时检查，每 200ms 检查一次（加快频率）
+  setInterval(fixWhiteInputs, 200)
+
+  const observer = new MutationObserver(() => {
+    fixWhiteInputs()
+  })
+
+  // 开始观察整个 document.body
+  observer.observe(document.body, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: ['style', 'class']
+  })
+
+  console.log('[深色主题] MutationObserver 和定时器已启动，正在监听白色输入框...')
+}
+
+// 立即执行一次
+forceDarkInputStyles()
+
+// 在 DOM 加载后再次执行
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', forceDarkInputStyles)
+} else {
+  forceDarkInputStyles()
+}
+
+// 监听路由变化，确保页面切换时清理残留元素
+router.afterEach(() => {
+  console.log('路由变化，检查并清理残留元素')
+  
+  // 延迟清理，确保DOM已更新
+  setTimeout(() => {
+    const panels = document.querySelectorAll('.floating-panel')
+    const minimizedBars = document.querySelectorAll('.minimized-panels')
+    
+    if (panels.length > 0) {
+      console.log(`路由切换后清理 ${panels.length} 个浮动面板`)
+      panels.forEach(panel => {
+        if (panel.parentNode) {
+          panel.parentNode.removeChild(panel)
+        }
+      })
+    }
+    
+    if (minimizedBars.length > 0) {
+      console.log(`路由切换后清理 ${minimizedBars.length} 个最小化面板栏`)
+      minimizedBars.forEach(bar => {
+        if (bar.parentNode) {
+          bar.parentNode.removeChild(bar)
+        }
+      })
+    }
+  }, 100)
+})

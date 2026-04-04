@@ -207,13 +207,14 @@ class SeamlessKlineService:
                 logger.debug(f"[增量合并] 无新数据，使用缓存")
                 historical.df = cached_data
 
-        # 应用复权到数据
-        if adjust_type != 'none' and not historical.df.empty:
-            historical.df = self._apply_adjustment(
-                historical.df, symbol, adjust_type, period
-            )
+        # 复权功能已禁用（短期策略不需要，需要时可恢复）
+        # 原代码保留供参考：
+        # if adjust_type != 'none' and not historical.df.empty:
+        #     historical.df = self._apply_adjustment(
+        #         historical.df, symbol, adjust_type, period
+        #     )
 
-        # 写入缓存（缓存复权后数据，包含时间戳）
+        # 写入缓存（缓存原始数据，包含时间戳）
         if use_cache and not historical.df.empty:
             cache_df = historical.df.tail(CACHE_SIZE).copy() if len(historical.df) > CACHE_SIZE else historical.df.copy()
             last_time = cache_df.iloc[-1]['datetime']
@@ -334,59 +335,14 @@ class SeamlessKlineService:
         Returns:
             除权除息记录列表
         """
-        # 1. 检查内存缓存（L1）
-        cached = self._xdxr_cache.get(symbol)
-        if cached is not None:
-            logger.debug(f"[XDXR缓存] L1内存命中: {symbol}, {len(cached)}条")
-            return cached
-
-        # 2. 检查文件缓存（L2持久化）
-        file_cached = self._load_xdxr_from_file(symbol)
-        if file_cached is not None:
-            # 放入内存缓存
-            self._xdxr_cache.set(symbol, file_cached, ttl=3600)
-            logger.debug(f"[XDXR缓存] L2文件命中: {symbol}, {len(file_cached)}条")
-            return file_cached
-
-        # 3. 缓存未命中，从数据源获取
-        xdxr_data = None
-
-        # 优先从 TdxQuant 获取（覆盖范围更广，仅交易时间可用）
-        if TradingTimeChecker.is_trading_time():
-            try:
-                tdxquant = self._get_adapter('tdxquant')
-                if tdxquant and tdxquant.is_available():
-                    # TdxQuant SDK 的 get_xdxr_info 方法
-                    if hasattr(tdxquant._tq, 'get_xdxr_info'):
-                        xdxr_data = tdxquant._tq.get_xdxr_info([symbol])
-                        if xdxr_data and symbol in xdxr_data:
-                            xdxr_data = xdxr_data[symbol]
-                            logger.debug(f"[XDXR] TdxQuant 获取 {symbol} 除权数据: {len(xdxr_data)} 条")
-            except Exception as e:
-                logger.debug(f"[XDXR] TdxQuant 获取除权数据失败: {e}")
-
-        # 备用: 从 PyTdx 获取（24/7可用）
-        if xdxr_data is None:
-            try:
-                pytdx = self._get_adapter('pytdx')
-                if pytdx and pytdx.is_available():
-                    xdxr_data = pytdx.get_xdxr_info(symbol)
-                    if xdxr_data:
-                        logger.debug(f"[XDXR] PyTdx 获取 {symbol} 除权数据: {len(xdxr_data)} 条")
-            except Exception as e:
-                logger.debug(f"[XDXR] PyTdx 获取除权数据失败: {e}")
-
-        # 4. 如果获取成功，存入两级缓存
-        if xdxr_data:
-            # 存入内存缓存
-            self._xdxr_cache.set(symbol, xdxr_data, ttl=3600)
-            # 存入文件缓存
-            self._save_xdxr_to_file(symbol, xdxr_data)
-            logger.info(f"[XDXR缓存] 已更新: {symbol}, {len(xdxr_data)}条")
-            return xdxr_data
-
-        logger.debug(f"[XDXR] {symbol} 无除权数据")
-        return []
+        # 委托给 XdxrService（统一管理，避免直接访问适配器）
+        try:
+            from myquant.core.market.services.xdxr_service import get_xdxr_service
+            xdxr_service = get_xdxr_service()
+            return xdxr_service.get_xdxr_data(symbol)
+        except Exception as e:
+            logger.warning(f"[SeamlessService] 获取XDXR数据失败: {e}")
+            return []
 
     def _get_xdxr_file_path(self, symbol: str, use_binary: bool = True) -> Path:
         """获取XDXR数据文件路径

@@ -1,0 +1,678 @@
+/**
+ * MyQuant v10.0.0 - 统一全局样式
+ * 基于工作流风格设计系统
+ */
+
+/* ========================================
+   1. 全局重置
+   ======================================== */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  font-family: var(--font-family);
+  font-size: var(--font-size-base);
+  color: var(--text-primary);
+  background-color: var(--bg-primary);
+  color-scheme: dark;
+}
+
+/* ========================================
+   2. 滚动条样式
+   ======================================== */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-secondary);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--accent-blue);
+}
+
+/* Firefox 滚动条 */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-color) var(--bg-secondary);
+}
+
+/* ========================================
+   3. 标题字体
+   ======================================== */
+h1, .h1 {
+  font-size: var(--font-size-h1);
+  font-weight: var(--font-weight-bold);
+  line-height: 1.3;
+}
+
+h2, .h2 {
+  font-size: var(--font-size-h2);
+  font-weight: var(--font-weight-bold);
+  line-height: 1.3;
+}
+
+h3, .h3 {
+  font-size: var(--font-size-h3);
+  font-weight: var(--font-weight-bold);
+  line-height: 1.4;
+}
+
+h4, .h4 {
+  font-size: var(--font-size-h4);
+  font-weight: var(--font-weight-bold);
+  line-height: 1.4;
+}
+
+h5, .h5 {
+  font-size: var(--font-size-h5);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.4;
+}
+
+/* 副标题 */
+.subtitle {
+  font-size: var(--font-size-subtitle);
+  color: var(--text-secondary);
+}
+
+/* ========================================
+   4. 分割线
+   ======================================== */
+.divider {
+  height: 1px;
+  background: var(--border-color);
+  margin: var(--spacing-lg) 0;
+}
+
+.divider-vertical {
+  width: 1px;
+  background: var(--border-color);
+  margin: 0 var(--spacing-md);
+}
+
+/* ========================================
+   5. 按钮系统
+   ======================================== */
+
+/* 基础按钮 */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-sm);
+  padding: var(--padding-button);
+  border: none;
+  border-radius: var(--radius-md);
+  font-family: inherit;
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-medium);
+  line-height: 1;
+  text-decoration: none;
+  cursor: pointer;
+  transition: all var(--transition-base);
+  user-select: none;
+  white-space: nowrap;
+}
+
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none !important;
+}
+
+/* 按钮尺寸 */
+.btn-xs {
+  padding: 4px 8px;
+  font-size: var(--font-size-xs);
+  border-radius: var(--radius-sm);
+}
+
+.btn-sm {
+  padding: 6px 12px;
+  font-size: var(--font-size-sm);
+}
+
+.btn-lg {
+  padding: 12px 24px;
+  font-size: var(--font-size-h5);
+}
+
+/* 主要按钮 */
+.btn-primary {
+  background: var(--accent-blue);
+  color: white;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--accent-blue-hover);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+
+/* 次要按钮 */
+.btn-secondary {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: var(--border-color);
+  border-color: var(--accent-blue);
+}
+
+/* 成功按钮 - 红色（A股上涨色） */
+.btn-success {
+  background: var(--accent-red);
+  color: white;
+}
+
+.btn-success:hover:not(:disabled) {
+  background: #d73027;
+  transform: translateY(-1px);
+}
+
+/* 警告按钮 */
+.btn-warning {
+  background: var(--accent-orange);
+  color: white;
+}
+
+.btn-warning:hover:not(:disabled) {
+  background: #e68900;
+  transform: translateY(-1px);
+}
+
+/* 失败按钮 - 绿色（A股下跌色） */
+.btn-danger {
+  background: var(--accent-green);
+  color: white;
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: #1e8e7e;
+  transform: translateY(-1px);
+}
+
+/* 幽灵按钮 */
+.btn-ghost {
+  background: transparent;
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+}
+
+.btn-ghost:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: var(--accent-blue);
+}
+
+/* 文字按钮 */
+.btn-link {
+  background: transparent;
+  border: none;
+  color: var(--accent-blue);
+  padding: 0;
+}
+
+.btn-link:hover:not(:disabled) {
+  color: var(--accent-blue-hover);
+  text-decoration: underline;
+}
+
+/* 按钮组 */
+.btn-group {
+  display: inline-flex;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.btn-group .btn {
+  border-radius: 0;
+  border-right: 1px solid transparent;
+}
+
+.btn-group .btn:first-child {
+  border-top-left-radius: inherit;
+  border-bottom-left-radius: inherit;
+}
+
+.btn-group .btn:last-child {
+  border-top-right-radius: inherit;
+  border-bottom-right-radius: inherit;
+  border-right: none;
+}
+
+/* 加载状态 */
+.btn.loading {
+  position: relative;
+  color: transparent !important;
+}
+
+.btn.loading::after {
+  content: '';
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  border: 2px solid currentColor;
+  border-radius: 50%;
+  border-top-color: transparent;
+  animation: spin 0.8s linear infinite;
+}
+
+/* ========================================
+   6. 输入框系统
+   ======================================== */
+.input {
+  width: 100%;
+  padding: var(--padding-input);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--font-size-base);
+  transition: all var(--transition-base);
+  caret-color: var(--accent-blue);
+}
+
+.input:focus {
+  outline: none;
+  border-color: var(--accent-blue);
+  box-shadow: 0 0 0 3px var(--accent-blue-light);
+}
+
+.input::placeholder {
+  color: var(--text-secondary);
+}
+
+.input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* 输入框尺寸 */
+.input-sm {
+  padding: 6px 10px;
+  font-size: var(--font-size-sm);
+}
+
+.input-lg {
+  padding: 12px 16px;
+  font-size: var(--font-size-h5);
+}
+
+/* 带图标的输入框 */
+.input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.input-wrapper .input {
+  padding-left: 36px;
+}
+
+.input-wrapper .input-icon {
+  position: absolute;
+  left: 12px;
+  color: var(--text-secondary);
+  pointer-events: none;
+}
+
+.input-wrapper .input-clear {
+  position: absolute;
+  right: 8px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: var(--radius-sm);
+}
+
+.input-wrapper .input-clear:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* ========================================
+   7. 下拉框系统
+   ======================================== */
+.select {
+  position: relative;
+  width: 100%;
+}
+
+.select-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--padding-input);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--font-size-base);
+  cursor: pointer;
+  transition: all var(--transition-base);
+}
+
+.select-trigger:hover {
+  border-color: var(--accent-blue);
+}
+
+.select-trigger.is-open {
+  border-color: var(--accent-blue);
+}
+
+.select-trigger.is-open .select-arrow {
+  transform: rotate(180deg);
+}
+
+.select-arrow {
+  transition: transform var(--transition-base);
+}
+
+.select-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  z-index: var(--z-dropdown);
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.select-option {
+  padding: var(--spacing-sm) var(--spacing-md);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.select-option:hover {
+  background: var(--bg-tertiary);
+}
+
+.select-option.is-selected {
+  background: var(--accent-blue-light);
+  color: var(--accent-blue);
+}
+
+.select-option.is-disabled {
+  color: var(--text-disabled);
+  cursor: not-allowed;
+}
+
+/* ========================================
+   8. 标签页系统
+   ======================================== */
+.tabs {
+  display: flex;
+  gap: var(--spacing-sm);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.tab {
+  padding: var(--spacing-sm) var(--spacing-lg);
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+  cursor: pointer;
+  transition: all var(--transition-base);
+  font-family: inherit;
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-medium);
+}
+
+.tab:hover:not(.is-active) {
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+}
+
+.tab.is-active {
+  color: var(--accent-blue);
+  background: var(--bg-secondary);
+  border-color: var(--border-color);
+  border-bottom-color: var(--bg-secondary);
+}
+
+.tab-content {
+  padding: var(--spacing-xl);
+}
+
+/* 紧凑型标签 */
+.tabs-compact {
+  gap: 4px;
+}
+
+.tabs-compact .tab {
+  padding: 6px 12px;
+  font-size: var(--font-size-sm);
+}
+
+/* ========================================
+   9. 菜单系统
+   ======================================== */
+.menu {
+  display: flex;
+  flex-direction: column;
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  color: var(--text-secondary);
+  text-decoration: none;
+  cursor: pointer;
+  transition: all var(--transition-base);
+  border-radius: var(--radius-md);
+}
+
+.menu-item:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.menu-item.is-active {
+  color: var(--accent-blue);
+  background: var(--accent-blue-light);
+}
+
+.menu-item-icon {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.menu-item-text {
+  flex: 1;
+}
+
+.menu-item-badge {
+  padding: 2px 6px;
+  background: var(--accent-blue);
+  color: white;
+  font-size: var(--font-size-xs);
+  border-radius: var(--radius-full);
+}
+
+/* ========================================
+   10. 侧边栏系统
+   ======================================== */
+.sidebar {
+  width: var(--sidebar-width);
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  transition: width var(--transition-slow);
+}
+
+.sidebar.collapsed {
+  width: var(--sidebar-collapsed);
+}
+
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--spacing-lg);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.sidebar-title {
+  font-size: var(--font-size-h5);
+  font-weight: var(--font-weight-bold);
+}
+
+.sidebar-content {
+  flex: 1;
+  padding: var(--spacing-md);
+  overflow-y: auto;
+}
+
+.sidebar-section {
+  margin-bottom: var(--spacing-xl);
+}
+
+.sidebar-section-title {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: var(--spacing-sm) var(--spacing-md);
+  margin-bottom: var(--spacing-xs);
+}
+
+/* 侧边栏折叠按钮 */
+.sidebar-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: all var(--transition-base);
+}
+
+.sidebar-toggle:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+/* ========================================
+   11. 折叠面板
+   ======================================== */
+.collapse {
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.collapse-item {
+  border-bottom: 1px solid var(--border-color);
+}
+
+.collapse-item:last-child {
+  border-bottom: none;
+}
+
+.collapse-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--spacing-md) var(--spacing-lg);
+  background: var(--bg-secondary);
+  cursor: pointer;
+  transition: all var(--transition-base);
+}
+
+.collapse-header:hover {
+  background: var(--bg-tertiary);
+}
+
+.collapse-title {
+  font-weight: var(--font-weight-medium);
+}
+
+.collapse-arrow {
+  transition: transform var(--transition-base);
+}
+
+.collapse-item.is-open .collapse-arrow {
+  transform: rotate(90deg);
+}
+
+.collapse-content {
+  display: none;
+  padding: var(--spacing-lg);
+  background: var(--bg-primary);
+}
+
+.collapse-item.is-open .collapse-content {
+  display: block;
+}
+
+/* ========================================
+   12. 动画
+   ======================================== */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideIn {
+  from { opacity: 0; transform: translateX(-20px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.animate-fade-in {
+  animation: fadeIn var(--transition-base) ease-out;
+}
+
+.animate-slide-in {
+  animation: slideIn var(--transition-base) ease-out;
+}
+
+.animate-spin {
+  animation: spin 1s linear infinite;
+}
+
+.animate-pulse {
+  animation: pulse 2s ease-in-out infinite;
+}

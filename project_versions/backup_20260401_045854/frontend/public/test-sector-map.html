@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>板块地图测试</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background: #f5f5f5;
+            margin: 0;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            margin-top: 0;
+        }
+        .info {
+            background: #e3f2fd;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+            border-left: 4px solid #2196f3;
+        }
+        .link {
+            display: inline-block;
+            padding: 12px 24px;
+            background: #2196f3;
+            color: white;
+            text-decoration: none;
+            border-radius: 6px;
+            margin: 10px 10px 10px 0;
+            transition: background 0.3s;
+        }
+        .link:hover {
+            background: #1976d2;
+        }
+        .success {
+            background: #e8f5e9;
+            color: #2e7d32;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+            border-left: 4px solid #4caf50;
+        }
+        .feature-list {
+            margin: 20px 0;
+        }
+        .feature-list li {
+            margin: 10px 0;
+            line-height: 1.6;
+        }
+        code {
+            background: #f5f5f5;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🗺️ 88板块地图 - 功能测试</h1>
+
+        <div class="success">
+            ✅ 板块地图组件已创建成功！
+        </div>
+
+        <div class="info">
+            <h3>📍 访问地址</h3>
+            <p>
+                <a href="http://localhost:5174/sector-map" class="link" target="_blank">打开板块地图</a>
+            </p>
+        </div>
+
+        <div class="info">
+            <h3>🎯 功能特性</h3>
+            <ul class="feature-list">
+                <li><strong>通达信风格布局</strong>: 网格化显示所有88板块</li>
+                <li><strong>颜色深浅表示涨跌</strong>: 红色上涨，绿色下跌，颜色越深涨跌幅度越大</li>
+                <li><strong>11级颜色渐变</strong>: ≥10%、7-10%、5-7%、3-5%、0-3%、0%、0~-3%、-3~-5%、-5~-7%、-7~-10%、≤-10%</li>
+                <li><strong>点击查看详情</strong>: 点击板块格子查看成分股、成交额等详细信息</li>
+                <li><strong>数据筛选</strong>: 按板块类型（881/880）和最小涨跌幅筛选</li>
+                <li><strong>实时统计</strong>: 上涨/下跌/平盘板块数、平均涨跌幅</li>
+            </ul>
+        </div>
+
+        <div class="info">
+            <h3>📊 板块地图说明</h3>
+            <p><strong>网格布局</strong>: 每个格子代表一个板块，显示板块代码、名称和涨跌幅</p>
+            <p><strong>颜色编码</strong>:
+                <ul style="margin: 10px 0; padding-left: 20px;">
+                    <li><span style="color: #dc3545; font-weight: bold;">红色</span> - 上涨，颜色越深涨幅越大</li>
+                    <li><span style="color: #28a745; font-weight: bold;">绿色</span> - 下跌，颜色越深跌幅越大</li>
+                    <li><span style="color: #6c757d;">灰色</span> - 平盘</li>
+                </ul>
+            </p>
+            <p><strong>交互操作</strong>: 鼠标悬停预览，点击查看详情</p>
+        </div>
+
+        <div class="info">
+            <h3>🔗 相关页面</h3>
+            <a href="http://localhost:5174/hotspot-analysis" class="link" target="_blank">热点分析</a>
+            <a href="http://localhost:5174/test-88sectors.html" class="link" target="_blank">88板块测试页面</a>
+        </div>
+
+        <div class="info">
+            <h3>💡 使用建议</h3>
+            <ul>
+                <li>首次加载时选择<strong>树图</strong>模式，直观了解板块分布</li>
+                <li>使用<strong>涨跌幅</strong>着色，快速识别热点板块</li>
+                <li>调整<strong>最小成分股数</strong>过滤，聚焦重要板块</li>
+                <li>切换到<strong>层级树</strong>模式，查看板块分类结构</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        console.log('🗺️ 88板块地图测试页面');
+        console.log('📊 组件已创建: frontend/src/views/SectorMap.vue');
+        console.log('🔗 路由已配置: /sector-map');
+        console.log('✨ 支持三种可视化模式: 树图、层级树、力导向图');
+    </script>
+</body>
+</html>

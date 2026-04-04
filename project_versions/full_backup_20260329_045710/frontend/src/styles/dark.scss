@@ -1,0 +1,240 @@
+// ================================
+// MyQuant v9.0.0 - Dark Theme
+// 暗色主题样式
+// ================================
+
+@import './variables.scss';
+
+:root {
+  // 主色调 - 使用蓝色
+  --el-color-primary: #2962ff;
+  --el-color-primary-light-3: #5c8aff;
+  --el-color-primary-light-5: #8ab4ff;
+  --el-color-primary-light-7: #b7cdff;
+  --el-color-primary-light-8: #d1dcff;
+  --el-color-primary-light-9: #e8ebf7;
+  --el-color-primary-dark-2: #0039cb;
+
+  // 成功/警告/危险/信息
+  --el-color-success: #10b981;
+  --el-color-warning: #f59e0b;
+  --el-color-danger: #ef4444;
+  --el-color-error: #ef4444;
+  --el-color-info: #06b6d4;
+
+  // 背景色
+  --el-bg-color: #1a1a2e;
+  --el-bg-color-page: #0a0a0f;
+  --el-bg-color-overlay: #252530;
+
+  // 文字色
+  --el-text-color-primary: #f8fafc;
+  --el-text-color-regular: #cbd5e1;
+  --el-text-color-secondary: #94a3b8;
+  --el-text-color-placeholder: #64748b;
+  --el-text-color-disabled: #475569;
+
+  // 边框色
+  --el-border-color: rgba(255, 255, 255, 0.12);
+  --el-border-color-light: rgba(255, 255, 255, 0.06);
+  --el-border-color-lighter: rgba(255, 255, 255, 0.04);
+  --el-border-color-extra-light: rgba(255, 255, 255, 0.02);
+  --el-border-color-dark: rgba(255, 255, 255, 0.18);
+  --el-border-color-darker: rgba(255, 255, 255, 0.24);
+
+  // 填充色
+  --el-fill-color: rgba(255, 255, 255, 0.06);
+  --el-fill-color-light: rgba(255, 255, 255, 0.04);
+  --el-fill-color-lighter: rgba(255, 255, 255, 0.02);
+  --el-fill-color-extra-light: rgba(255, 255, 255, 0.01);
+  --el-fill-color-dark: rgba(255, 255, 255, 0.12);
+  --el-fill-color-darker: rgba(255, 255, 255, 0.18);
+
+  // 盒阴影
+  --el-box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.4);
+  --el-box-shadow-light: 0 2px 4px -1px rgba(0, 0, 0, 0.3);
+  --el-box-shadow-lighter: 0 1px 2px -1px rgba(0, 0, 0, 0.2);
+  --el-box-shadow-dark: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
+
+  // 禁用
+  --el-disabled-bg-color: rgba(255, 255, 255, 0.02);
+  --el-disabled-text-color: #64748b;
+  --el-disabled-border-color: rgba(255, 255, 255, 0.04);
+
+  // 遮罩
+  --el-overlay-color: rgba(0, 0, 0, 0.7);
+  --el-overlay-color-light: rgba(0, 0, 0, 0.5);
+  --el-overlay-color-lighter: rgba(0, 0, 0, 0.3);
+
+  // 涨跌颜色
+  --color-up: #ef4444;
+  --color-down: #10b981;
+  --color-flat: #94a3b8;
+}
+
+// 全局样式
+body {
+  margin: 0;
+  padding: 0;
+  font-family: 'Microsoft YaHei', 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+  background-color: $bg-deep;
+  color: $text-primary;
+  font-size: $font-md;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#app {
+  min-height: 100vh;
+  background: $bg-deep;
+}
+
+// 图标大小控制
+.el-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1em;
+  height: 1em;
+  font-size: 1em;
+  line-height: 1;
+
+  svg {
+    width: 1em;
+    height: 1em;
+  }
+}
+
+// 滚动条样式
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: $bg-surface;
+}
+
+::-webkit-scrollbar-thumb {
+  background: $border-medium;
+  border-radius: $radius-sm;
+
+  &:hover {
+    background: $border-dark;
+  }
+}
+
+// 链接样式
+a {
+  color: $primary-color;
+  text-decoration: none;
+  transition: color $transition-base;
+
+  &:hover {
+    color: $primary-light;
+  }
+}
+
+// 卡片样式
+.card {
+  background: $bg-surface;
+  border: 1px solid $border-light;
+  border-radius: $radius-lg;
+  padding: $spacing-lg;
+  box-shadow: $shadow-md;
+}
+
+// 涨跌颜色类
+.text-up {
+  color: $color-up !important;
+}
+
+.text-down {
+  color: $color-down !important;
+}
+
+.text-flat {
+  color: $color-flat !important;
+}
+
+.bg-up {
+  background-color: rgba(239, 68, 68, 0.1) !important;
+}
+
+.bg-down {
+  background-color: rgba(16, 185, 129, 0.1) !important;
+}
+
+// 渐变背景
+.gradient-bg {
+  background: $gradient-primary;
+}
+
+.gradient-surface {
+  background: $gradient-surface;
+}
+
+// 阴影效果
+.shadow-glow {
+  box-shadow: $shadow-glow;
+}
+
+// 动画
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideInUp {
+  from {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.fade-in {
+  animation: fadeIn $transition-slow;
+}
+
+.slide-in-up {
+  animation: slideInUp $transition-slow;
+}
+
+.pulse {
+  animation: pulse 2s ease-in-out infinite;
+}
+
+// 加载动画
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.loading-spinner {
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  border: 2px solid $border-light;
+  border-top-color: $primary-color;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}

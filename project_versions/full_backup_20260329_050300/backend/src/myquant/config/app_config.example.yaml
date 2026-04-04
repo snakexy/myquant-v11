@@ -1,0 +1,137 @@
+# MyQuant v10.0.0 配置示例
+# 复制此文件到项目根目录并重命名为 .env
+
+# ============================================================================
+# 应用基础配置
+# ============================================================================
+PROJECT_NAME=MyQuant
+VERSION=10.0.0
+ENVIRONMENT=development
+
+# ============================================================================
+# API服务配置
+# ============================================================================
+API_APP_NAME=MyQuant_v10.0.0
+API_APP_VERSION=10.0.0
+API_HOST=0.0.0.0
+API_PORT=8002
+API_WORKERS=4
+API_DEBUG=false
+API_RELOAD=false
+
+# ============================================================================
+# CORS跨域配置
+# ============================================================================
+CORS_ENABLED=true
+CORS_ORIGINS=["http://localhost:5173","http://localhost:3000","http://localhost:8080"]
+CORS_ALLOW_CREDENTIALS=true
+
+# ============================================================================
+# XtQuant数据源配置
+# ============================================================================
+XTQUANT_ENABLED=false
+XTQUANT_ACCOUNT=your_account
+XTQUANT_PASSWORD=your_password
+XTQUANT_SESSION_ID=1
+XTQUANT_HOST=127.0.0.1
+XTQUANT_PORT=55505
+XTQUANT_TIMEOUT=10
+
+# ============================================================================
+# 通达信(PyTdx)数据源配置
+# ============================================================================
+PYTDX_ENABLED=true
+PYTDX_LOCAL_DATA_PATH=E:/zd_zsone
+PYTDX_ENABLE_REMOTE=true
+PYTDX_SERVER=119.147.212.81
+PYTDX_PORT=7709
+PYTDX_TIMEOUT=10
+
+# ============================================================================
+# 本地数据库配置
+# ============================================================================
+LOCALDB_ENABLED=true
+LOCALDB_DB_PATH=data/myquant.db
+LOCALDB_POOL_SIZE=5
+LOCALDB_MAX_OVERFLOW=10
+
+# ============================================================================
+# Redis缓存配置
+# ============================================================================
+REDIS_ENABLED=false
+REDIS_HOST=localhost
+REDIS_PORT=6379
+REDIS_DB=0
+REDIS_PASSWORD=
+REDIS_MAX_CONNECTIONS=10
+
+# ============================================================================
+# 内存缓存配置
+# ============================================================================
+MEMCACHE_ENABLED=true
+MEMCACHE_MAX_SIZE=1000
+MEMCACHE_TTL=300
+
+# ============================================================================
+# QLib配置
+# ============================================================================
+QLIB_PROVIDER_URI=data/qlib
+QLIB_REGION_NAME=cn
+QLIB_LOG_LEVEL=INFO
+QLIB_ENABLE_CACHE=true
+QLIB_MAX_THREADS=4
+
+# ============================================================================
+# Research阶段配置
+# ============================================================================
+RESEARCH_ENABLED=true
+RESEARCH_MAX_PARALLEL_FACTOR_CALCULATIONS=5
+RESEARCH_FACTOR_CALCULATION_TIMEOUT=600
+RESEARCH_ENABLE_RESULT_CACHE=true
+
+# ============================================================================
+# Validation阶段配置
+# ============================================================================
+VALIDATION_ENABLED=true
+VALIDATION_BACKTEST_EXECUTOR_TYPE=port_analysis
+VALIDATION_BACKTEST_START_DATE=2020-01-01
+VALIDATION_BACKTEST_END_DATE=2023-12-31
+VALIDATION_SIMULATION_ENABLED=true
+VALIDATION_SIMULATION_INITIAL_CAPITAL=1000000.0
+
+# ============================================================================
+# Production阶段配置
+# ============================================================================
+PRODUCTION_ENABLED=false
+PRODUCTION_TRADING_ENABLED=false
+PRODUCTION_BROKER_TYPE=simulated
+PRODUCTION_MAX_POSITION_RATIO=0.95
+PRODUCTION_MAX_SINGLE_STOCK_RATIO=0.3
+PRODUCTION_STOP_LOSS_RATIO=0.08
+PRODUCTION_TAKE_PROFIT_RATIO=0.15
+PRODUCTION_MAX_DRAWDOWN_RATIO=0.20
+PRODUCTION_MAX_ORDERS_PER_DAY=100
+PRODUCTION_TRADING_HOURS_ONLY=true
+
+# ============================================================================
+# WebSocket配置
+# ============================================================================
+WS_HEARTBEAT_INTERVAL=30
+WS_MAX_CONNECTIONS=100
+
+# ============================================================================
+# 日志配置
+# ============================================================================
+LOG_LEVEL=INFO
+LOG_DIR=logs
+LOG_MAX_BYTES=10485760
+LOG_BACKUP_COUNT=5
+
+# ============================================================================
+# 特性开关
+# ============================================================================
+FEATURE_MULTI_STOCK_MONITOR=true
+FEATURE_SECTOR_ROTATION=true
+FEATURE_AI_ASSISTANT=true
+FEATURE_BACKTEST=true
+FEATURE_LIVE_TRADING=false

@@ -8,10 +8,10 @@ from typing import Optional
 import logging
 
 from .base import DataAdapter, V5DataAdapter
-from .pytdx_adapter import V5PyTdxAdapter, create_pytdx_adapter
 from .pytdx_pool_adapter import V5PyTdxPoolAdapter, create_pytdx_pool_adapter
 from .xtquant_adapter import V5XtQuantAdapter, create_xtquant_adapter
 from .tdxquant_adapter import V5TdxQuantAdapter, create_tdxquant_adapter
+from .hotdb_adapter import V5HotDBAdapter, create_hotdb_adapter
 from .localdb_adapter import V5LocalDBAdapter, create_localdb_adapter
 from .tdxlocal_adapter import V5TdxLocalAdapter, create_tdxlocal_adapter
 
@@ -25,10 +25,10 @@ class AdapterFactory:
     """
 
     _registry = {
-        'pytdx': create_pytdx_pool_adapter,  # 默认：连接池版（M+H+P架构，高可用）
-        'pytdx_simple': create_pytdx_adapter,  # 简单版（无连接池，兼容回退）
+        'pytdx': create_pytdx_pool_adapter,  # 连接池版（高可用）
         'xtquant': create_xtquant_adapter,
         'tdxquant': create_tdxquant_adapter,
+        'hotdb': create_hotdb_adapter,  # 热数据库（自选股最新数据）
         'localdb': create_localdb_adapter,
         'tdxlocal': create_tdxlocal_adapter,
     }

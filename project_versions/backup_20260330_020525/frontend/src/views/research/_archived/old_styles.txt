@@ -1,0 +1,1500 @@
+            <!-- 步骤3+：因子分析内容 -->
+            <template v-if="currentStep >= 3">
+            <!-- Tabs -->
+            <div class="content-tabs">
+              <button
+                v-for="tab in currentTabs"
+                :key="tab.id"
+                :class="['content-tab', { active: currentTab === tab.id }]"
+                @click="switchTab(tab.id)"
+              >
+                <svg v-if="tab.id === 'overview'" class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="3" y="3" width="7" height="7"></rect>
+                  <rect x="14" y="3" width="7" height="7"></rect>
+                  <rect x="14" y="14" width="7" height="7"></rect>
+                  <rect x="3" y="14" width="7" height="7"></rect>
+                </svg>
+                <svg v-else-if="tab.id === 'ic-ir'" class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline>
+                  <polyline points="17 6 23 6 23 12"></polyline>
+                </svg>
+                <svg v-else-if="tab.id === 'correlation'" class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="2"></circle>
+                  <path d="M16.24 7.76a6 6 0 010 8.49m-8.48-.01a6 6 0 010-8.49m11.31-2.82a10 10 0 010 14.14m-14.14 0a10 10 0 010-14.14"></path>
+                </svg>
+                <svg v-else-if="tab.id === 'distribution'" class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="18" y1="20" x2="18" y2="10"></line>
+                  <line x1="12" y1="20" x2="12" y2="4"></line>
+                  <line x1="6" y1="20" x2="6" y2="14"></line>
+                </svg>
+                <svg v-else class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="10"></circle>
+                </svg>
+                {{ isZh ? tab.nameZh : tab.name }}
+              </button>
+            </div>
+
+            <!-- Tab Content -->
+            <div class="tab-content">
+            <!-- Overview Tab -->
+            <div v-if="currentTab === 'overview'" class="tab-pane active">
+              <!-- 因子库质量雷达图 -->
+              <div class="radar-section">
+                <h3 class="section-title">
+                  <svg class="section-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+                    <polyline points="2 17 12 22 22 17"></polyline>
+                    <polyline points="2 12 12 17 22 12"></polyline>
+                  </svg>
+                  {{ isZh ? '因子库整体质量' : 'Factor Library Quality' }}
+                </h3>
+                <div class="quality-metrics-panel">
+                  <!-- 左侧：指标列表 -->
+                  <div class="quality-list">
+                    <!-- 平均IC -->
+                    <div class="quality-item">
+                      <div class="quality-item-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+                        </svg>
+                      </div>
+                      <span class="quality-item-label">{{ isZh ? '平均IC' : 'Avg IC' }}</span>
+                      <span class="quality-item-score" :style="{ color: getFactorQualityColor((stats.icMean / 0.05) * 80) }">{{ ((stats.icMean / 0.05) * 80).toFixed(1) }}</span>
+                      <div class="quality-item-bar">
+                        <div class="quality-bar-fill" :style="{ width: Math.min((stats.icMean / 0.05) * 80, 100) + '%', backgroundColor: getFactorQualityColor((stats.icMean / 0.05) * 80) }"></div>
+                      </div>
+                      <span class="quality-item-raw">{{ stats.icMean.toFixed(3) }}</span>
+                    </div>
+                    <!-- IR比率 -->
+                    <div class="quality-item">
+                      <div class="quality-item-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M12 2L2 7l10 5 10-5-10-5z"></path>
+                          <path d="M2 17l10 5 10-5M2 12l10 5 10-5"></path>
+                        </svg>
+                      </div>
+                      <span class="quality-item-label">{{ isZh ? 'IR比率' : 'IR Ratio' }}</span>
+                      <span class="quality-item-score" :style="{ color: getFactorQualityColor((stats.irRatio / 0.8) * 80) }">{{ ((stats.irRatio / 0.8) * 80).toFixed(1) }}</span>
+                      <div class="quality-item-bar">
+                        <div class="quality-bar-fill" :style="{ width: Math.min((stats.irRatio / 0.8) * 80, 100) + '%', backgroundColor: getFactorQualityColor((stats.irRatio / 0.8) * 80) }"></div>
+                      </div>
+                      <span class="quality-item-raw">{{ stats.irRatio.toFixed(2) }}</span>
+                    </div>
+                    <!-- 通过率 -->
+                    <div class="quality-item">
+                      <div class="quality-item-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                          <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                        </svg>
+                      </div>
+                      <span class="quality-item-label">{{ isZh ? '通过率' : 'Pass Rate' }}</span>
+                      <span class="quality-item-score" :style="{ color: getFactorQualityColor(stats.passRate * 1.2) }">{{ (stats.passRate * 1.2).toFixed(1) }}</span>
+                      <div class="quality-item-bar">
+                        <div class="quality-bar-fill" :style="{ width: Math.min(stats.passRate * 1.2, 100) + '%', backgroundColor: getFactorQualityColor(stats.passRate * 1.2) }"></div>
+                      </div>
+                      <span class="quality-item-raw">{{ stats.passRate.toFixed(1) }}%</span>
+                    </div>
+                    <!-- 因子数量 -->
+                    <div class="quality-item">
+                      <div class="quality-item-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <rect x="3" y="3" width="7" height="7"></rect>
+                          <rect x="14" y="3" width="7" height="7"></rect>
+                          <rect x="14" y="14" width="7" height="7"></rect>
+                          <rect x="3" y="14" width="7" height="7"></rect>
+                        </svg>
+                      </div>
+                      <span class="quality-item-label">{{ isZh ? '因子数量' : 'Factor Count' }}</span>
+                      <span class="quality-item-score" :style="{ color: getFactorQualityColor((stats.totalFactors / 200) * 80) }">{{ ((stats.totalFactors / 200) * 80).toFixed(1) }}</span>
+                      <div class="quality-item-bar">
+                        <div class="quality-bar-fill" :style="{ width: Math.min((stats.totalFactors / 200) * 80, 100) + '%', backgroundColor: getFactorQualityColor((stats.totalFactors / 200) * 80) }"></div>
+                      </div>
+                      <span class="quality-item-raw">{{ stats.totalFactors }}</span>
+                    </div>
+                  </div>
+                  <!-- 综合评分 -->
+                  <div class="quality-total-score">
+                    <div class="quality-total-header">
+                      <span class="quality-total-label">{{ isZh ? '综合评分' : 'Total' }}</span>
+                    </div>
+                    <div class="quality-total-value" :style="{ color: getFactorQualityColor(factorLibraryTotalScore) }">
+                      {{ factorLibraryTotalScore.toFixed(1) }}
+                    </div>
+                    <!-- 星级和字母等级 -->
+                    <div class="quality-rating">
+                      <div class="star-rating" :style="{ color: getFactorQualityColor(factorLibraryTotalScore) }">
+                        <svg v-for="i in 5" :key="i" class="star-icon" :class="{ filled: i <= getStarCount(factorLibraryTotalScore) }" viewBox="0 0 24 24" :fill="i <= getStarCount(factorLibraryTotalScore) ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="1.5">
+                          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+                        </svg>
+                      </div>
+                      <div class="letter-grade" :style="{ color: getFactorQualityColor(factorLibraryTotalScore) }">
+                        {{ getLetterGrade(factorLibraryTotalScore) }}
+                      </div>
+                    </div>
+                    <div class="quality-total-bar">
+                      <div class="quality-total-fill" :style="{ width: Math.min(factorLibraryTotalScore, 100) + '%', backgroundColor: getFactorQualityColor(factorLibraryTotalScore) }"></div>
+                    </div>
+                  </div>
+                  <!-- 右侧：雷达图 -->
+                  <div class="radar-chart-wrapper">
+                    <div ref="factorQualityRadarRef" class="radar-chart"></div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Progress -->
+              <div class="progress-section">
+                <div class="progress-header">
+                  <span class="progress-title">
+                    <svg class="section-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <circle cx="12" cy="12" r="10"></circle>
+                      <polyline points="12 6 12 12 16 14"></polyline>
+                    </svg>
+                    {{ isZh ? '分析进度' : 'Analysis Progress' }}
+                  </span>
+                  <span class="progress-percent">{{ currentTask.progress }}%</span>
+                </div>
+                <div class="progress-bar">
+                  <div class="progress-fill" :style="{ width: `${currentTask.progress}%` }"></div>
+                </div>
+              </div>
+
+              <!-- Top Factors Table -->
+              <h3 class="section-title">
+                <svg class="section-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+                </svg>
+                {{ isZh ? '表现最佳因子' : 'Top Performing Factors' }}
+              </h3>
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>{{ isZh ? '因子名称' : 'Factor Name' }}</th>
+                    <th>{{ isZh ? 'IC均值' : 'IC Mean' }}</th>
+                    <th>IR</th>
+                    <th>t-Stat</th>
+                    <th>{{ isZh ? '状态' : 'Status' }}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="factor in topFactors" :key="factor.factor_name">
+                    <td>{{ factor.factor_name }}</td>
+                    <td :class="['value', { positive: factor.ic > 0.03, negative: factor.ic < 0 }]">
+                      {{ factor.ic.toFixed(3) }}
+                    </td>
+                    <td :class="['value', { positive: factor.ir > 0.5, negative: factor.ir < 0 }]">
+                      {{ factor.ir.toFixed(2) }}
+                    </td>
+                    <td :class="['value', { positive: factor.t_stat > 2 }]">
+                      {{ factor.t_stat.toFixed(2) }}
+                    </td>
+                    <td>
+                      <span :class="['status-badge', factor.status]">
+                        {{ factor.status === 'pass' ? (isZh ? '通过' : 'Pass') : (isZh ? '失败' : 'Fail') }}
+                      </span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+
+              <!-- Action Buttons -->
+              <div class="action-buttons">
+                <button class="btn btn-primary" @click="runFullAnalysis" :disabled="isAnalyzing">
+                  {{ isAnalyzing ? (isZh ? '分析中...' : 'Analyzing...') : (isZh ? '运行完整分析' : 'Run Full Analysis') }}
+                </button>
+                <button class="btn btn-success" @click="completeCurrentStep">
+                  {{ isZh ? '完成当前步骤' : 'Complete Step' }} ✓
+                </button>
+                <button class="btn btn-secondary" @click="exportResults">
+                  {{ isZh ? '导出结果' : 'Export Results' }}
+                </button>
+              </div>
+            </div>
+
+            <!-- IC/IR Tab -->
+            <div v-if="currentTab === 'ic-ir'" class="tab-pane active">
+              <!-- 个体因子综合评估 -->
+              <div class="single-factor-evaluation-section">
+                <h3 class="section-title">
+                  <svg class="section-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+                    <polyline points="2 17 12 22 22 17"></polyline>
+                    <polyline points="2 12 12 17 22 12"></polyline>
+                  </svg>
+                  {{ isZh ? '个体因子综合评估' : 'Individual Factor Evaluation' }}
+                </h3>
+                <div class="evaluation-metrics-panel">
+                  <!-- 左侧：指标列表 -->
+                  <div class="evaluation-list">
+                    <!-- IC均值 -->
+                    <div class="evaluation-item">
+                      <div class="evaluation-item-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+                        </svg>
+                      </div>
+                      <span class="evaluation-item-label">{{ isZh ? 'IC均值' : 'IC Mean' }}</span>
+                      <span class="evaluation-item-score" :style="{ color: getFactorQualityColor(normalizeIC(individualFactorData.ic_mean)) }">{{ normalizeIC(individualFactorData.ic_mean).toFixed(1) }}</span>
+                      <div class="evaluation-item-bar">
+                        <div class="evaluation-bar-fill" :style="{ width: Math.min(normalizeIC(individualFactorData.ic_mean), 100) + '%', backgroundColor: getFactorQualityColor(normalizeIC(individualFactorData.ic_mean)) }"></div>
+                      </div>
+                      <span class="evaluation-item-raw">{{ individualFactorData.ic_mean.toFixed(4) }}</span>
+                    </div>
+                    <!-- IC标准差 -->
+                    <div class="evaluation-item">
+                      <div class="evaluation-item-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M3 3v18h18"></path>
+                          <path d="M18.7 8l-5.1 5.2-2.8-2.7L7 14.3"></path>
+                        </svg>
+                      </div>
+                      <span class="evaluation-item-label">{{ isZh ? 'IC标准差' : 'IC Std' }}</span>
+                      <span class="evaluation-item-score" :style="{ color: getFactorQualityColor(normalizeStd(individualFactorData.ic_std)) }">{{ normalizeStd(individualFactorData.ic_std).toFixed(1) }}</span>
+                      <div class="evaluation-item-bar">
+                        <div class="evaluation-bar-fill" :style="{ width: Math.min(normalizeStd(individualFactorData.ic_std), 100) + '%', backgroundColor: getFactorQualityColor(normalizeStd(individualFactorData.ic_std)) }"></div>
+                      </div>
+                      <span class="evaluation-item-raw">{{ individualFactorData.ic_std.toFixed(4) }}</span>
+                    </div>
+                    <!-- IC最大值 -->
+                    <div class="evaluation-item">
+                      <div class="evaluation-item-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <polyline points="7 11 12 6 17 11"></polyline>
+                          <polyline points="7 18 12 13 17 18"></polyline>
+                        </svg>
+                      </div>
+                      <span class="evaluation-item-label">{{ isZh ? 'IC最大值' : 'IC Max' }}</span>
+                      <span class="evaluation-item-score" :style="{ color: getFactorQualityColor(normalizeRange(individualFactorData.ic_max, -1, 1)) }">{{ normalizeRange(individualFactorData.ic_max, -1, 1).toFixed(1) }}</span>
+                      <div class="evaluation-item-bar">
+                        <div class="evaluation-bar-fill" :style="{ width: Math.min(normalizeRange(individualFactorData.ic_max, -1, 1), 100) + '%', backgroundColor: getFactorQualityColor(normalizeRange(individualFactorData.ic_max, -1, 1)) }"></div>
+                      </div>
+                      <span class="evaluation-item-raw">{{ individualFactorData.ic_max.toFixed(4) }}</span>
+                    </div>
+                    <!-- IC最小值 -->
+                    <div class="evaluation-item">
+                      <div class="evaluation-item-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <polyline points="7 13 12 18 17 13"></polyline>
+                          <polyline points="7 6 12 11 17 6"></polyline>
+                        </svg>
+                      </div>
+                      <span class="evaluation-item-label">{{ isZh ? 'IC最小值' : 'IC Min' }}</span>
+                      <span class="evaluation-item-score" :style="{ color: getFactorQualityColor(normalizeAbsMin(individualFactorData.ic_min)) }">{{ normalizeAbsMin(individualFactorData.ic_min).toFixed(1) }}</span>
+                      <div class="evaluation-item-bar">
+                        <div class="evaluation-bar-fill" :style="{ width: Math.min(normalizeAbsMin(individualFactorData.ic_min), 100) + '%', backgroundColor: getFactorQualityColor(normalizeAbsMin(individualFactorData.ic_min)) }"></div>
+                      </div>
+                      <span class="evaluation-item-raw">{{ individualFactorData.ic_min.toFixed(4) }}</span>
+                    </div>
+                    <!-- IR值 -->
+                    <div class="evaluation-item">
+                      <div class="evaluation-item-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M12 2L2 7l10 5 10-5-10-5z"></path>
+                          <path d="M2 17l10 5 10-5M2 12l10 5 10-5"></path>
+                        </svg>
+                      </div>
+                      <span class="evaluation-item-label">{{ isZh ? 'IR值' : 'IR' }}</span>
+                      <span class="evaluation-item-score" :style="{ color: getFactorQualityColor(normalizeRange(individualFactorData.ir, -2, 2)) }">{{ normalizeRange(individualFactorData.ir, -2, 2).toFixed(1) }}</span>
+                      <div class="evaluation-item-bar">
+                        <div class="evaluation-bar-fill" :style="{ width: Math.min(normalizeRange(individualFactorData.ir, -2, 2), 100) + '%', backgroundColor: getFactorQualityColor(normalizeRange(individualFactorData.ir, -2, 2)) }"></div>
+                      </div>
+                      <span class="evaluation-item-raw">{{ individualFactorData.ir.toFixed(4) }}</span>
+                    </div>
+                    <!-- 正IC比率 -->
+                    <div class="evaluation-item">
+                      <div class="evaluation-item-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                          <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                        </svg>
+                      </div>
+                      <span class="evaluation-item-label">{{ isZh ? '正IC比率' : 'IC+ Ratio' }}</span>
+                      <span class="evaluation-item-score" :style="{ color: getFactorQualityColor(individualFactorData.ic_positive_ratio * 100) }">{{ (individualFactorData.ic_positive_ratio * 100).toFixed(1) }}</span>
+                      <div class="evaluation-item-bar">
+                        <div class="evaluation-bar-fill" :style="{ width: (individualFactorData.ic_positive_ratio * 100) + '%', backgroundColor: getFactorQualityColor(individualFactorData.ic_positive_ratio * 100) }"></div>
+                      </div>
+                      <span class="evaluation-item-raw">{{ (individualFactorData.ic_positive_ratio * 100).toFixed(1) }}%</span>
+                    </div>
+                    <!-- t统计量 -->
+                    <div class="evaluation-item">
+                      <div class="evaluation-item-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <circle cx="12" cy="12" r="10"></circle>
+                          <line x1="12" y1="8" x2="12" y2="12"></line>
+                          <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                        </svg>
+                      </div>
+                      <span class="evaluation-item-label">{{ isZh ? 't统计量' : 't-Stat' }}</span>
+                      <span class="evaluation-item-score" :style="{ color: getFactorQualityColor(normalizeAbs(individualFactorData.t_stat, 5)) }">{{ normalizeAbs(individualFactorData.t_stat, 5).toFixed(1) }}</span>
+                      <div class="evaluation-item-bar">
+                        <div class="evaluation-bar-fill" :style="{ width: Math.min(normalizeAbs(individualFactorData.t_stat, 5), 100) + '%', backgroundColor: getFactorQualityColor(normalizeAbs(individualFactorData.t_stat, 5)) }"></div>
+                      </div>
+                      <span class="evaluation-item-raw">{{ individualFactorData.t_stat.toFixed(4) }}</span>
+                    </div>
+                    <!-- p值 -->
+                    <div class="evaluation-item">
+                      <div class="evaluation-item-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"></path>
+                          <path d="M12 16v-4M12 8h.01"></path>
+                        </svg>
+                      </div>
+                      <span class="evaluation-item-label">{{ isZh ? 'p值' : 'p-Value' }}</span>
+                      <span class="evaluation-item-score" :style="{ color: getFactorQualityColor(normalizePValue(individualFactorData.p_value)) }">{{ normalizePValue(individualFactorData.p_value).toFixed(1) }}</span>
+                      <div class="evaluation-item-bar">
+                        <div class="evaluation-bar-fill" :style="{ width: Math.min(normalizePValue(individualFactorData.p_value), 100) + '%', backgroundColor: getFactorQualityColor(normalizePValue(individualFactorData.p_value)) }"></div>
+                      </div>
+                      <span class="evaluation-item-raw">{{ individualFactorData.p_value.toFixed(4) }}</span>
+                    </div>
+                    <!-- 单调性得分 -->
+                    <div class="evaluation-item">
+                      <div class="evaluation-item-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"></polyline>
+                          <polyline points="16 7 22 7 22 13"></polyline>
+                        </svg>
+                      </div>
+                      <span class="evaluation-item-label">{{ isZh ? '单调性' : 'Monotonicity' }}</span>
+                      <span class="evaluation-item-score" :style="{ color: getFactorQualityColor(individualFactorData.monotonicity_score * 100) }">{{ (individualFactorData.monotonicity_score * 100).toFixed(1) }}</span>
+                      <div class="evaluation-item-bar">
+                        <div class="evaluation-bar-fill" :style="{ width: (individualFactorData.monotonicity_score * 100) + '%', backgroundColor: getFactorQualityColor(individualFactorData.monotonicity_score * 100) }"></div>
+                      </div>
+                      <span class="evaluation-item-raw">{{ individualFactorData.monotonicity_score.toFixed(2) }}</span>
+                    </div>
+                    <!-- 稳定性得分 -->
+                    <div class="evaluation-item">
+                      <div class="evaluation-item-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                          <line x1="3" y1="9" x2="21" y2="9"></line>
+                          <line x1="9" y1="21" x2="9" y2="9"></line>
+                        </svg>
+                      </div>
+                      <span class="evaluation-item-label">{{ isZh ? '稳定性' : 'Stability' }}</span>
+                      <span class="evaluation-item-score" :style="{ color: getFactorQualityColor(individualFactorData.stability_score * 100) }">{{ (individualFactorData.stability_score * 100).toFixed(1) }}</span>
+                      <div class="evaluation-item-bar">
+                        <div class="evaluation-bar-fill" :style="{ width: (individualFactorData.stability_score * 100) + '%', backgroundColor: getFactorQualityColor(individualFactorData.stability_score * 100) }"></div>
+                      </div>
+                      <span class="evaluation-item-raw">{{ individualFactorData.stability_score.toFixed(2) }}</span>
+                    </div>
+                    <!-- 综合总评分（在10个指标下方） -->
+                    <div class="evaluation-total-score-inline">
+                      <div class="total-inline-header">
+                        <span class="total-inline-label">{{ isZh ? '综合评分' : 'Total Score' }}</span>
+                      </div>
+                      <div class="total-inline-content">
+                        <div class="total-inline-value" :style="{ color: getFactorQualityColor(totalEvaluationScore) }">
+                          {{ totalEvaluationScore.toFixed(1) }}
+                        </div>
+                        <!-- 星级和字母等级 -->
+                        <div class="total-inline-rating">
+                          <div class="star-rating-inline" :style="{ color: getFactorQualityColor(totalEvaluationScore) }">
+                            <svg v-for="i in 5" :key="i" class="star-icon-inline" :class="{ filled: i <= getStarCount(totalEvaluationScore) }" viewBox="0 0 24 24" :fill="i <= getStarCount(totalEvaluationScore) ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="1.5">
+                              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+                            </svg>
+                          </div>
+                          <div class="letter-grade-inline" :style="{ color: getFactorQualityColor(totalEvaluationScore) }">
+                            {{ getLetterGrade(totalEvaluationScore) }}
+                          </div>
+                        </div>
+                        <div class="total-inline-bar">
+                          <div class="total-inline-fill" :style="{ width: Math.min(totalEvaluationScore, 100) + '%', backgroundColor: getFactorQualityColor(totalEvaluationScore) }"></div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <!-- 右侧：雷达图 -->
+                  <div class="evaluation-radar-wrapper">
+                    <div ref="individualFactorRadarRef" class="radar-chart"></div>
+                  </div>
+                </div>
+              </div>
+
+              <ICIRTrendChart
+                :task-id="taskId"
+                :target-period="icConfig.targetPeriod"
+                :method="icConfig.method"
+                :is-zh="isZh"
+              />
+
+            </div>
+
+            <!-- Correlation Tab -->
+            <div v-if="currentTab === 'correlation'" class="tab-pane active">
+              <FactorCorrelationHeatmap
+                :task-id="taskId"
+                :method="correlationMethod"
+                :is-zh="isZh"
+              />
+            </div>
+
+            <!-- Distribution Tab -->
+            <div v-if="currentTab === 'distribution'" class="tab-pane active">
+              <FactorDistributionChart
+                :task-id="taskId"
+                :bins="distributionConfig.bins"
+                :is-zh="isZh"
+              />
+            </div>
+          </div>
+          </template>
+          </template>
+
+          <template v-else-if="currentStageModule === 'backtest'">
+            <h1 class="page-title">{{ isZh ? '策略回测' : 'Strategy Backtest' }}</h1>
+            <p class="page-subtitle">{{ isZh ? '验证策略在历史数据上的表现' : 'Validate strategy performance on historical data' }}</p>
+
+            <!-- 回测绩效图表 -->
+            <BacktestPerformanceChart
+              :task-id="taskId"
+              :is-zh="isZh"
+            />
+
+            <!-- 回测配置 -->
+            <div class="progress-section">
+              <h3 class="section-title" style="margin-bottom: 16px;">
+                <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="3"></circle>
+                  <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                </svg>
+                {{ isZh ? '回测配置' : 'Backtest Configuration' }}
+              </h3>
+              <div class="config-form">
+                <div class="form-group">
+                  <label class="form-label">{{ isZh ? '开始日期' : 'Start Date' }}</label>
+                  <input type="date" class="form-input" v-model="backtestConfig.startDate" />
+                </div>
+                <div class="form-group">
+                  <label class="form-label">{{ isZh ? '结束日期' : 'End Date' }}</label>
+                  <input type="date" class="form-input" v-model="backtestConfig.endDate" />
+                </div>
+                <div class="form-group">
+                  <label class="form-label">{{ isZh ? '初始资金' : 'Initial Capital' }}</label>
+                  <input type="number" class="form-input" v-model.number="backtestConfig.initialCapital" />
+                </div>
+                <div class="form-group">
+                  <label class="form-label">{{ isZh ? '手续费率' : 'Commission' }}</label>
+                  <input type="number" class="form-input" step="0.0001" v-model.number="backtestConfig.commission" />
+                </div>
+              </div>
+            </div>
+
+            <!-- 操作按钮 -->
+            <div class="action-buttons">
+              <button class="btn btn-primary" @click="runBacktest" :disabled="isBacktesting">
+                {{ isBacktesting ? (isZh ? '回测中...' : 'Backtesting...') : (isZh ? '运行回测' : 'Run Backtest') }}
+              </button>
+              <button class="btn btn-secondary" @click="exportBacktest">{{ isZh ? '导出报告' : 'Export Report' }}</button>
+            </div>
+          </template>
+
+          <!-- ===== 信号生成模块 ===== -->
+          <template v-else-if="currentStageModule === 'signal'">
+            <h1 class="page-title">{{ isZh ? '交易信号生成' : 'Trading Signal Generation' }}</h1>
+            <p class="page-subtitle">{{ isZh ? '基于策略模型生成买卖信号' : 'Generate buy/sell signals based on strategy model' }}</p>
+
+            <!-- 信号统计 -->
+            <div class="stats-grid">
+              <div class="stat-card">
+                <div class="stat-label">{{ isZh ? '今日信号' : 'Today Signals' }}</div>
+                <div class="stat-value positive">{{ signalStats.todaySignals }}</div>
+                <div class="stat-change">{{ isZh ? '个股票' : 'stocks' }}</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-label">{{ isZh ? '买入信号' : 'Buy Signals' }}</div>
+                <div class="stat-value positive">{{ signalStats.buySignals }}</div>
+                <div class="stat-change">{{ isZh ? '看涨' : 'Bullish' }}</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-label">{{ isZh ? '卖出信号' : 'Sell Signals' }}</div>
+                <div class="stat-value negative">{{ signalStats.sellSignals }}</div>
+                <div class="stat-change">{{ isZh ? '看跌' : 'Bearish' }}</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-label">{{ isZh ? '信号准确率' : 'Accuracy' }}</div>
+                <div :class="['stat-value', { positive: signalStats.accuracy > 60 }]">
+                  {{ signalStats.accuracy.toFixed(1) }}%
+                </div>
+                <div class="stat-change">{{ isZh ? '近30天' : 'Last 30 days' }}</div>
+              </div>
+            </div>
+
+            <!-- 最新信号列表 -->
+            <div class="progress-section">
+              <h3 class="section-title" style="margin-bottom: 16px;">
+                <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+                </svg>
+                {{ isZh ? '最新交易信号' : 'Latest Trading Signals' }}
+              </h3>
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>{{ isZh ? '股票代码' : 'Code' }}</th>
+                    <th>{{ isZh ? '股票名称' : 'Name' }}</th>
+                    <th>{{ isZh ? '信号类型' : 'Signal' }}</th>
+                    <th>{{ isZh ? '信号强度' : 'Strength' }}</th>
+                    <th>{{ isZh ? '生成时间' : 'Time' }}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="signal in latestSignals" :key="signal.code">
+                    <td>{{ signal.code }}</td>
+                    <td>{{ signal.name }}</td>
+                    <td>
+                      <span :class="['status-badge', signal.type === 'buy' ? 'pass' : 'fail']">
+                        {{ signal.type === 'buy' ? (isZh ? '买入' : 'Buy') : (isZh ? '卖出' : 'Sell') }}
+                      </span>
+                    </td>
+                    <td :class="['value', { positive: signal.strength > 0.7 }]">{{ (signal.strength * 100).toFixed(0) }}%</td>
+                    <td>{{ signal.time }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <!-- 操作按钮 -->
+            <div class="action-buttons">
+              <button class="btn btn-primary" @click="generateSignals" :disabled="isGenerating">
+                {{ isGenerating ? (isZh ? '生成中...' : 'Generating...') : (isZh ? '生成信号' : 'Generate Signals') }}
+              </button>
+              <button class="btn btn-secondary" @click="exportSignals">{{ isZh ? '导出信号' : 'Export Signals' }}</button>
+            </div>
+          </template>
+        </div>
+
+        <!-- 自定义股票池弹窗 -->
+        <el-dialog v-model="showCustomStockDialog" width="500px" :show-close="true">
+          <template #header>
+            <div class="dialog-header-with-icon">
+              <svg class="dialog-header-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="3" width="7" height="7"/>
+                <rect x="14" y="3" width="7" height="7"/>
+                <rect x="14" y="14" width="7" height="7"/>
+                <rect x="3" y="14" width="7" height="7"/>
+              </svg>
+              <span>{{ isZh ? '自定义股票池' : 'Custom Stock Pool' }}</span>
+            </div>
+          </template>
+          <div class="custom-stock-dialog-content">
+            <p class="dialog-desc">{{ isZh ? '输入股票代码，每行一个' : 'Enter stock codes, one per line' }}</p>
+            <el-input v-model="customStocks" type="textarea" :rows="10" placeholder="000001.SZ&#10;000002.SZ&#10;000004.SZ" />
+            <div class="dialog-tips">
+              <p>{{ isZh ? '提示：支持以下格式' : 'Tips: Supports formats below' }}</p>
+              <ul>
+                <li>{{ isZh ? '沪深A股：000001.SZ, 600000.SH' : 'A-shares: 000001.SZ, 600000.SH' }}</li>
+                <li>{{ isZh ? '每行一个代码，或用逗号分隔' : 'One code per line, or comma separated' }}</li>
+              </ul>
+            </div>
+          </div>
+          <template #footer>
+            <el-button @click="showCustomStockDialog = false">{{ isZh ? '取消' : 'Cancel' }}</el-button>
+            <el-button @click="showCustomStockDialog = false" style="background: var(--accent-blue); border-color: var(--accent-blue); color: white;">{{ isZh ? '确定' : 'Confirm' }}</el-button>
+          </template>
+        </el-dialog>
+      </main>
+
+      <!-- 右侧：因子库 -->
+      <aside class="panel factor-panel">
+        <div class="panel-header">
+          <span class="panel-title">
+            <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+            </svg>
+            {{ isZh ? '因子库' : 'Factor Library' }}
+          </span>
+          <div class="panel-actions">
+            <button class="icon-btn" @click="addCustomFactor" :title="isZh ? '添加自定义因子' : 'Add Custom Factor'">
+              <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="12" y1="5" x2="12" y2="19"/>
+                <line x1="5" y1="12" x2="19" y2="12"/>
+              </svg>
+            </button>
+            <button class="icon-btn" @click="openFactorSettings" :title="isZh ? '设置' : 'Settings'">
+              <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="3"/>
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div class="factor-list">
+          <div
+            v-for="factor in factorLibrary"
+            :key="factor.name"
+            :class="['factor-item', { selected: selectedFactor === factor.name }]"
+            @click="selectFactor(factor)"
+          >
+            <div class="factor-header">
+              <div class="factor-name">
+                <span class="factor-status-dot" :class="getFactorStatus(factor.ic ?? undefined)"></span>
+                {{ factor.name }}
+              </div>
+              <div class="factor-score" :class="getFactorScoreClass(factor.ic ?? undefined)">
+                <svg class="icon-xs" viewBox="0 0 24 24" fill="currentColor">
+                  <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+                </svg>
+                {{ factor.ic?.toFixed(2) ?? 'N/A' }}
+              </div>
+            </div>
+            <div class="factor-type">
+              <span class="type-tag">{{ factor.category }}</span>
+              <span class="type-separator">•</span>
+              {{ isZh ? factor.typeZh : factor.type }}
+            </div>
+            <div class="factor-metrics">
+              <span class="metric">
+                <svg class="icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M23 18l-9.5-9.5-5 5L1 6"/>
+                </svg>
+                IC: <span :class="['metric-value', { positive: (factor.ic ?? 0) > 0.03, negative: (factor.ic ?? 0) < 0 }]">{{ factor.ic?.toFixed(3) ?? 'N/A' }}</span>
+              </span>
+              <span class="metric">
+                <svg class="icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="10"/>
+                  <polyline points="12 6 12 12 16 14"/>
+                </svg>
+                IR: <span :class="['metric-value', { positive: (factor.ir ?? 0) > 0.5 }]">{{ factor.ir?.toFixed(2) ?? 'N/A' }}</span>
+              </span>
+            </div>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+// ============================================================================
+// ResearchDetailView.vue - 研究分析详情页主组件
+// ============================================================================
+// 文件结构说明（方便将来拆分）：
+// - 公共状态与配置
+// - 因子库质量评估（概览Tab）
+// - 个体因子评估（IC/IR Tab）
+// - 因子计算相关
+// - 其他功能
+// ============================================================================
+
+import { ref, reactive, computed, onMounted, watch, nextTick } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
+import { ElMessage } from 'element-plus'
+import { factorApi, type FactorInfo, type FactorResult } from '@/api/modules/research'
+import { DataLine, Connection, Histogram, Odometer, TrendCharts, Folder, Box, Document, Setting } from '@element-plus/icons-vue'
+import * as echarts from 'echarts'
+import CustomSelect from '@/components/common/CustomSelect.vue'
+// ---- 子组件（将来可考虑进一步内联或统一管理）----
+import ICIRTrendChart from './ICIRTrendChart.vue'
+import FactorCorrelationHeatmap from './FactorCorrelationHeatmap.vue'
+import FactorDistributionChart from './FactorDistributionChart.vue'
+import BacktestPerformanceChart from './BacktestPerformanceChart.vue'
+import { useAppStore } from '@/stores/core/AppStore'
+
+// ============================================================================
+// 公共状态与配置
+// ============================================================================
+const router = useRouter()
+const route = useRoute()
+const appStore = useAppStore()
+
+// 任务ID - 从URL获取
+const taskId = computed(() => route.query.taskId as string || 'default')
+
+// 任务配置数据 - 模拟从后端获取的任务数据
+interface TaskConfig {
+  id: string
+  title: string
+  titleZh: string
+  stockPool: string
+  stockPoolZh: string
+  dateStart: string
+  dateEnd: string
+  periods?: string[]
+  period?: string
+  factors: string
+  factorsZh: string
+  model?: string
+  icMethod: string
+  icThreshold: number
+  progress: number
+}
+
+// 模拟任务数据存储 - 使用reactive使其响应式
+const taskStore = reactive<Record<string, TaskConfig>>({
+  'RES-2024-001': {
+    id: 'RES-2024-001',
+    title: 'Alpha158 Factor Analysis',
+    titleZh: 'Alpha158因子分析',
+    stockPool: 'CSI300',
+    stockPoolZh: '沪深300',
+    dateStart: '2021-01-01',
+    dateEnd: '2024-12-31',
+    periods: ['1d'],
+    factors: 'Alpha158',
+    factorsZh: 'Alpha158因子集',
+    icMethod: 'spearman',
+    icThreshold: 0.03,
+    progress: 67
+  },
+  'RES-2024-002': {
+    id: 'RES-2024-002',
+    title: 'LGB Model Training',
+    titleZh: 'LightGBM模型训练',
+    stockPool: 'CSI500',
+    stockPoolZh: '中证500',
+    dateStart: '2020-01-01',
+    dateEnd: '2024-12-31',
+    factors: 'Top20 Selected',
+    factorsZh: '精选Top20因子',
+    model: 'LightGBM',
+    icMethod: 'spearman',
+    icThreshold: 0.05,
+    progress: 45
+  },
+  'RES-2024-003': {
+    id: 'RES-2024-003',
+    title: 'Factor Correlation Analysis',
+    titleZh: '因子相关性分析',
+    stockPool: 'All A-shares',
+    stockPoolZh: '全A股',
+    dateStart: '2022-01-01',
+    dateEnd: '2024-12-31',
+    factors: 'All Qualified',
+    factorsZh: '全部合格因子',
+    icMethod: 'pearson',
+    icThreshold: 0.05,
+    progress: 0
+  },
+  'RES-2024-004': {
+    id: 'RES-2024-004',
+    title: 'Data Configuration - CSI300',
+    titleZh: '数据配置 - 沪深300',
+    stockPool: 'CSI300',
+    stockPoolZh: '沪深300',
+    dateStart: '2021-01-01',
+    dateEnd: '2024-12-31',
+    factors: 'Basic Setup',
+    factorsZh: '基础配置',
+    icMethod: 'spearman',
+    icThreshold: 0.03,
+    progress: 100
+  },
+  'RES-2024-005': {
+    id: 'RES-2024-005',
+    title: 'Custom Factor - MA_Cross',
+    titleZh: '自定义因子 - 均线交叉',
+    stockPool: 'CSI300',
+    stockPoolZh: '沪深300',
+    dateStart: '2020-01-01',
+    dateEnd: '2024-12-31',
+    factors: 'MA_Cross_60',
+    factorsZh: '60日均线交叉',
+    icMethod: 'spearman',
+    icThreshold: 0.03,
+    progress: 100
+  },
+  'default': {
+    id: 'default',
+    title: 'New Research Task',
+    titleZh: '新建研究任务',
+    stockPool: 'CSI300',
+    stockPoolZh: '沪深300',
+    dateStart: '2023-01-01',
+    dateEnd: '2024-12-31',
+    periods: ['1d'],
+    factors: 'Alpha158',
+    factorsZh: 'Alpha158因子集',
+    icMethod: 'spearman',
+    icThreshold: 0.03,
+    progress: 0
+  }
+})
+
+// 当前任务配置
+const currentTask = computed(() => taskStore[taskId.value] || taskStore['default'])
+
+// 股票池 - 本地响应式副本
+const stockPool = ref(currentTask.value?.stockPool || 'CSI300')
+const customStocks = ref('')
+const showCustomStockDialog = ref(false)
+
+const handleStockPoolChange = (val: string) => {
+  if (val === 'custom') {
+    showCustomStockDialog.value = true
+  } else {
+    customStocks.value = ''
+  }
+}
+
+// 监听 currentTask 变化，更新本地 stockPool
+watch(() => currentTask.value?.stockPool, (newVal) => {
+  if (newVal) {
+    stockPool.value = newVal
+  }
+})
+
+// 股票池变化时更新 taskStore
+watch(stockPool, (newVal) => {
+  const task = taskStore[taskId.value] || taskStore['default']
+  if (task) {
+    task.stockPool = newVal
+    // 更新显示名称
+    const poolNames: Record<string, string> = {
+      'CSI300': '沪深300',
+      'CSI500': '中证500',
+      'CSI1000': '中证1000',
+      'All A-shares': '全市场'
+    }
+    task.stockPoolZh = poolNames[newVal] || newVal
+  }
+})
+
+// 日期范围 - 本地响应式副本
+const dateRange = ref<Date[] | null>(null)
+
+// 监听 currentTask 变化，初始化日期范围
+watch(() => [currentTask.value?.dateStart, currentTask.value?.dateEnd], () => {
+  if (currentTask.value?.dateStart && currentTask.value?.dateEnd) {
+    dateRange.value = [
+      new Date(currentTask.value.dateStart),
+      new Date(currentTask.value.dateEnd)
+    ]
+  }
+}, { immediate: true })
+
+// 日期范围变化时更新 taskStore
+watch(dateRange, (newVal) => {
+  if (newVal && Array.isArray(newVal) && newVal[0] && newVal[1]) {
+    const task = taskStore[taskId.value] || taskStore['default']
+    if (task) {
+      task.dateStart = newVal[0].toISOString().split('T')[0]
+      task.dateEnd = newVal[1].toISOString().split('T')[0]
+    }
+  }
+}, { deep: true })
+
+// 周期 - 本地响应式副本（支持多选）
+const periods = ref<string[]>(currentTask.value?.periods || ['1d'])
+
+// 周期选项
+const periodOptions = [
+  { label: '日线', value: '1d' },
+  { label: '周线', value: '1w' },
+  { label: '月线', value: '1M' },
+  { label: '季线', value: '1q' },
+  { label: '年线', value: '1y' },
+  { label: '5分钟', value: '5m' },
+  { label: '15分钟', value: '15m' },
+  { label: '30分钟', value: '30m' },
+  { label: '60分钟', value: '60m' },
+]
+
+// 因子计算相关变量（支持多选）
+const selectedCalcTypes = ref<string[]>(['alpha158'])
+const customFactorExpression = ref('')
+const isCalculating = ref(false)
+
+// 因子任务列表相关变量
+interface CalculationTask {
+  task_id: string
+  expression: string
+  status: 'pending' | 'running' | 'completed' | 'failed'
+  progress: number
+  created_at: string
+}
+const calculationTasks = ref<CalculationTask[]>([])
+const currentResultTaskId = ref<string | null>(null)
+
+// 因子结果查看器相关变量
+interface FactorData {
+  instrument: string
+  name?: string  // 股票中文名称
+  datetime: string
+  value: number
+}
+
+interface CalculationResult {
+  factor_name: string
+  data: FactorData[]
+  statistics: {
+    count: number
+    mean: number
+    std: number
+    min: number
+    max: number
+  }
+}
+
+const currentResult = ref<CalculationResult | null>(null)
+const resultPage = ref(1)
+const resultPageSize = 50
+
+// 分页结果数据
+const paginatedResultData = computed(() => {
+  if (!currentResult.value?.data) return []
+  const start = (resultPage.value - 1) * resultPageSize
+  return currentResult.value.data.slice(start, start + resultPageSize)
+})
+
+// 获取任务状态文本
+const getTaskStatusText = (status: string) => {
+  const map: Record<string, string> = {
+    pending: '待执行',
+    running: '计算中',
+    completed: '已完成',
+    failed: '失败'
+  }
+  return isZh.value ? (map[status] || status) : status
+}
+
+// 股票名称映射（从后端API获取）
+// const stockNames: Record<string, string> = {}
+
+// 查看任务结果
+const viewTaskResult = (taskId: string) => {
+  currentResultTaskId.value = taskId
+  // 模拟结果数据（正式环境中从后端API获取股票名称）
+  currentResult.value = {
+    factor_name: `Factor_${taskId.slice(0, 8)}`,
+    data: Array.from({ length: 20 }, (_, i) => ({
+      instrument: `00000${i}`.slice(-6),
+      name: '', // 后端返回股票名称
+      datetime: new Date(Date.now() - i * 86400000).toISOString().split('T')[0],
+      value: Math.random() * 2 - 1
+    })),
+    statistics: {
+      count: 1000,
+      mean: 0.0234,
+      std: 0.4567,
+      min: -1.234,
+      max: 1.567
+    }
+  }
+}
+
+// 重试任务
+const retryTask = (taskId: string) => {
+  const task = calculationTasks.value.find(t => t.task_id === taskId)
+  if (task) {
+    task.status = 'pending'
+    task.progress = 0
+    // 模拟重新计算
+    setTimeout(() => {
+      task.status = 'running'
+      const interval = setInterval(() => {
+        task.progress += 10
+        if (task.progress >= 100) {
+          clearInterval(interval)
+          task.status = 'completed'
+        }
+      }, 500)
+    }, 1000)
+  }
+}
+
+// 删除任务
+const deleteTask = (taskId: string) => {
+  calculationTasks.value = calculationTasks.value.filter(t => t.task_id !== taskId)
+  if (currentResultTaskId.value === taskId) {
+    currentResult.value = null
+    currentResultTaskId.value = null
+  }
+}
+
+// 导出结果
+const exportResult = (format: 'csv' | 'excel') => {
+  console.log('Exporting result as:', format)
+  ElMessage.success(isZh.value ? `已导出为${format.toUpperCase()}` : `Exported as ${format.toUpperCase()}`)
+}
+
+// 保存为QLib格式
+const saveToQlib = () => {
+  console.log('Saving to QLib format')
+  ElMessage.success(isZh.value ? '已保存为QLib格式' : 'Saved as QLib format')
+}
+
+// 切换计算类型（多选）
+const toggleCalcType = (type: string) => {
+  const index = selectedCalcTypes.value.indexOf(type)
+  if (index === -1) {
+    selectedCalcTypes.value.push(type)
+  } else {
+    selectedCalcTypes.value.splice(index, 1)
+  }
+}
+
+// 技术指标相关变量
+const showIndicators = ref(false)
+const selectedIndicators = ref<string[]>([])
+const selectedPresets = ref<string[]>([])
+const selectedFactorTemplate = ref('')
+
+// 预设组合映射
+const presetMap: Record<string, string[]> = {
+  trend: ['MA', 'EMA', 'WMA', 'DEMA', 'TEMA', 'T3', 'KAMA', 'BOLL', 'SAR', 'HT_TRENDLINE'],
+  volume: ['AD', 'ADOSC', 'OBV'],
+  oscillator: ['RSI', 'KDJ', 'CCI', 'MACD', 'STOCH', 'STOCHF', 'STOCHRSI', 'ULTOSC', 'TRIX', 'APO', 'PPO'],
+  momentum: ['MOM', 'ROC', 'ROCP', 'ROCR', 'ROCR100', 'CMO', 'MFI'],
+  volatility: ['ATR', 'NATR', 'STDDEV'],
+  cycle: ['DPO', 'HT_DCPERIOD', 'HT_SINE', 'HT_TRENDMODE', 'AROON', 'AROONOSC']
+}
+
+// 切换预设组合（多选）
+const togglePreset = (type: string) => {
+  const index = selectedPresets.value.indexOf(type)
+  if (index === -1) {
+    selectedPresets.value.push(type)
+    // 添加该预设的指标
+    const indicators = presetMap[type] || []
+    indicators.forEach(ind => {
+      if (!selectedIndicators.value.includes(ind)) {
+        selectedIndicators.value.push(ind)
+      }
+    })
+  } else {
+    selectedPresets.value.splice(index, 1)
+    // 移除该预设的指标（如果不在其他预设中）
+    const indicators = presetMap[type] || []
+    indicators.forEach(ind => {
+      const inOtherPreset = Object.entries(presetMap).some(([key, inds]) => {
+        return key !== type && selectedPresets.value.includes(key) && inds.includes(ind)
+      })
+      if (!inOtherPreset) {
+        selectedIndicators.value = selectedIndicators.value.filter(i => i !== ind)
+      }
+    })
+  }
+}
+
+// 所有指标列表
+const allIndicators = ref([
+  // 趋势指标
+  { label: 'MA(简单移动平均)', value: 'MA', category: 'trend' },
+  { label: 'EMA(指数移动平均)', value: 'EMA', category: 'trend' },
+  { label: 'WMA(加权移动平均)', value: 'WMA', category: 'trend' },
+  { label: 'DEMA(双指数移动平均)', value: 'DEMA', category: 'trend' },
+  { label: 'TEMA(三重指数移动平均)', value: 'TEMA', category: 'trend' },
+  { label: 'T3(三重指数移动平均)', value: 'T3', category: 'trend' },
+  { label: 'KAMA(考夫曼自适应均线)', value: 'KAMA', category: 'trend' },
+  { label: 'BOLL(布林带)', value: 'BOLL', category: 'trend' },
+  { label: 'SAR(抛物线转向)', value: 'SAR', category: 'trend' },
+  { label: 'HT_TRENDLINE(希尔伯特趋势线)', value: 'HT_TRENDLINE', category: 'trend' },
+  // 震荡指标
+  { label: 'RSI(相对强弱指标)', value: 'RSI', category: 'oscillator' },
+  { label: 'KDJ(随机指标)', value: 'KDJ', category: 'oscillator' },
+  { label: 'STOCH(随机指标)', value: 'STOCH', category: 'oscillator' },
+  { label: 'STOCHF(快速随机指标)', value: 'STOCHF', category: 'oscillator' },
+  { label: 'MACD', value: 'MACD', category: 'oscillator' },
+  { label: 'STOCHRSI(相对强弱随机指标)', value: 'STOCHRSI', category: 'oscillator' },
+  { label: 'ULTOSC(终极振荡指标)', value: 'ULTOSC', category: 'oscillator' },
+  { label: 'CCI(顺势指标)', value: 'CCI', category: 'oscillator' },
+  { label: 'DX(趋向指标)', value: 'DX', category: 'oscillator' },
+  { label: 'TRIX(三重指数平滑平均线)', value: 'TRIX', category: 'oscillator' },
+  { label: 'APO(绝对价格振荡指标)', value: 'APO', category: 'oscillator' },
+  { label: 'PPO(百分比价格振荡指标)', value: 'PPO', category: 'oscillator' },
+  // 成交量指标
+  { label: 'AD(累积/派发线)', value: 'AD', category: 'volume' },
+  { label: 'ADOSC(累积/派发振荡指标)', value: 'ADOSC', category: 'volume' },
+  { label: 'OBV(能量潮)', value: 'OBV', category: 'volume' },
+  // 动量指标
+  { label: 'MOM(动量)', value: 'MOM', category: 'momentum' },
+  { label: 'ROC(变动率)', value: 'ROC', category: 'momentum' },
+  { label: 'ROCP(变动率百分比)', value: 'ROCP', category: 'momentum' },
+  { label: 'ROCR(变动率比值)', value: 'ROCR', category: 'momentum' },
+  { label: 'ROCR100(变动率比值*100)', value: 'ROCR100', category: 'momentum' },
+  { label: 'MFI(资金流量指标)', value: 'MFI', category: 'momentum' },
+  // 波动率指标
+  { label: 'ATR(真实波幅)', value: 'ATR', category: 'volatility' },
+  { label: 'NATR(归一化真实波幅)', value: 'NATR', category: 'volatility' },
+  { label: 'STDDEV(标准差)', value: 'STDDEV', category: 'volatility' },
+  // 周期指标
+  { label: 'DPO(区间震荡线)', value: 'DPO', category: 'cycle' },
+  { label: 'HT_DCPERIOD(希尔伯特周期)', value: 'HT_DCPERIOD', category: 'cycle' },
+  { label: 'HT_SINE(希尔伯特正弦波)', value: 'HT_SINE', category: 'cycle' },
+  { label: 'HT_TRENDMODE(希尔伯特趋势模式)', value: 'HT_TRENDMODE', category: 'cycle' }
+])
+
+// Alpha因子模板
+const factorTemplates = ref([
+  { template_id: 'alpha158_1', name: 'Alpha158-基础', description: '经典158维因子' },
+  { template_id: 'alpha158_2', name: 'Alpha158-扩展', description: '扩展因子集' },
+  { template_id: 'alpha360_1', name: 'Alpha360-基础', description: '360维因子' },
+])
+
+// 清空选择
+const clearSelection = () => {
+  selectedIndicators.value = []
+  selectedFactorTemplate.value = ''
+  customFactorExpression.value = ''
+}
+
+// 移除指标
+const removeIndicator = (ind: string) => {
+  selectedIndicators.value = selectedIndicators.value.filter(i => i !== ind)
+}
+
+// 获取指标标签
+const getIndicatorLabel = (val: string) => {
+  const ind = allIndicators.value.find(i => i.value === val)
+  return ind ? ind.label : val
+}
+
+// 技术指标分组（150+指标）
+const indicatorGroups = [
+  {
+    label: '趋势指标',
+    labelEn: 'Trend Indicators',
+    options: [
+      { label: '移动平均线', value: 'MA' },
+      { label: '指数移动平均', value: 'EMA' },
+      { label: '布林带', value: 'BOLL' },
+      { label: '抛物线指标', value: 'SAR' },
+      { label: '自适应移动平均', value: 'KAMA' },
+      { label: '三重指数平均', value: 'TRIX' },
+    ]
+  },
+  {
+    label: '震荡指标',
+    labelEn: 'Oscillators',
+    options: [
+      { label: '相对强弱指数', value: 'RSI' },
+      { label: '随机指标', value: 'KDJ' },
+      { label: '顺势指标', value: 'CCI' },
+      { label: 'MACD', value: 'MACD' },
+      { label: '威廉指标', value: 'WR' },
+      { label: '能量潮', value: 'OBV' },
+    ]
+  },
+  {
+    label: '动量指标',
+    labelEn: 'Momentum',
+    options: [
+      { label: '动量指标', value: 'MOM' },
+      { label: '变化率指标', value: 'ROC' },
+      { label: '乖离率', value: 'BIAS' },
+      { label: '阿隆指标', value: 'AROON' },
+    ]
+  },
+  {
+    label: '波动率指标',
+    labelEn: 'Volatility',
+    options: [
+      { label: '平均真实波幅', value: 'ATR' },
+      { label: '标准差', value: 'STDDEV' },
+      { label: '历史波动率', value: 'HV' },
+    ]
+  },
+  {
+    label: '成交量指标',
+    labelEn: 'Volume',
+    options: [
+      { label: '成交量移动平均', value: 'VOL_MA' },
+      { label: '成交量比率', value: 'VR' },
+      { label: '价量趋势', value: 'PVT' },
+    ]
+  },
+  {
+    label: '周期指标',
+    labelEn: 'Cycle',
+    options: [
+      { label: '去趋势价格震荡', value: 'DPO' },
+      { label: '斐波那契周期', value: 'FIB' },
+    ]
+  },
+]
+
+// 计算函数
+const runCalculation = async () => {
+  if (!taskId.value) return
+  isCalculating.value = true
+  try {
+    const hasFactors = selectedCalcTypes.value.length > 0
+    const hasIndicators = selectedIndicators.value.length > 0
+    if (!hasFactors && !hasIndicators) {
+      ElMessage.warning(isZh.value ? '请至少选择一个计算类型' : 'Please select at least one calculation type')
+      return
+    }
+
+    // 创建新任务
+    const newTask: CalculationTask = {
+      task_id: `task_${Date.now()}`,
+      expression: selectedCalcTypes.value.join(', ') + (selectedIndicators.value.length > 0 ? ` + ${selectedIndicators.value.length} indicators` : ''),
+      status: 'running',
+      progress: 0,
+      created_at: new Date().toLocaleString()
+    }
+    calculationTasks.value.unshift(newTask)
+
+    console.log('Factor calculation:', selectedCalcTypes.value, customFactorExpression.value)
+    console.log('Indicator calculation:', selectedIndicators.value)
+
+    // 模拟计算进度（每200ms更新一次，更平滑）
+    const progressInterval = setInterval(() => {
+      // 随机增加进度，但确保最终能达到100%
+      const remaining = 100 - newTask.progress
+      const increment = remaining > 20 ? Math.random() * 15 + 5 : remaining
+      newTask.progress = Math.min(100, newTask.progress + increment)
+
+      // 强制触发Vue响应式更新
+      calculationTasks.value = [...calculationTasks.value]
+
+      if (newTask.progress >= 100) {
+        newTask.progress = 100
+        newTask.status = 'completed'
+        clearInterval(progressInterval)
+
+        // 自动显示结果
+        viewTaskResult(newTask.task_id)
+        ElMessage.success(isZh.value ? '计算完成' : 'Calculation complete')
+      }
+    }, 200)
+  } catch (error: any) {
+    ElMessage.error(error.message || (isZh.value ? '计算失败' : 'Calculation failed'))
+    // 标记任务为失败
+    if (calculationTasks.value.length > 0) {
+      calculationTasks.value[0].status = 'failed'
+    }
+  } finally {
+    isCalculating.value = false
+  }
+}
+
+// 监听 currentTask 变化，更新本地 periods
+watch(() => currentTask.value?.periods, (newVal) => {
+  if (newVal && newVal.length > 0) {
+    periods.value = newVal
+  }
+})
+
+// 周期变化时更新 taskStore
+watch(periods, (newVal) => {
+  const task = taskStore[taskId.value] || taskStore['default']
+  if (task) {
+    task.periods = newVal
+  }
+}, { deep: true })
+
+const isZh = computed(() => appStore.language === 'zh')
+
+// 任务标题（可编辑）
+const taskTitle = ref(currentTask.value?.title || '')
+
+// 监听 currentTask 变化，更新 taskTitle
+watch(() => currentTask.value?.title, (newTitle) => {
+  if (newTitle) {
+    taskTitle.value = newTitle
+  }
+})
+
+// 更新任务标题
+const updateTaskTitle = () => {
+  const task = taskStore[taskId.value]
+  if (task && taskTitle.value.trim()) {
+    task.title = taskTitle.value
+    task.titleZh = taskTitle.value
+  }
+}
+
+// 阶段模块导航
+const currentStageModule = ref('research')
+
+const switchStageModule = (module: string) => {
+  currentStageModule.value = module
+  console.log('Switching to module:', module)
+}
+
+const toggleLanguage = () => {
+  appStore.setLanguage(isZh.value ? 'en' : 'zh')
+}
+
+const goBack = () => {
+  router.push('/workflow')
+}
+
+const showNotifications = () => {
+  console.log('Showing notifications...')
+}
+
+const showUserMenu = () => {
+  console.log('Showing user menu...')
+}
+
+const navigateStage = (stageId: string) => {
+  if (stageId === 'research') return
+  if (stageId === 'validation') router.push('/validation/detail')
+  if (stageId === 'production') router.push('/production/detail')
+}
+
+// 工作流步骤 - 初始全部pending，步骤1为active
+const workflowSteps = ref([
+  { id: 1, name: 'Data Configuration', nameZh: '数据配置', status: 'active', description: 'Configure data sources and date range', descriptionZh: '配置数据源和日期范围' },
+  { id: 2, name: 'Factor Calculation', nameZh: '因子计算', status: 'pending', description: 'Calculate factor values for selected stocks', descriptionZh: '计算选定股票的因子值' },
+  { id: 3, name: 'Factor Analysis', nameZh: '因子分析', status: 'pending', description: 'Analyze factor performance using IC/IR metrics', descriptionZh: '使用IC/IR指标分析因子表现' },
+  { id: 4, name: 'Factor Evaluation', nameZh: '因子评估', status: 'pending', description: 'Evaluate factor effectiveness', descriptionZh: '评估因子有效性' },
+  { id: 5, name: 'Model Training', nameZh: '模型训练', status: 'pending', description: 'Train ML models with selected factors', descriptionZh: '使用选定因子训练ML模型' },
+  { id: 6, name: 'Feasibility Check', nameZh: '可行性检查', status: 'pending', description: 'Check model feasibility for validation', descriptionZh: '检查模型是否可用于验证' }
+])
+
+const currentStep = ref(1)
+
+const currentStepData = computed(() => {
+  const step = workflowSteps.value.find(s => s.id === currentStep.value)
+  if (!step) return null
+  return {
+    ...step,
+    displayName: isZh.value ? step.nameZh : step.name
+  }
+})
+
+// 是否可以完成当前步骤
+const canCompleteStep = computed(() => {
+  const step = workflowSteps.value.find(s => s.id === currentStep.value)
+  return step?.status === 'active'
+})
+
+const selectStep = (stepId: number) => {
+  // 允许选择所有步骤
+  const step = workflowSteps.value.find(s => s.id === stepId)
+  if (step) {
+    currentStep.value = stepId
+    updateTabsForStep(stepId)
+  }
+}
+
+// 完成当前步骤
+const completeCurrentStep = () => {
+  const step = workflowSteps.value.find(s => s.id === currentStep.value)
+  if (step) {
+    step.status = 'completed'
+    // 激活下一个步骤
+    const nextStep = workflowSteps.value.find(s => s.id === currentStep.value + 1)
+    if (nextStep) {
+      nextStep.status = 'active'
+      currentStep.value = nextStep.id
+      updateTabsForStep(nextStep.id)
+    }
+  }
+}
+
+const getStepStatusText = (status: string) => {
+  const statusMapZh: Record<string, string> = {
+    completed: '已完成',
+    active: '进行中',
+    pending: '待处理'
+  }
+  const statusMapEn: Record<string, string> = {
+    completed: 'Completed',
+    active: 'In Progress',
+    pending: 'Pending'
+  }
+  return (isZh.value ? statusMapZh[status] : statusMapEn[status]) || status
+}
+
+// Tabs相关
+const currentTab = ref('overview')
+const currentTabs = ref([
+  { id: 'overview', name: 'Overview', nameZh: '概览' },
+  { id: 'ic-ir', name: 'IC/IR Analysis', nameZh: 'IC/IR分析' },
+  { id: 'correlation', name: 'Correlation', nameZh: '相关性' },
+  { id: 'distribution', name: 'Distribution', nameZh: '分布' }
+])
+
+const switchTab = (tabId: string) => {
+  currentTab.value = tabId
+}
+
+const updateTabsForStep = (stepId: number) => {
+  const tabConfigs: Record<number, { id: string, name: string, nameZh: string, icon?: any }[]> = {
+    1: [
+      { id: 'overview', name: 'Overview', nameZh: '概览', icon: Odometer },
+      { id: 'sources', name: 'Data Sources', nameZh: '数据源', icon: Folder },
+      { id: 'cache', name: 'Cache Stats', nameZh: '缓存统计', icon: Box }
+    ],
+    2: [
+      { id: 'overview', name: 'Overview', nameZh: '概览', icon: Odometer },
+      { id: 'templates', name: 'Templates', nameZh: '模板', icon: Document },
+      { id: 'custom', name: 'Custom Factors', nameZh: '自定义因子', icon: DataLine }
+    ],
+    3: [
+      { id: 'overview', name: 'Overview', nameZh: '概览', icon: Odometer },
+      { id: 'ic-ir', name: 'IC/IR Analysis', nameZh: 'IC/IR分析', icon: TrendCharts },
+      { id: 'correlation', name: 'Correlation', nameZh: '相关性', icon: Connection },
+      { id: 'distribution', name: 'Distribution', nameZh: '分布', icon: Histogram }
+    ],
+    4: [
+      { id: 'overview', name: 'Overview', nameZh: '概览', icon: Odometer },
+      { id: 'ranking', name: 'Factor Ranking', nameZh: '因子排名', icon: TrendCharts },
+      { id: 'backtest', name: 'Group Backtest', nameZh: '分组回测', icon: DataLine }
+    ],
+    5: [
+      { id: 'overview', name: 'Overview', nameZh: '概览', icon: Odometer },
+      { id: 'config', name: 'Configuration', nameZh: '配置', icon: Document },
+      { id: 'training', name: 'Training Status', nameZh: '训练状态', icon: TrendCharts }
+    ],
+    6: [
+      { id: 'overview', name: 'Overview', nameZh: '概览', icon: Odometer },
+      { id: 'report', name: 'Feasibility Report', nameZh: '可行性报告', icon: Document },
+      { id: 'export', name: 'Export Model', nameZh: '导出模型', icon: Box }
+    ]
+  }
+  currentTabs.value = tabConfigs[stepId] || currentTabs.value
+  currentTab.value = currentTabs.value[0]?.id || 'overview'
+}
+
+// 统计数据
+const stats = reactive({
+  totalFactors: 168,
+  icMean: 0.045,
+  irRatio: 0.78,
+  qualifiedCount: 45,
+  passRate: 26.8,
+  progress: 67
+})
+
+// 顶部因子
+const topFactors = ref<FactorResult[]>([
+  { factor_name: 'MA60_Cross_Price', ic: 0.058, ir: 0.92, t_stat: 3.45, p_value: 0.001, status: 'pass' },
+  { factor_name: 'RSM60_Std_Dev', ic: 0.052, ir: 0.85, t_stat: 3.12, p_value: 0.002, status: 'pass' },
+  { factor_name: 'ROC20_Return', ic: 0.049, ir: 0.78, t_stat: 2.89, p_value: 0.004, status: 'pass' },
+  { factor_name: 'Beta60_Price', ic: 0.022, ir: 0.45, t_stat: 1.56, p_value: 0.12, status: 'fail' },
+  { factor_name: 'VOL30_Volume', ic: 0.041, ir: 0.72, t_stat: 2.67, p_value: 0.008, status: 'pass' }
+])
+
+// IC/IR配置
+const icConfig = reactive({
+  method: 'spearman' as 'pearson' | 'spearman',
+  threshold: 0.03,
+  targetPeriod: 1,
+  includeAlpha158: true,
+  includeAlpha360: false,
+  includeCustom: true
+})
+
+// IC计算方法选项
+const icMethodOptions = computed(() => [
+  { value: 'pearson', label: isZh.value ? '皮尔逊相关' : 'Pearson Correlation' },
+  { value: 'spearman', label: isZh.value ? '斯皮尔曼秩相关' : 'Spearman Rank Correlation' }
+])
+
+// 相关性配置
+const correlationThreshold = ref(0.8)
+const correlationMethod = ref<'pearson' | 'spearman'>('pearson')
+
+// 因子库质量雷达图
+const factorQualityRadarRef = ref<HTMLElement>()
+
+// 个体因子评估雷达图（IC/IR分析页）
+const individualFactorRadarRef = ref<HTMLElement>()
+
+// 个体因子IC/IR数据（从后端获取）
+const individualFactorData = ref({
+  ic_mean: 0,
+  ic_std: 0,
+  ic_min: 0,
+  ic_max: 0,
+  ir: 0,
+  ic_positive_ratio: 0,
+  t_stat: 0,
+  p_value: 0,
+  monotonicity_score: 0,  // 单调性得分（需要后端支持）

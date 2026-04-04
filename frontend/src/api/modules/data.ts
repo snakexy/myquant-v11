@@ -1,4 +1,5 @@
 import { apiRequest } from '../index'
+import { getStockKline } from '../market'
 
 // 数据相关API接口
 // 修复说明：
@@ -131,9 +132,7 @@ export const getStockHistory = async (code: string, params: {
   }
 
   try {
-    // ✅ 使用新的统一K线API（集成SmartSourceManager）
-    const { getStockKline } = await import('../market')
-
+    // ✅ 使用静态导入的 getStockKline
     const frequencyMap = {
       daily: 'day',
       weekly: 'week',

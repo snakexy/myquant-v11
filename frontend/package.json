@@ -29,7 +29,6 @@
     "element-plus": "^2.13.0",
     "gsap": "^3.12.2",
     "klinecharts": "^10.0.0-beta1",
-    "lightweight-charts": "^5.1.0",
     "lightweight-charts-indicators": "^0.1.0",
     "lodash-es": "^4.17.21",
     "naive-ui": "^2.43.2",

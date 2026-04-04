@@ -1,0 +1,38 @@
+{
+  "backup_name": "full_backup_20260331_041821",
+  "created_at": "2026-03-31T04:18:51.063208",
+  "description": "完整项目备份 - 包含所有源代码、配置和文档",
+  "stats": {
+    "files_backed_up": 1488,
+    "dirs_backed_up": 7,
+    "total_size_bytes": 23025092,
+    "total_size_mb": 21.96
+  },
+  "exclude_dirs": [
+    ".git",
+    ".idea",
+    "data_cache",
+    "__pycache__",
+    "external",
+    "MyQuant.egg-info",
+    "project_versions",
+    ".venv",
+    "logs",
+    ".vscode",
+    "dist",
+    "node_modules",
+    "data",
+    ".pytest_cache"
+  ],
+  "exclude_extensions": [
+    ".pyd",
+    ".pyc",
+    ".tmp",
+    ".log",
+    ".pyo",
+    ".bak"
+  ],
+  "exclude_files": [
+    "backup_current_progress.py"
+  ]
+}

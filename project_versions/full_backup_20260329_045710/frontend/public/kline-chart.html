@@ -1,0 +1,3561 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <title>MyQuant v3.2 - 动态K线图</title>
+    <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
+    <script src="kline-chart-config.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #131722;
+            color: #d1d4dc;
+        }
+
+        #container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        #header {
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        h1 {
+            margin: 0;
+            font-size: 24px;
+            color: #2962ff;
+        }
+
+        #info {
+            margin-top: 10px;
+            font-size: 14px;
+            color: #787b86;
+            height: 30px;
+            display: flex;
+            align-items: center;
+            overflow: hidden;
+        }
+
+        #tooltipInfo {
+            margin-left: 20px;
+            color: #d1d4dc;
+            min-width: 400px;
+            display: inline-block;
+            height: 20px;
+            vertical-align: middle;
+            overflow: hidden;
+            white-space: nowrap;
+            text-overflow: ellipsis;
+        }
+
+        #status {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-size: 12px;
+            margin-left: 10px;
+        }
+
+        .status.success {
+            background: #0a5823;
+            color: #4af264;
+        }
+
+        .status.loading {
+            background: #ff9800;
+            color: #ffffff;
+        }
+
+        .status.error {
+            background: #f44336;
+            color: #ffffff;
+        }
+
+        #chart {
+            flex: 1;
+            background: #131722;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        #controls {
+            margin-top: 10px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        button {
+            padding: 8px 16px;
+            background: #2962ff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        button:hover {
+            background: #1e4bd1;
+        }
+
+        button:disabled {
+            background: #666;
+            cursor: not-allowed;
+        }
+
+        button.active {
+            background: #1e4bd1;
+            box-shadow: 0 0 0 2px #4af264;
+        }
+
+        input, select {
+            padding: 8px;
+            background: #2a2e39;
+            color: #d1d4dc;
+            border: 1px solid #434651;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        #indicatorControls {
+            margin-top: 10px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            padding: 10px;
+            background: #1e222d;
+            border-radius: 4px;
+        }
+
+        .indicator-label {
+            font-size: 14px;
+            color: #787b86;
+            margin-right: 10px;
+        }
+
+        #periodControls {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            padding: 10px;
+            background: #1e222d;
+            border-radius: 4px;
+        }
+
+        .period-label {
+            font-size: 14px;
+            color: #787b86;
+            margin-right: 10px;
+        }
+
+        .period-btn {
+            padding: 6px 12px;
+            background: #2a2e39;
+            color: #d1d4dc;
+            border: 1px solid #434651;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+            transition: all 0.2s;
+        }
+
+        .period-btn:hover {
+            background: #363a45;
+        }
+
+        .period-btn.active {
+            background: #2962ff;
+            border-color: #2962ff;
+            color: white;
+        }
+
+        /* ⭐ 可拖拽分隔条样式 */
+        .chart-divider {
+            width: 100%;
+            height: 6px;
+            background: #2a2e39;
+            cursor: ns-resize;
+            position: relative;
+            z-index: 10;
+            transition: background 0.2s;
+        }
+
+        .chart-divider:hover {
+            background: '#3a3e49';
+        }
+
+        .chart-divider::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 50px;
+            height: 3px;
+            background: #758696;
+            border-radius: 2px;
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <div id="header">
+            <div>
+                <h1>MyQuant v3.2 - 动态K线图</h1>
+                <div id="info">
+                    <span id="status" class="status loading">连接中...</span>
+                    <span id="dataInfo">已加载: 0根K线</span>
+                    <span id="sourceInfo"></span>
+                    <!-- Tooltip使用固定高度，避免内容变化导致页面抖动 -->
+                    <span id="tooltipInfo" style="margin-left: 20px; color: #d1d4dc; min-width: 400px; display: inline-block; height: 20px; vertical-align: middle;"></span>
+                </div>
+            </div>
+            <div id="periodControls">
+                <span class="period-label">周期:</span>
+                <button class="period-btn" onclick="changePeriod('1m')" title="当日分时走势（折线图）">分时</button>
+                <button class="period-btn" onclick="changePeriod('5m')" title="5分钟K线">5分</button>
+                <button class="period-btn" onclick="changePeriod('15m')" title="15分钟K线">15分</button>
+                <button class="period-btn" onclick="changePeriod('30m')" title="30分钟K线">30分</button>
+                <button class="period-btn" onclick="changePeriod('60m')" title="60分钟K线">60分</button>
+                <button class="period-btn active" onclick="changePeriod('1d')" title="日K线">日线</button>
+                <button class="period-btn" onclick="changePeriod('1w')" title="周K线">周线</button>
+                <button class="period-btn" onclick="changePeriod('1mon')" title="月K线">月线</button>
+            </div>
+        </div>
+
+        <!-- 主图容器 -->
+        <div id="main-chart-container" style="width: 100%; height: 600px;"></div>
+
+        <div id="controls">
+            <input type="text" id="symbolInput" value="600000.SH" placeholder="股票代码" style="width: 120px;">
+            <button onclick="changeSymbol()">切换股票</button>
+            <button onclick="loadMoreData()">加载更早数据</button>
+            <button onclick="resetView()">重置视图</button>
+        </div>
+        <div id="indicatorControls">
+            <span class="indicator-label">技术指标:</span>
+            <button id="btnMA" onclick="toggleIndicator('MA')">MA</button>
+            <button id="btnMACD" onclick="toggleIndicator('MACD')">MACD</button>
+            <button id="btnKDJ" onclick="toggleIndicator('KDJ')">KDJ</button>
+            <button id="btnBOLL" onclick="toggleIndicator('BOLL')">BOLL</button>
+            <button id="btnRSI" onclick="toggleIndicator('RSI')">RSI</button>
+            <button id="btnCCI" onclick="toggleIndicator('CCI')">CCI</button>
+            <button id="btnWR" onclick="toggleIndicator('WR')">WR</button>
+            <button id="btnATR" onclick="toggleIndicator('ATR')">ATR</button>
+            <button id="btnOBV" onclick="toggleIndicator('OBV')">OBV</button>
+            <button onclick="openCustomIndicatorManager()" style="background: #9c27b0;">📝 自定义指标</button>
+            <button onclick="openIndicatorSettings()" style="background: #2196F3;">⚙️ 设置</button>
+            <button onclick="clearIndicators()" style="background: #666;">清空指标</button>
+        </div>
+
+        <!-- 指标设置面板 -->
+        <div id="indicatorSettingsPanel" style="display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #1e1e1e; border: 1px solid #444; border-radius: 8px; padding: 20px; z-index: 1000; min-width: 350px; box-shadow: 0 4px 20px rgba(0,0,0,0.5);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                <h3 style="margin: 0; color: #fff;">指标参数设置</h3>
+                <button onclick="closeIndicatorSettings()" style="background: none; border: none; color: #fff; font-size: 20px; cursor: pointer;">×</button>
+            </div>
+
+            <!-- MA设置 -->
+            <div id="maSettings" style="margin-bottom: 15px;">
+                <h4 style="color: #aaa; margin-bottom: 10px;">MA (移动平均线)</h4>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                    <label style="color: #ccc; display: flex; align-items: center;">
+                        <input type="checkbox" id="ma5_enable" checked style="margin-right: 8px;">
+                        <input type="number" id="ma5_period" value="5" min="2" max="200" style="width: 60px; margin-right: 5px; background: #333; border: 1px solid #555; color: #fff; padding: 3px;">
+                        MA5 (白色)
+                    </label>
+                    <label style="color: #ccc; display: flex; align-items: center;">
+                        <input type="checkbox" id="ma10_enable" checked style="margin-right: 8px;">
+                        <input type="number" id="ma10_period" value="10" min="2" max="200" style="width: 60px; margin-right: 5px; background: #333; border: 1px solid #555; color: #fff; padding: 3px;">
+                        MA10 (黄色)
+                    </label>
+                    <label style="color: #ccc; display: flex; align-items: center;">
+                        <input type="checkbox" id="ma20_enable" checked style="margin-right: 8px;">
+                        <input type="number" id="ma20_period" value="20" min="2" max="200" style="width: 60px; margin-right: 5px; background: #333; border: 1px solid #555; color: #fff; padding: 3px;">
+                        MA20 (浅蓝)
+                    </label>
+                    <label style="color: #ccc; display: flex; align-items: center;">
+                        <input type="checkbox" id="ma60_enable" checked style="margin-right: 8px;">
+                        <input type="number" id="ma60_period" value="60" min="2" max="200" style="width: 60px; margin-right: 5px; background: #333; border: 1px solid #555; color: #fff; padding: 3px;">
+                        MA60 (浅绿)
+                    </label>
+                </div>
+                <div style="margin-top: 10px;">
+                    <label style="color: #ccc; display: flex; align-items: center;">
+                        <input type="checkbox" id="ma120_enable" style="margin-right: 8px;">
+                        <input type="number" id="ma120_period" value="120" min="2" max="200" style="width: 60px; margin-right: 5px; background: #333; border: 1px solid #555; color: #fff; padding: 3px;">
+                        MA120 (紫色)
+                    </label>
+                </div>
+            </div>
+
+            <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px;">
+                <button onclick="closeIndicatorSettings()" style="background: #666; padding: 8px 16px;">取消</button>
+                <button onclick="applyIndicatorSettings()" style="background: #2196F3; padding: 8px 16px;">应用</button>
+            </div>
+        </div>
+
+        <!-- 遮罩层 -->
+        <div id="settingsOverlay" onclick="closeIndicatorSettings()" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 999;"></div>
+    </div>
+
+    <script>
+        // K线数据量配置表（v3.2 优化 - 添加后端数据级别映射）
+        const KLINE_CONFIG = {
+            '1m':   {
+                initial: 240,   // 分时图：当日4小时交易（240根1分钟）
+                preload: 480,   // 预加载480根（约2天）
+                max: 1089,      // TdxQuant上限（约4.5个交易日）
+                name: '分时',
+                is_intraday: true,  // 标记为分时图
+                // ⭐ 后端数据级别映射（v3.2新增）
+                dataLevel_initial: 'L3',   // 初始：完整数据（分时图需要全天数据）
+                dataLevel_preload: 'L3',   // 预加载：完整数据
+                dataLevel_realtime: 'L3',  // 实时：最新1分钟K线（L3获取当前周期的OHLCV）
+                dataLevel_loadmore: 'L3'   // 加载更多：完整数据
+            },
+            '5m':   {
+                initial: 120, preload: 240,  max: 240,  name: '5分钟',
+                dataLevel_initial: 'L3',   // ⭐ 修复：分钟级不支持L2，改用L3完整数据
+                dataLevel_preload: 'L3',   // 预加载：完整数据
+                dataLevel_realtime: 'L3',   // 实时：最新5分钟K线（L3获取当前周期的OHLCV）
+                dataLevel_loadmore: 'L3'
+            },
+            '15m':  {
+                initial: 160,  preload: 160,   max: 160,   name: '15分钟',  // 2周数据（10天×16根/天）
+                dataLevel_initial: 'L3',   // ⭐ 修复：分钟级不支持L2，改用L3完整数据
+                dataLevel_preload: 'L3',   // 预加载：完整数据
+                dataLevel_realtime: 'L3',   // 实时：最新15分钟K线（L3获取当前周期的OHLCV）
+                dataLevel_loadmore: 'L3'
+            },
+            '30m':  {
+                initial: 96,  preload: 384,  max: 1089, name: '30分钟',
+                dataLevel_initial: 'L3',   // ⭐ 修复：分钟级不支持L2，改用L3完整数据
+                dataLevel_preload: 'L3',   // 预加载：完整数据
+                dataLevel_realtime: 'L3',   // 实时：最新30分钟K线（L3获取当前周期的OHLCV）
+                dataLevel_loadmore: 'L3'
+            },
+            '60m':  {
+                initial: 96,  preload: 384,  max: 1089, name: '60分钟',
+                dataLevel_initial: 'L3',   // ⭐ 修复：60分钟不支持L2，改用L3完整数据
+                dataLevel_preload: 'L3',   // 预加载：完整数据
+                dataLevel_realtime: 'L3',   // 实时：最新60分钟K线（L3获取当前周期的OHLCV）
+                dataLevel_loadmore: 'L3'
+            },
+            '1d':   {
+                initial: 800, preload: 1089,  max: 1089, name: '日线',
+                dataLevel_initial: 'L3',   // ⭐ 初始：完整数据（800根K线，约3.8年）
+                dataLevel_preload: 'L3',   // ⭐ 预加载：完整数据（1089天，约4.5年）
+                dataLevel_realtime: 'L1',  // ⭐ 实时：实时快照（1ms，自动转换为K线格式）
+                dataLevel_loadmore: 'L3'   // 加载更多：完整数据
+            },
+            '1w':   {
+                initial: 100, preload: 400,  max: 1089, name: '周线',
+                dataLevel_initial: 'L2',   // 初始：历史快照（30周）
+                dataLevel_preload: 'L3',   // 预加载：完整数据
+                dataLevel_realtime: 'L1',   // 实时更新
+                dataLevel_loadmore: 'L3'
+            },
+            '1mon': {
+                initial: 100, preload: 400,  max: 1089, name: '月线',
+                dataLevel_initial: 'L2',   // 初始：历史快照（30月）
+                dataLevel_preload: 'L3',   // 预加载：完整数据
+                dataLevel_realtime: 'L1',   // 实时更新
+                dataLevel_loadmore: 'L3'
+            }
+        };
+
+        // ⭐ v3.2新增：获取后端数据级别（根据前端加载阶段）
+        function getDataLevel(stage) {
+            const config = KLINE_CONFIG[CONFIG.period];
+            if (!config) {
+                console.warn(`⚠️ 未找到周期 ${CONFIG.period} 的配置，使用默认级别 L3`);
+                return 'L3';
+            }
+
+            const dataLevel = config[`dataLevel_${stage}`];
+            if (!dataLevel) {
+                console.warn(`⚠️ 未找到阶段 ${stage} 的数据级别配置，使用默认级别 L3`);
+                return 'L3';
+            }
+
+            return dataLevel;
+        }
+
+        // 配置
+        const CONFIG = {
+            apiBaseUrl: 'http://127.0.0.1:8000',  // API服务器地址
+            symbol: '600000.SH',
+            period: '1d',
+            adjustType: 'front',  // 复权类型：front=前复权, none=不复权
+            initialCount: 100,  // 初始加载100根（将被KLINE_CONFIG覆盖）
+            loadMoreCount: 200  // 每次加载200根
+        };
+
+        // 全局变量
+        let chart, candlestickSeries, volumeSeries, intradaySeries;  // intradaySeries用于分时图
+        let isIntradayMode = false;  // 标记当前是否为分时图模式
+        let allData = {
+            candlestick: [],
+            volume: []
+        };
+        let isLoading = false;
+        let oldestDate = null;
+
+        // 技术指标相关
+        let indicators = {
+            MACD: null,
+            KDJ: null,
+            BOLL: null,
+            MA: null,
+            RSI: null,
+            CCI: null,
+            WR: null,
+            ATR: null,
+            OBV: null
+        };
+        let activeIndicators = {
+            MACD: false,
+            KDJ: false,
+            BOLL: false,
+            MA: false,
+            RSI: false,
+            CCI: false,
+            WR: false,
+            ATR: false,
+            OBV: false
+        };
+
+        /**
+         * ⭐ 垂直布局管理器 - 单图表多价格刻度架构
+         * 为每个技术指标分配垂直空间，使用 scaleMargins 定位
+         */
+        class IndicatorLayoutManager {
+            constructor() {
+                // 指标的显示顺序（从上到下）
+                this.indicatorOrder = ['MACD', 'KDJ', 'RSI', 'CCI', 'WR', 'ATR', 'OBV'];
+                // 布局定义
+                this.mainChartBottom = 0.5;      // 主图（K线）占据 0% - 50%
+                this.volumeTop = 0.85;           // 成交量占据 85% - 100%
+                this.indicatorAreaTop = 0.5;     // 指标区域起始位置 50%
+                this.indicatorAreaBottom = 0.85; // 指标区域结束位置 85%
+                // 指标区域高度 = 0.85 - 0.5 = 0.35 (35%)
+                this.indicatorAreaHeight = this.indicatorAreaBottom - this.indicatorAreaTop;
+            }
+
+            /**
+             * 计算指定指标的垂直位置
+             * @param {string} indicatorName - 指标名称
+             * @param {Array} activeIndicators - 当前激活的指标列表
+             * @returns {Object} { top, bottom } - scaleMargins 的 top 和 bottom 值
+             */
+            getIndicatorMargins(indicatorName, activeIndicators) {
+                // 找到该指标在激活列表中的位置
+                const activeInOrder = this.indicatorOrder.filter(ind => activeIndicators.includes(ind));
+                const position = activeInOrder.indexOf(indicatorName);
+
+                console.log(`[LayoutManager] ${indicatorName} - activeList:`, activeInOrder, `position: ${position}`);
+
+                if (position === -1) {
+                    // 指标未激活
+                    console.warn(`[LayoutManager] ${indicatorName} 未在激活列表中`);
+                    return { top: 0, bottom: 0 };
+                }
+
+                const totalActive = activeInOrder.length;
+                console.log(`[LayoutManager] ${indicatorName} - totalActive: ${totalActive}`);
+
+                if (totalActive === 1) {
+                    // 只有一个指标，占据整个指标区域（50% - 85%）
+                    const margins = {
+                        top: this.indicatorAreaTop,  // 0.5
+                        bottom: 1 - this.indicatorAreaBottom  // 0.15
+                    };
+                    console.log(`[LayoutManager] ${indicatorName} 单指标模式:`, margins);
+                    return margins;
+                }
+
+                // 多个指标时，平分指标区域
+                const heightPerIndicator = this.indicatorAreaHeight / totalActive;
+                const top = this.indicatorAreaTop + (position * heightPerIndicator);
+                const bottom = 1 - (top + heightPerIndicator);
+
+                console.log(`[LayoutManager] ${indicatorName} 多指标模式: top=${top.toFixed(2)}, bottom=${bottom.toFixed(2)}`);
+                return { top, bottom };
+            }
+
+            /**
+             * 更新所有激活指标的布局
+             * @param {Object} chart - 主图实例
+             * @param {Array} activeIndicators - 激活的指标列表
+             */
+            updateLayout(chart, activeIndicators) {
+                activeIndicators.forEach(indicatorName => {
+                    const margins = this.getIndicatorMargins(indicatorName, activeIndicators);
+                    const priceScaleId = this.getPriceScaleId(indicatorName);
+
+                    try {
+                        chart.priceScale(priceScaleId).applyOptions({
+                            scaleMargins: margins
+                        });
+                    } catch (e) {
+                        console.warn(`[LayoutManager] 更新${indicatorName}布局失败:`, e);
+                    }
+                });
+            }
+
+            /**
+             * 获取指标的价格刻度ID
+             */
+            getPriceScaleId(indicatorName) {
+                return `${indicatorName.toLowerCase()}-scale`;
+            }
+        }
+
+        // 创建布局管理器实例
+        const layoutManager = new IndicatorLayoutManager();
+
+        // ⭐ MA指标配置
+        let maConfig = {
+            ma5: { enable: true, period: 5, color: '#ffffff', name: 'MA5' },
+            ma10: { enable: true, period: 10, color: '#ffff00', name: 'MA10' },
+            ma20: { enable: true, period: 20, color: '#87ceeb', name: 'MA20' },
+            ma60: { enable: true, period: 60, color: '#90ee90', name: 'MA60' },
+            ma120: { enable: false, period: 120, color: '#dda0dd', name: 'MA120' }
+        };
+
+        // ⭐ v3.2.1：自适应时间格式（根据周期调整）
+        function updateTimeScaleOptions() {
+            if (!chart) return;
+
+            const currentPeriod = CONFIG.period || '1d';
+
+            // 分钟级周期：显示年月日时分
+            // 日线及以上：只显示年月日
+            const isIntraday = currentPeriod.includes('m') || currentPeriod === '1m';
+
+            // 自定义时间格式化函数
+            const formatter = isIntraday
+                ? (time) => {  // 年月日时分
+                    const date = new Date(time * 1000);
+                    const year = date.getFullYear();
+                    const month = String(date.getMonth() + 1).padStart(2, '0');
+                    const day = String(date.getDate()).padStart(2, '0');
+                    const hour = String(date.getHours()).padStart(2, '0');
+                    const minute = String(date.getMinutes()).padStart(2, '0');
+                    return `${year}/${month}/${day} ${hour}:${minute}`;
+                }
+                : (time) => {  // 年月日
+                    const date = new Date(time * 1000);
+                    const year = date.getFullYear();
+                    const month = String(date.getMonth() + 1).padStart(2, '0');
+                    const day = String(date.getDate()).padStart(2, '0');
+                    return `${year}/${month}/${day}`;
+                };
+
+            // ⭐ v3.2.1修复：同时更新图表级别和时间轴级别的本地化配置
+            chart.applyOptions({
+                localization: {
+                    dateFormatter: formatter  // 十字光标提示使用此格式
+                }
+            });
+
+            chart.timeScale().applyOptions({
+                timeVisible: isIntraday,  // 分钟线显示时分，日线不显示
+                secondsVisible: false,    // 从不显示秒
+                localization: {
+                    dateFormatter: formatter  // 时间轴使用相同格式
+                }
+            });
+
+            console.log(`⏱️ 时间格式已更新: ${currentPeriod} -> ${isIntraday ? '年月日时分' : '年月日'}`);
+        }
+
+        // 初始化图表
+        function initChart() {
+            // ⭐ 使用主图容器
+            const chartElement = document.getElementById('main-chart-container');
+
+            // ⭐ v3.2.1修复：创建时间格式化函数（年/月/日格式）
+            const currentPeriod = CONFIG.period || '1d';
+            const isIntraday = currentPeriod.includes('m') || currentPeriod === '1m';
+
+            const timeFormatter = isIntraday
+                ? (time) => {  // 年/月/日 时:分
+                    const date = new Date(time * 1000);
+                    const year = date.getFullYear();
+                    const month = String(date.getMonth() + 1).padStart(2, '0');
+                    const day = String(date.getDate()).padStart(2, '0');
+                    const hour = String(date.getHours()).padStart(2, '0');
+                    const minute = String(date.getMinutes()).padStart(2, '0');
+                    return `${year}/${month}/${day} ${hour}:${minute}`;
+                }
+                : (time) => {  // 年/月/日
+                    const date = new Date(time * 1000);
+                    const year = date.getFullYear();
+                    const month = String(date.getMonth() + 1).padStart(2, '0');
+                    const day = String(date.getDate()).padStart(2, '0');
+                    return `${year}/${month}/${day}`;
+                };
+
+            chart = LightweightCharts.createChart(chartElement, {
+                width: chartElement.clientWidth,
+                height: chartElement.clientHeight,
+                layout: {
+                    background: { color: '#131722' },
+                    textColor: '#d1d4dc',
+                },
+                // ⭐ v3.2.1新增：图表级别的本地化配置（影响十字光标提示）
+                localization: {
+                    dateFormatter: timeFormatter
+                },
+                grid: {
+                    vertLines: { color: 'rgba(42, 46, 57, 0.5)' },
+                    horzLines: { color: 'rgba(42, 46, 57, 0.5)' },
+                },
+                // ⭐ v3.4新增：等比缩放配置（滚轮和拖拽）
+                handleScroll: {
+                    mouseWheel: true,
+                    pressedMouseMove: true,
+                },
+                handleScale: {
+                    axisPressedMouseMove: true,
+                    axisRightPressedMouseMove: true,
+                    pinch: true,
+                },
+                // 启用惯性滚动（更流畅的体验）
+                kineticScroll: {
+                    mouse: true,
+                    touch: true,
+                },
+                // 缩放模式：保持纵横比
+                timeScale: {
+                    timeVisible: isIntraday,  // 分钟线显示时分，日线不显示
+                    secondsVisible: false,
+                    localization: {
+                        dateFormatter: timeFormatter  // ⭐ 使用相同的格式化函数
+                    },
+                    // ⭐ 等比缩放：缩放时保持纵横比
+                    rightOffset: 5,  // 右侧留5%空白
+                    barSpacing: 10,    // K线间距
+                    minBarSpacing: 3,  // 最小间距
+                },
+                crosshair: {
+                    mode: LightweightCharts.CrosshairMode.Normal,
+                    vertLine: {
+                        color: '#758696',
+                        width: 1,
+                        style: 3,  // 虚线
+                        labelBackgroundColor: '#1e222d',
+                    },
+                    horzLine: {
+                        color: '#758696',
+                        width:1,
+                        style: 3,  // 虚线
+                        labelBackgroundColor: '#1e222d',
+                    },
+                },
+            });
+
+            // 添加K线系列（中国股市：红涨绿跌）
+            candlestickSeries = chart.addCandlestickSeries({
+                upColor: '#ef5350',
+                downColor: '#26a69a',
+                borderVisible: false,
+                wickUpColor: '#ef5350',
+                wickDownColor: '#26a69a',
+                // ⭐ 暂时不指定priceScaleId，使用默认的来测试
+                // priceScaleId: 'main-scale'
+            });
+
+            // ⭐ 配置默认价格刻度的scaleMargins
+            const defaultPriceScale = candlestickSeries.priceScale();
+            console.log('[初始化] 默认价格刻度:', defaultPriceScale);
+            defaultPriceScale.applyOptions({
+                scaleMargins: {
+                    top: 0.05,
+                    bottom: 0.5,  // ⭐ 主图占据 5% - 50%
+                },
+            });
+
+            // 添加成交量系列
+            volumeSeries = chart.addHistogramSeries({
+                color: '#26a69a',
+                priceFormat: {
+                    type: 'volume',
+                },
+                priceScaleId: 'volume-scale'
+            });
+
+            const volumePriceScale = volumeSeries.priceScale();
+            console.log('[初始化] 成交量价格刻度:', volumePriceScale);
+            volumePriceScale.applyOptions({
+                scaleMargins: {
+                    top: 0.85,
+                    bottom: 0,
+                },
+            });
+
+            // 响应窗口大小变化
+            window.addEventListener('resize', () => {
+                chart.applyOptions({
+                    width: chartElement.clientWidth,
+                    height: chartElement.clientHeight,
+                });
+            });
+
+            // ⚠️ v3.2.1：已禁用边界自动加载功能（防止2023年数据污染）
+            // 【第三层】边界检测自动加载历史数据
+            // 问题：当用户缩放接近左边界时，会触发loadMoreHistoricalData('before')
+            // 这会导致加载2023年的旧数据，造成图表显示异常
+            //
+            // let isLoadingMore = false;
+            // let lastLoadTime = 0;
+            // const LOAD_DEBOUNCE = 1000; // 防抖：1秒内不重复加载
+            // const B_THRESHOLD = 0.1; // 边界阈值：距离边界10%以内触发
+            //
+            // chart.timeScale().subscribeVisibleTimeRangeChange((newRange) => {
+            //     if (!newRange || !allData.candlestick.length) return;
+            //
+            //     // 防抖：避免频繁触发
+            //     const now = Date.now();
+            //     if (isLoadingMore || now - lastLoadTime < LOAD_DEBOUNCE) return;
+            //
+            //     const dataTimeRange = {
+            //         from: allData.candlestick[0].time,
+            //         to: allData.candlestick[allData.candlestick.length - 1].time
+            //     };
+            //
+            //     const visibleDuration = newRange.to - newRange.from;
+            //     const leftBoundary = dataTimeRange.from + visibleDuration * B_THRESHOLD;
+            //     const rightBoundary = dataTimeRange.to - visibleDuration * B_THRESHOLD;
+            //
+            //     // 检测是否接近左边界（需要加载更早的历史数据）
+            //     if (newRange.from <= leftBoundary) {
+            //         console.log('🔄 接近左边界，准备加载更早的历史数据...');
+            //         loadMoreHistoricalData('before');
+            //         lastLoadTime = now;
+            //     }
+            //     // 检测是否接近右边界（需要加载更新的数据）
+            //     else if (newRange.to >= rightBoundary) {
+            //         console.log('🔄 接近右边界，准备加载更新的数据...');
+            //         loadMoreHistoricalData('after');
+            //         lastLoadTime = now;
+            //     }
+            // });
+            //
+            // ⚠️ 历史加载功能已禁用：需要时可以通过按钮手动加载更多历史数据
+
+            // 加载更多历史数据（v3.2：使用loadmore stage）
+            async function loadMoreHistoricalData(direction) {
+                if (isLoadingMore) {
+                    console.log('⏸️ 正在加载中，跳过本次请求');
+                    return;
+                }
+
+                isLoadingMore = true;
+                console.log(`📥 开始加载${direction === 'before' ? '历史' : '更新'}数据...`);
+
+                try {
+                    const currentData = allData.candlestick;
+                    const endTime = direction === 'before'
+                        ? currentData[0].time
+                        : currentData[currentData.length - 1].time;
+
+                    // 将Unix时间戳转换为 YYYY-MM-DD 格式
+                    const endDate = new Date(endTime * 1000);
+                    const endDateStr = endDate.toISOString().split('T')[0];
+
+                    // 计算需要加载的数量
+                    const periodConfig = KLINE_CONFIG[CONFIG.period] || KLINE_CONFIG['1d'];
+                    const loadCount = Math.min(periodConfig.max || 1089, 500);
+
+                    console.log(`📅 结束日期: ${endDateStr}, 加载数量: ${loadCount}`);
+
+                    // ⭐ v3.2：使用 loadmore stage → L3 完整数据
+                    const response = await fetch(`${CONFIG.apiBaseUrl}/api/v1/market/kline/data`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            symbol: CONFIG.symbol,
+                            period: CONFIG.period,
+                            count: loadCount,
+                            end_date: endDateStr,
+                            adjust_type: 'front',
+                            data_level: 'L3'  // ⭐ 历史数据总是使用L3完整数据
+                        })
+                    });
+
+                    if (!response.ok) throw new Error('API请求失败');
+
+                    const result = await response.json();
+
+                    if (result.success && result.data && result.data.length > 0) {
+                        const newData = result.data;
+
+                        // 数据验证：过滤掉无效数据
+                        const validData = newData.filter(item => {
+                            return item &&
+                                   item.time !== null && item.time !== undefined &&
+                                   item.open !== null && item.open !== undefined && !isNaN(item.open) &&
+                                   item.high !== null && item.high !== undefined && !isNaN(item.high) &&
+                                   item.low !== null && item.low !== undefined && !isNaN(item.low) &&
+                                   item.close !== null && item.close !== undefined && !isNaN(item.close) &&
+                                   item.volume !== null && item.volume !== undefined && !isNaN(item.volume);
+                        });
+
+                        if (validData.length === 0) {
+                            console.log('⚠️ 加载的数据全部无效，跳过更新');
+                            return;
+                        }
+
+                        console.log(`✅ 数据验证通过: ${validData.length}/${newData.length}条数据有效`);
+
+                        // 过滤掉已存在的数据
+                        const existingTimes = new Set(currentData.map(d => d.time));
+                        const uniqueNewData = validData.filter(d => !existingTimes.has(d.time));
+
+                        if (uniqueNewData.length > 0) {
+                            if (direction === 'before') {
+                                // 加载历史数据：添加到前面
+                                allData.candlestick = [...uniqueNewData, ...currentData];
+                                allData.volume = [...uniqueNewData.map(d => ({
+                                    time: d.time,
+                                    value: d.volume,
+                                    color: d.close >= d.open ? '#26a69a' : '#ef5350'
+                                })), ...allData.volume];
+                            } else {
+                                // 加载更新数据：添加到后面
+                                allData.candlestick = [...currentData, ...uniqueNewData];
+                                allData.volume = [...allData.volume, ...uniqueNewData.map(d => ({
+                                    time: d.time,
+                                    value: d.volume,
+                                    color: d.close >= d.open ? '#26a69a' : '#ef5350'
+                                }))];
+                            }
+
+                            // ⭐ 最终验证：确保所有数据都有效（包括旧数据）
+                            allData.candlestick = allData.candlestick.filter(item => {
+                                return item &&
+                                       item.time !== null && item.time !== undefined &&
+                                       item.open !== null && item.open !== undefined && !isNaN(item.open) &&
+                                       item.high !== null && item.high !== undefined && !isNaN(item.high) &&
+                                       item.low !== null && item.low !== undefined && !isNaN(item.low) &&
+                                       item.close !== null && item.close !== undefined && !isNaN(item.close) &&
+                                       item.volume !== null && item.volume !== undefined && !isNaN(item.volume);
+                            });
+
+                            // 同样验证 volume 数据
+                            allData.volume = allData.volume.filter(item => {
+                                return item &&
+                                       item.time !== null && item.time !== undefined &&
+                                       item.value !== null && item.value !== undefined && !isNaN(item.value);
+                            });
+
+                            // 更新图表
+                            candlestickSeries.setData(allData.candlestick);
+                            volumeSeries.setData(allData.volume);
+
+                            console.log(`✅ 成功加载 ${uniqueNewData.length} 根K线，总计 ${allData.candlestick.length} 根`);
+                            document.getElementById('dataInfo').textContent = `已加载: ${allData.candlestick.length}根K线`;
+                        } else {
+                            console.log('ℹ️ 没有新数据（数据已存在）');
+                        }
+                    } else {
+                        console.log('ℹ️ 没有更多数据可加载');
+                    }
+                } catch (error) {
+                    console.error('❌ 加载更多数据失败:', error);
+                } finally {
+                    isLoadingMore = false;
+                }
+            }
+
+            // 监听十字线移动，显示OHLCV数据和涨跌幅
+            chart.subscribeCrosshairMove((param) => {
+                const tooltipEl = document.getElementById('tooltipInfo');
+
+                if (!param.time || !param.point) {
+                    tooltipEl.innerHTML = '';
+                    return;
+                }
+
+                // 获取K线数据
+                const candlestickData = param.seriesData.get(candlestickSeries);
+                const volumeData = param.seriesData.get(volumeSeries);
+
+                if (!candlestickData) {
+                    tooltipEl.innerHTML = '';
+                    return;
+                }
+
+                // 计算涨跌幅
+                const open = candlestickData.open;
+                const close = candlestickData.close;
+                const high = candlestickData.high;
+                const low = candlestickData.low;
+                const volume = volumeData ? volumeData.value : 0;
+
+                const change = close - open;
+                const changePercent = ((change / open) * 100).toFixed(2);
+                const isUp = change >= 0;
+                const changeColor = isUp ? '#ef5350' : '#26a69a';
+                const changeSign = isUp ? '+' : '';
+
+                // 格式化成交量为万/亿
+                let volumeStr = volume.toLocaleString();
+                if (volume >= 100000000) {
+                    volumeStr = (volume / 100000000).toFixed(2) + '亿';
+                } else if (volume >= 10000) {
+                    volumeStr = (volume / 10000).toFixed(2) + '万';
+                }
+
+                // 格式化时间 - 直接从candlestickData获取时间值
+                let timeStr = '';
+                if (candlestickData && candlestickData.time !== undefined) {
+                    // candlestickData.time 是 Unix 时间戳（秒）
+                    const timestamp = candlestickData.time;
+                    const date = new Date(timestamp * 1000); // 转换为毫秒
+                    const year = date.getFullYear();
+                    const month = String(date.getMonth() + 1).padStart(2, '0');
+                    const day = String(date.getDate()).padStart(2, '0');
+
+                    // 分钟级数据需要显示时分
+                    if (CONFIG.period && CONFIG.period.includes('m')) {
+                        const hours = String(date.getHours()).padStart(2, '0');
+                        const minutes = String(date.getMinutes()).padStart(2, '0');
+                        timeStr = `${year}/${month}/${day} ${hours}:${minutes}`;
+                    } else {
+                        timeStr = `${year}/${month}/${day}`;
+                    }
+                }
+
+                // 构建tooltip内容
+                tooltipEl.innerHTML = `
+                    <span style="color: #787b86;">日期:</span> ${timeStr} |
+                    <span style="color: #787b86;">开:</span> ${open.toFixed(2)} |
+                    <span style="color: #787b86;">高:</span> ${high.toFixed(2)} |
+                    <span style="color: #787b86;">低:</span> ${low.toFixed(2)} |
+                    <span style="color: #787b86;">收:</span> ${close.toFixed(2)} |
+                    <span style="color: #787b86;">量:</span> ${volumeStr} |
+                    <span style="color: ${changeColor};">幅: ${changeSign}${changePercent}%</span>
+                `;
+            });
+
+            // ⭐ v3.2.1：应用自适应时间格式
+            updateTimeScaleOptions();
+
+            console.log('图表初始化完成');
+        }
+
+        // ========== 技术指标计算函数 ==========
+
+        /**
+         * 计算EMA指数移动平均
+         */
+        function calculateEMA(data, period) {
+            const k = 2 / (period + 1);
+            let emaArray = [];
+
+            // 第一个EMA使用SMA
+            let sum = 0;
+            for (let i = 0; i < period; i++) {
+                sum += data[i];
+            }
+            let ema = sum / period;
+            emaArray.push(ema);
+
+            // 后续使用EMA公式
+            for (let i = period; i < data.length; i++) {
+                ema = (data[i] * k) + (emaArray[emaArray.length - 1] * (1 - k));
+                emaArray.push(ema);
+            }
+
+            return emaArray;
+        }
+
+        /**
+         * 计算MA（移动平均线）指标
+         * 返回: { ma5: [], ma10: [], ma20: [], ma60: [] }
+         */
+        function calculateMA(data, periods = [5, 10, 20, 60]) {
+            const result = {};
+
+            periods.forEach(period => {
+                const ma = [];
+
+                for (let i = period - 1; i < data.length; i++) {
+                    let sum = 0;
+                    for (let j = 0; j < period; j++) {
+                        sum += data[i - j].close;
+                    }
+                    ma.push({
+                        time: data[i].time,
+                        value: sum / period
+                    });
+                }
+
+                result[`ma${period}`] = ma;
+            });
+
+            return result;
+        }
+
+        /**
+         * 计算MACD指标
+         * 返回: { diff: [], dea: [], macd: [] }
+         */
+        function calculateMACD(data, shortPeriod = 12, longPeriod = 26, signalPeriod = 9) {
+            const closes = data.map(d => d.close);
+
+            // 计算DIF = EMA(12) - EMA(26)
+            const emaShort = calculateEMA(closes, shortPeriod);
+            const emaLong = calculateEMA(closes, longPeriod);
+
+            const diff = [];
+            const offset = longPeriod - shortPeriod;
+
+            for (let i = 0; i < emaLong.length; i++) {
+                diff.push({
+                    time: data[i + shortPeriod + offset].time,
+                    value: emaShort[i + offset] - emaLong[i]
+                });
+            }
+
+            // 计算DEA = EMA(DIF, 9)
+            const diffValues = diff.map(d => d.value);
+            const deaValues = calculateEMA(diffValues, signalPeriod);
+
+            const dea = [];
+            for (let i = 0; i < deaValues.length; i++) {
+                dea.push({
+                    time: diff[i + signalPeriod - 1].time,
+                    value: deaValues[i]
+                });
+            }
+
+            // 计算MACD柱 = (DIF - DEA) * 2
+            const macd = [];
+            const startIdx = signalPeriod - 1;
+            for (let i = startIdx; i < diff.length; i++) {
+                const difValue = diff[i].value;
+                const deaValue = dea[i - startIdx].value;
+                const macdValue = (difValue - deaValue) * 2;
+
+                macd.push({
+                    time: diff[i].time,
+                    value: macdValue,
+                    color: macdValue >= 0 ? '#ef5350' : '#26a69a'
+                });
+            }
+
+            return { diff, dea, macd };
+        }
+
+        /**
+         * 计算KDJ指标
+         * 返回: { k: [], d: [], j: [] }
+         */
+        function calculateKDJ(data, n = 9, m1 = 3, m2 = 3) {
+            const k = [];
+            const d = [];
+            const j = [];
+
+            let prevK = 50;
+            let prevD = 50;
+
+            for (let i = n - 1; i < data.length; i++) {
+                // 计算RSV
+                let highN = -Infinity;
+                let lowN = Infinity;
+
+                for (let j = i - n + 1; j <= i; j++) {
+                    highN = Math.max(highN, data[j].high);
+                    lowN = Math.min(lowN, data[j].low);
+                }
+
+                const rsv = (data[i].close - lowN) / (highN - lowN) * 100;
+
+                // 计算K值
+                const currentK = (2 / 3) * prevK + (1 / 3) * rsv;
+                // 计算D值
+                const currentD = (2 / 3) * prevD + (1 / 3) * currentK;
+                // 计算J值
+                const currentJ = 3 * currentK - 2 * currentD;
+
+                k.push({ time: data[i].time, value: currentK });
+                d.push({ time: data[i].time, value: currentD });
+                j.push({ time: data[i].time, value: currentJ });
+
+                prevK = currentK;
+                prevD = currentD;
+            }
+
+            return { k, d, j };
+        }
+
+        /**
+         * 计算BOLL布林带指标
+         * 返回: { upper: [], middle: [], lower: [] }
+         */
+        function calculateBOLL(data, n = 20, k = 2) {
+            const upper = [];
+            const middle = [];
+            const lower = [];
+
+            for (let i = n - 1; i < data.length; i++) {
+                // 计算中轨 = MA(n)
+                let sum = 0;
+                for (let j = i - n + 1; j <= i; j++) {
+                    sum += data[j].close;
+                }
+                const ma = sum / n;
+
+                // 计算标准差
+                let squaredSum = 0;
+                for (let j = i - n + 1; j <= i; j++) {
+                    squaredSum += Math.pow(data[j].close - ma, 2);
+                }
+                const std = Math.sqrt(squaredSum / n);
+
+                // 计算上下轨
+                const upperValue = ma + k * std;
+                const lowerValue = ma - k * std;
+
+                middle.push({ time: data[i].time, value: ma });
+                upper.push({ time: data[i].time, value: upperValue });
+                lower.push({ time: data[i].time, value: lowerValue });
+            }
+
+            return { upper, middle, lower };
+        }
+
+        // ========== 技术指标显示/隐藏函数 ==========
+
+        /**
+         * 切换技术指标显示
+         */
+        function toggleIndicator(indicatorName) {
+            const isActive = activeIndicators[indicatorName];
+            const btn = document.getElementById('btn' + indicatorName);
+
+            if (isActive) {
+                // 隐藏指标
+                clearIndicator(indicatorName);
+                activeIndicators[indicatorName] = false;
+                btn.classList.remove('active');
+                console.log(`已隐藏 ${indicatorName} 指标`);
+            } else {
+                // ⭐ 先设置状态，再显示（这样display函数能正确获取activeList）
+                activeIndicators[indicatorName] = true;
+                showIndicator(indicatorName);
+                btn.classList.add('active');
+                console.log(`已显示 ${indicatorName} 指标`);
+            }
+        }
+
+        /**
+         * 显示单个指标
+         */
+        function showIndicator(indicatorName) {
+            if (allData.candlestick.length === 0) {
+                console.warn('没有K线数据，无法计算指标');
+                return;
+            }
+
+            // ⭐ 移除重复检查 - 总是重新创建指标（单图表架构）
+            // 如果指标已存在，先清除它
+            if (indicators[indicatorName]) {
+                console.log(`[showIndicator] ${indicatorName}已存在，先清除`);
+                clearIndicator(indicatorName);
+            }
+
+            // 计算并显示指标（添加错误处理）
+            try {
+                switch (indicatorName) {
+                    case 'MACD':
+                        showMACD();
+                        break;
+                    case 'KDJ':
+                        showKDJ();
+                        break;
+                    case 'BOLL':
+                        showBOLL();
+                        break;
+                    case 'MA':
+                        showMA();
+                        break;
+                    case 'RSI':
+                        showRSI();
+                        break;
+                    case 'CCI':
+                        showCCI();
+                        break;
+                    case 'WR':
+                        showWR();
+                        break;
+                    case 'ATR':
+                        showATR();
+                        break;
+                    case 'OBV':
+                        showOBV();
+                        break;
+                    default:
+                        console.warn(`[指标] 未知指标: ${indicatorName}`);
+                }
+            } catch (error) {
+                console.error(`[指标] 显示${indicatorName}失败:`, error);
+                throw error; // 重新抛出，让调用者处理
+            }
+        }
+
+        /**
+         * 显示MACD指标 - 使用后端TA-Lib计算
+         */
+        async function showMACD() {
+            console.log('[MACD] showMACD开始执行');
+            console.log('[MACD] allData.candlestick.length=', allData.candlestick.length);
+
+            // ⭐ 安全检查：确保有K线数据
+            if (!allData.candlestick || allData.candlestick.length === 0) {
+                console.error('[MACD] 没有K线数据，无法计算MACD');
+                alert('没有K线数据，请先加载K线');
+                return;
+            }
+
+            try {
+                const symbol = CONFIG.symbol;
+                const period = CONFIG.period;
+                const count = allData.candlestick.length;
+
+                console.log(`[MACD] 准备获取后端数据: symbol=${symbol}, period=${period}, count=${count}`);
+
+                const response = await fetch(`/api/indicators/macd?symbol=${encodeURIComponent(symbol)}&period=${period}&count=${count}`);
+                const result = await response.json();
+
+                console.log('[MACD] 后端返回结果:', result);
+
+                if (!result.success || !result.macd) {
+                    console.error('[MACD] 后端返回失败:', result);
+                    console.log('[MACD] 降级使用前端计算...');
+                    const macdData = calculateMACD(allData.candlestick);
+                    displayMACDData(macdData);
+                    return;
+                }
+
+                // ⭐ 使用K线数据的实际时间戳
+                const candlestickTimes = allData.candlestick.map(k => k.time);
+
+                // 转换MACD数据
+                const macdValues = result.macd.dif;
+                const deaValues = result.macd.dea;
+                const macdHistogram = result.macd.macd;
+
+                // 取最后N个值与K线对齐
+                const takeCount = Math.min(candlestickTimes.length, macdValues.length);
+                const macdValuesTail = macdValues.slice(-takeCount);
+                const deaValuesTail = deaValues.slice(-takeCount);
+                const macdHistogramTail = macdHistogram.slice(-takeCount);
+                const timesTail = candlestickTimes.slice(-takeCount);
+
+                // 组合成前端格式
+                const difData = macdValuesTail
+                    .map((val, idx) => ({ time: timesTail[idx], value: val }))
+                    .filter(item => item.value !== null && !isNaN(item.value));
+
+                const deaData = deaValuesTail
+                    .map((val, idx) => ({ time: timesTail[idx], value: val }))
+                    .filter(item => item.value !== null && !isNaN(item.value));
+
+                const macdData = macdHistogramTail
+                    .map((val, idx) => {
+                        const color = val >= 0 ? '#ef535080' : '#26a69a80'; // 红涨绿跌
+                        return { time: timesTail[idx], value: val, color: color };
+                    })
+                    .filter(item => item.value !== null && !isNaN(item.value));
+
+                console.log(`[MACD] 后端计算完成: DIF=${difData.length}根, DEA=${deaData.length}根, MACD=${macdData.length}根`);
+
+                displayMACDData({ diff: difData, dea: deaData, macd: macdData });
+
+            } catch (error) {
+                console.error('[MACD] 获取后端数据失败:', error);
+                console.log('[MACD] 降级使用前端计算...');
+                try {
+                    const macdData = calculateMACD(allData.candlestick);
+                    displayMACDData(macdData);
+                } catch (fallbackError) {
+                    console.error('[MACD] 前端降级计算也失败了:', fallbackError);
+                    alert('MACD指标计算失败，请查看控制台');
+                }
+            }
+        }
+
+        /**
+         * 显示MACD数据到图表（单图表多价格刻度架构）
+         */
+        function displayMACDData(macdData) {
+            console.log('[MACD] displayMACDData开始执行');
+
+            // 获取当前激活的指标列表
+            const activeList = Object.keys(activeIndicators).filter(k => activeIndicators[k]);
+
+            // 计算MACD的垂直位置
+            const margins = layoutManager.getIndicatorMargins('MACD', activeList);
+            const priceScaleId = layoutManager.getPriceScaleId('MACD');
+
+            console.log(`[MACD] 使用价格刻度 ${priceScaleId}，位置: top=${margins.top.toFixed(2)}, bottom=${margins.bottom.toFixed(2)}`);
+
+            // ⭐ 先配置priceScale
+            chart.priceScale(priceScaleId).applyOptions({
+                scaleMargins: margins,
+                autoScale: true
+            });
+
+            // 添加DIF线（白色）
+            const difSeries = chart.addLineSeries({
+                color: '#ffffff',
+                lineWidth: 1,
+                priceLineVisible: false,
+                lastValueVisible: true,
+                title: 'DIF',
+                priceScaleId: priceScaleId
+            });
+
+            // 添加DEA线（黄色）
+            const deaSeries = chart.addLineSeries({
+                color: '#ffff00',
+                lineWidth: 1,
+                priceLineVisible: false,
+                lastValueVisible: true,
+                title: 'DEA',
+                priceScaleId: priceScaleId
+            });
+
+            // 添加MACD柱状图
+            const macdSeries = chart.addHistogramSeries({
+                color: '#26a69a',
+                priceFormat: {
+                    type: 'price',
+                    precision: 2,
+                    minMove: 0.01,
+                },
+                priceLineVisible: false,
+                lastValueVisible: true,
+                title: 'MACD',
+                priceScaleId: priceScaleId
+            });
+
+            difSeries.setData(macdData.diff);
+            deaSeries.setData(macdData.dea);
+            macdSeries.setData(macdData.macd);
+
+            // 保存引用
+            indicators.MACD = {
+                dif: { series: difSeries, data: macdData.diff },
+                dea: { series: deaSeries, data: macdData.dea },
+                macd: { series: macdSeries, data: macdData.macd }
+            };
+
+            console.log('✅ MACD指标已显示（单图表架构）');
+        }
+
+        /**
+         * 显示KDJ指标 - 使用后端TA-Lib计算
+         */
+        async function showKDJ() {
+            console.log('[KDJ] showKDJ开始执行');
+            console.log('[KDJ] allData.candlestick.length=', allData.candlestick.length);
+
+            // ⭐ 安全检查：确保有K线数据
+            if (!allData.candlestick || allData.candlestick.length === 0) {
+                console.error('[KDJ] 没有K线数据，无法计算KDJ');
+                alert('没有K线数据，请先加载K线');
+                return;
+            }
+
+            try {
+                const symbol = CONFIG.symbol;
+                const period = CONFIG.period;
+                const count = allData.candlestick.length;
+
+                console.log(`[KDJ] 准备获取后端数据: symbol=${symbol}, period=${period}, count=${count}`);
+
+                const response = await fetch(`/api/indicators/kdj?symbol=${encodeURIComponent(symbol)}&period=${period}&count=${count}`);
+                const result = await response.json();
+
+                console.log('[KDJ] 后端返回结果:', result);
+
+                if (!result.success || !result.kdj) {
+                    console.error('[KDJ] 后端返回失败:', result);
+                    console.log('[KDJ] 降级使用前端计算...');
+                    const kdjData = calculateKDJ(allData.candlestick);
+                    displayKDJData(kdjData);
+                    return;
+                }
+
+                // ⭐ 使用K线数据的实际时间戳
+                const candlestickTimes = allData.candlestick.map(k => k.time);
+
+                // 转换KDJ数据
+                const kValues = result.kdj.k;
+                const dValues = result.kdj.d;
+                const jValues = result.kdj.j;
+
+                // 取最后N个值与K线对齐
+                const takeCount = Math.min(candlestickTimes.length, kValues.length);
+                const kValuesTail = kValues.slice(-takeCount);
+                const dValuesTail = dValues.slice(-takeCount);
+                const jValuesTail = jValues.slice(-takeCount);
+                const timesTail = candlestickTimes.slice(-takeCount);
+
+                // 组合成前端格式
+                const kData = kValuesTail
+                    .map((val, idx) => ({ time: timesTail[idx], value: val }))
+                    .filter(item => item.value !== null && !isNaN(item.value));
+
+                const dData = dValuesTail
+                    .map((val, idx) => ({ time: timesTail[idx], value: val }))
+                    .filter(item => item.value !== null && !isNaN(item.value));
+
+                const jData = jValuesTail
+                    .map((val, idx) => ({ time: timesTail[idx], value: val }))
+                    .filter(item => item.value !== null && !isNaN(item.value));
+
+                console.log(`[KDJ] 后端计算完成: K=${kData.length}根, D=${dData.length}根, J=${jData.length}根`);
+
+                displayKDJData({ k: kData, d: dData, j: jData });
+
+            } catch (error) {
+                console.error('[KDJ] 获取后端数据失败:', error);
+                console.log('[KDJ] 降级使用前端计算...');
+                try {
+                    const kdjData = calculateKDJ(allData.candlestick);
+                    displayKDJData(kdjData);
+                } catch (fallbackError) {
+                    console.error('[KDJ] 前端降级计算也失败了:', fallbackError);
+                    alert('KDJ指标计算失败，请查看控制台');
+                }
+            }
+        }
+
+        /**
+         * 显示KDJ数据到图表（单图表多价格刻度架构）
+         */
+        function displayKDJData(kdjData) {
+            console.log('[KDJ] displayKDJData开始执行');
+            console.log('[KDJ] kdjData:', kdjData);
+            console.log('[KDJ] kdjData.k:', kdjData.k ? kdjData.k.length : 'null');
+            console.log('[KDJ] kdjData.k前5个:', kdjData.k ? kdjData.k.slice(0, 5) : 'null');
+
+            // 获取当前激活的指标列表
+            const activeList = Object.keys(activeIndicators).filter(k => activeIndicators[k]);
+            console.log('[KDJ] 当前激活的指标列表:', activeList);
+
+            // 计算KDJ的垂直位置
+            const margins = layoutManager.getIndicatorMargins('KDJ', activeList);
+            const priceScaleId = layoutManager.getPriceScaleId('KDJ');
+
+            console.log(`[KDJ] priceScaleId=${priceScaleId}`);
+            console.log(`[KDJ] margins: top=${margins.top}, bottom=${margins.bottom}`);
+            console.log(`[KDJ] 图表区域应该是: ${(margins.top * 100).toFixed(1)}% - ${((1 - margins.bottom) * 100).toFixed(1)}%`);
+
+            // ⭐ 关键：先配置priceScale，再添加series
+            chart.priceScale(priceScaleId).applyOptions({
+                scaleMargins: margins,
+                autoScale: true
+            });
+
+            console.log('[KDJ] priceScale配置完成');
+
+            // 添加K线（白色）
+            const kSeries = chart.addLineSeries({
+                color: '#ffffff',
+                lineWidth: 1,
+                priceLineVisible: false,
+                lastValueVisible: true,
+                title: 'K',
+                priceScaleId: priceScaleId
+            });
+
+            // 添加D线（黄色）
+            const dSeries = chart.addLineSeries({
+                color: '#ffff00',
+                lineWidth: 1,
+                priceLineVisible: false,
+                lastValueVisible: true,
+                title: 'D',
+                priceScaleId: priceScaleId
+            });
+
+            // 添加J线（紫色）
+            const jSeries = chart.addLineSeries({
+                color: '#9c27b0',
+                lineWidth: 1,
+                priceLineVisible: false,
+                lastValueVisible: true,
+                title: 'J',
+                priceScaleId: priceScaleId
+            });
+
+            console.log('[KDJ] 开始setData...');
+            console.log('[KDJ] kdjData.k长度:', kdjData.k.length);
+            console.log('[KDJ] kdjData.k第一个值:', kdjData.k[0]);
+            console.log('[KDJ] kdjData.k最后一个值:', kdjData.k[kdjData.k.length - 1]);
+
+            kSeries.setData(kdjData.k);
+            dSeries.setData(kdjData.d);
+            jSeries.setData(kdjData.j);
+
+            console.log('[KDJ] setData完成');
+
+            // 保存引用
+            indicators.KDJ = {
+                k: { series: kSeries, data: kdjData.k },
+                d: { series: dSeries, data: kdjData.d },
+                j: { series: jSeries, data: kdjData.j }
+            };
+
+            console.log('✅ KDJ指标已显示（单图表架构）');
+        }
+
+        /**
+         * 显示BOLL指标 - 使用后端TA-Lib计算
+         */
+        async function showBOLL() {
+            console.log('[BOLL] showBOLL开始执行');
+            console.log('[BOLL] allData.candlestick.length=', allData.candlestick.length);
+
+            // ⭐ 安全检查：确保有K线数据
+            if (!allData.candlestick || allData.candlestick.length === 0) {
+                console.error('[BOLL] 没有K线数据，无法计算BOLL');
+                alert('没有K线数据，请先加载K线');
+                return;
+            }
+
+            try {
+                const symbol = CONFIG.symbol;
+                const period = CONFIG.period;
+                const count = allData.candlestick.length;
+
+                console.log(`[BOLL] 准备获取后端数据: symbol=${symbol}, period=${period}, count=${count}`);
+
+                const response = await fetch(`/api/indicators/boll?symbol=${encodeURIComponent(symbol)}&period=${period}&count=${count}`);
+                const result = await response.json();
+
+                console.log('[BOLL] 后端返回结果:', result);
+
+                if (!result.success || !result.boll) {
+                    console.error('[BOLL] 后端返回失败:', result);
+                    console.log('[BOLL] 降级使用前端计算...');
+                    const bollData = calculateBOLL(allData.candlestick);
+                    displayBOLLData(bollData);
+                    return;
+                }
+
+                // ⭐ 使用K线数据的实际时间戳
+                const candlestickTimes = allData.candlestick.map(k => k.time);
+
+                // 转换BOLL数据
+                const upperValues = result.boll.upper;
+                const middleValues = result.boll.middle;
+                const lowerValues = result.boll.lower;
+
+                // 取最后N个值与K线对齐
+                const takeCount = Math.min(candlestickTimes.length, upperValues.length);
+                const upperValuesTail = upperValues.slice(-takeCount);
+                const middleValuesTail = middleValues.slice(-takeCount);
+                const lowerValuesTail = lowerValues.slice(-takeCount);
+                const timesTail = candlestickTimes.slice(-takeCount);
+
+                // 组合成前端格式
+                const upperData = upperValuesTail
+                    .map((val, idx) => ({ time: timesTail[idx], value: val }))
+                    .filter(item => item.value !== null && !isNaN(item.value));
+
+                const middleData = middleValuesTail
+                    .map((val, idx) => ({ time: timesTail[idx], value: val }))
+                    .filter(item => item.value !== null && !isNaN(item.value));
+
+                const lowerData = lowerValuesTail
+                    .map((val, idx) => ({ time: timesTail[idx], value: val }))
+                    .filter(item => item.value !== null && !isNaN(item.value));
+
+                console.log(`[BOLL] 后端计算完成: 上轨=${upperData.length}根, 中轨=${middleData.length}根, 下轨=${lowerData.length}根`);
+
+                displayBOLLData({ upper: upperData, middle: middleData, lower: lowerData });
+
+            } catch (error) {
+                console.error('[BOLL] 获取后端数据失败:', error);
+                console.log('[BOLL] 降级使用前端计算...');
+                try {
+                    const bollData = calculateBOLL(allData.candlestick);
+                    displayBOLLData(bollData);
+                } catch (fallbackError) {
+                    console.error('[BOLL] 前端降级计算也失败了:', fallbackError);
+                    alert('BOLL指标计算失败，请查看控制台');
+                }
+            }
+        }
+
+        /**
+         * 显示BOLL数据到图表
+         */
+        function displayBOLLData(bollData) {
+            // 添加上轨（白色）
+            const upperSeries = chart.addLineSeries({
+                color: '#ffffff',
+                lineWidth: 1,
+                priceLineVisible: false,
+                lastValueVisible: true,
+                title: 'BOLL上',
+                // ⭐ 使用默认价格刻度（空字符串），与K线共享Y轴
+            });
+
+            // 添加中轨（黄色）
+            const middleSeries = chart.addLineSeries({
+                color: '#ffff00',
+                lineWidth: 1,
+                priceLineVisible: false,
+                lastValueVisible: true,
+                title: 'BOLL中',
+                // ⭐ 使用默认价格刻度
+            });
+
+            // 添加下轨（白色）
+            const lowerSeries = chart.addLineSeries({
+                color: '#ffffff',
+                lineWidth: 1,
+                priceLineVisible: false,
+                lastValueVisible: true,
+                title: 'BOLL下',
+                // ⭐ 使用默认价格刻度
+            });
+
+            upperSeries.setData(bollData.upper);
+            middleSeries.setData(bollData.middle);
+            lowerSeries.setData(bollData.lower);
+
+            // 保存引用
+            indicators.BOLL = {
+                upper: { series: upperSeries, data: bollData.upper },
+                middle: { series: middleSeries, data: bollData.middle },
+                lower: { series: lowerSeries, data: bollData.lower }
+            };
+
+            console.log('✅ BOLL指标已显示（与K线共享Y轴）');
+        }
+
+        /**
+         * 显示MA（移动平均线）指标 - 使用后端TA-Lib计算
+         */
+        async function showMA() {
+            console.log('[MA] showMA开始执行');
+            console.log('[MA] allData.candlestick.length=', allData.candlestick.length);
+
+            // ⭐ 安全检查：确保有K线数据
+            if (!allData.candlestick || allData.candlestick.length === 0) {
+                console.error('[MA] 没有K线数据，无法计算MA');
+                alert('没有K线数据，请先加载K线');
+                return;
+            }
+
+            try {
+                // 调用后端API获取MA数据（使用配置的周期）
+                const symbol = CONFIG.symbol;
+                const period = CONFIG.period;
+                const count = allData.candlestick.length;
+
+                console.log(`[MA] 准备获取后端数据: symbol=${symbol}, period=${period}, count=${count}`);
+
+                // 从maConfig获取启用的周期
+                const enabledPeriods = Object.keys(maConfig)
+                    .filter(key => maConfig[key].enable)
+                    .map(key => maConfig[key].period);
+
+                if (enabledPeriods.length === 0) {
+                    console.warn('[MA] 没有启用的MA周期');
+                    return;
+                }
+
+                const maPeriodsStr = enabledPeriods.join(',');
+                console.log(`[MA] 从后端获取MA数据: ${symbol}, ${period}, ${count}根, 周期: [${maPeriodsStr}]`);
+
+                const response = await fetch(`/api/indicators/ma?symbol=${encodeURIComponent(symbol)}&period=${period}&count=${count}&ma_periods=${maPeriodsStr}`);
+                const result = await response.json();
+
+                console.log('[MA] 后端返回结果:', result);
+
+                if (!result.success || !result.ma) {
+                    console.error('[MA] 后端返回失败:', result);
+                    console.log('[MA] 降级使用前端计算...');
+                    // 降级使用前端计算
+                    const maData = calculateMA(allData.candlestick);
+                    displayMAData(maData);
+                    return;
+                }
+
+                // ⭐ 关键修复：使用K线数据中的实际时间戳，而不是后端返回的时间戳
+                // 这确保了MA线与K线完美对齐
+                const maData = {};
+
+                // 获取K线数据的实际时间戳
+                const candlestickTimes = allData.candlestick.map(k => k.time);
+                console.log(`[MA] candlestickTimes数量: ${candlestickTimes.length}`);
+                console.log('[MA] 前3个时间戳:', candlestickTimes.slice(0, 3));
+                console.log('[MA] 后3个时间戳:', candlestickTimes.slice(-3));
+
+                // 转换MA数据（使用配置中启用的周期）
+                Object.keys(maConfig).forEach(configKey => {
+                    if (maConfig[configKey].enable && result.ma[configKey]) {
+                        const maValues = result.ma[configKey]; // 这是后端返回的MA值数组
+
+                        console.log(`[MA] ${configKey} 后端返回值数量: ${maValues.length}`);
+
+                        // 后端返回的MA值数量可能与K线数量不完全一致（由于MA计算特性）
+                        // 我们取最后N个值，其中N = min(K线数量, MA值数量)
+                        const takeCount = Math.min(candlestickTimes.length, maValues.length);
+
+                        console.log(`[MA] ${configKey} 将取最后${takeCount}个值`);
+
+                        // 从数组末尾取takeCount个值（最新的数据）
+                        const maValuesTail = maValues.slice(-takeCount);
+                        const timesTail = candlestickTimes.slice(-takeCount);
+
+                        console.log(`[MA] ${configKey} maValuesTail前3个:`, maValuesTail.slice(0, 3));
+                        console.log(`[MA] ${configKey} timesTail前3个:`, timesTail.slice(0, 3));
+
+                        // 组合成前端格式
+                        maData[configKey] = maValuesTail
+                            .map((val, idx) => ({
+                                time: timesTail[idx],
+                                value: val
+                            }))
+                            .filter(item => {
+                                const isValid = item.value !== null && !isNaN(item.value);
+                                if (!isValid) {
+                                    console.warn(`[MA] ${configKey} 发现无效值:`, item);
+                                }
+                                return isValid;
+                            }); // 过滤null和NaN
+
+                        console.log(`[MA] ${configKey} 最终数据量: ${maData[configKey].length}`);
+                    }
+                });
+
+                console.log(`[MA] 后端计算完成: MA5=${maData.ma5?.length || 0}根, MA10=${maData.ma10?.length || 0}根, MA20=${maData.ma20?.length || 0}根, MA60=${maData.ma60?.length || 0}根`);
+
+                // 显示MA数据
+                console.log('[MA] 准备调用displayMAData');
+                displayMAData(maData);
+
+            } catch (error) {
+                console.error('[MA] 获取后端数据失败:', error);
+                console.error('[MA] 错误堆栈:', error.stack);
+                console.log('[MA] 降级使用前端计算...');
+                // 降级使用前端计算
+                try {
+                    const maData = calculateMA(allData.candlestick);
+                    displayMAData(maData);
+                } catch (fallbackError) {
+                    console.error('[MA] 前端降级计算也失败了:', fallbackError);
+                    alert('MA指标计算失败，请查看控制台');
+                }
+            }
+        }
+
+        /**
+         * 显示MA数据到图表
+         */
+        function displayMAData(maData) {
+            console.log('[MA] displayMAData开始执行, maData=', maData);
+
+            // 安全检查：确保chart存在
+            if (!chart) {
+                console.error('[MA] chart对象不存在');
+                return;
+            }
+
+            // ⭐ 安全检查：确保candlestickSeries存在（避免"Value is null"错误）
+            if (!candlestickSeries) {
+                console.error('[MA] candlestickSeries对象不存在，无法添加指标');
+                return;
+            }
+
+            console.log('[MA] chart和candlestickSeries都存在，开始处理MA数据');
+            console.log('[MA] allData.candlestick.length=', allData.candlestick.length);
+
+            // 根据配置动态创建MA线序列
+            const maIndicator = {};
+            const enabledMAList = [];
+
+            Object.keys(maConfig).forEach(configKey => {
+                if (maConfig[configKey].enable && maData[configKey] && Array.isArray(maData[configKey]) && maData[configKey].length > 0) {
+                    const config = maConfig[configKey];
+
+                    console.log(`[MA] 处理 ${config.name}: 原始数据=${maData[configKey].length}条`);
+
+                    // 确保数据中没有null或undefined值
+                    const validData = maData[configKey].filter(item =>
+                        item !== null &&
+                        item !== undefined &&
+                        item.time !== null &&
+                        item.time !== undefined &&
+                        item.value !== null &&
+                        item.value !== undefined &&
+                        !isNaN(item.value)
+                    );
+
+                    console.log(`[MA] ${config.name}: 过滤后数据=${validData.length}条`);
+
+                    // 只有有效数据大于0时才创建series
+                    if (validData.length > 0) {
+                        try {
+                            const series = chart.addLineSeries({
+                                color: config.color,
+                                lineWidth: 1,
+                                priceLineVisible: false,
+                                lastValueVisible: true,
+                                title: config.name,
+                                // ⭐ 使用默认价格刻度，与K线共享Y轴
+                            });
+
+                            // 再次验证数据，确保没有null
+                            const safeData = validData.filter(item => {
+                                const timeValid = item.time !== null && item.time !== undefined;
+                                const valueValid = item.value !== null && item.value !== undefined && !isNaN(item.value);
+                                if (!timeValid || !valueValid) {
+                                    console.warn(`[MA] 发现无效数据:`, item);
+                                }
+                                return timeValid && valueValid;
+                            });
+
+                            console.log(`[MA] ${config.name}: 最终数据=${safeData.length}条，准备setData`);
+
+                            series.setData(safeData);
+                            maIndicator[configKey] = { series: series, data: safeData };
+                            enabledMAList.push(config.name);
+                            console.log(`[MA] ${config.name} series创建成功`);
+                        } catch (e) {
+                            console.error(`[MA] ${config.name} series创建失败:`, e);
+                        }
+                    } else {
+                        console.warn(`[MA] ${config.name} 没有有效数据，跳过显示`);
+                    }
+                }
+            });
+
+            // 保存引用
+            indicators.MA = maIndicator;
+
+            console.log(`✅ MA指标已显示 (${enabledMAList.join(', ')})`);
+        }
+
+        /**
+         * 显示RSI指标 - 使用后端TA-Lib计算
+         */
+        async function showRSI() {
+            console.log('[RSI] showRSI开始执行');
+
+            if (!allData.candlestick || allData.candlestick.length === 0) {
+                console.error('[RSI] 没有K线数据，无法计算RSI');
+                alert('没有K线数据，请先加载K线');
+                return;
+            }
+
+            try {
+                const symbol = CONFIG.symbol;
+                const period = CONFIG.period;
+                const count = allData.candlestick.length;
+
+                const response = await fetch(`/api/indicators/rsi?symbol=${encodeURIComponent(symbol)}&period=${period}&count=${count}`);
+                const result = await response.json();
+
+                if (!result.success || !result.rsi) {
+                    console.error('[RSI] 后端返回失败:', result);
+                    alert('RSI指标计算失败');
+                    return;
+                }
+
+                // 使用K线数据的实际时间戳
+                const candlestickTimes = allData.candlestick.map(k => k.time);
+                const rsiValues = result.rsi;
+
+                const takeCount = Math.min(candlestickTimes.length, rsiValues.length);
+                const rsiValuesTail = rsiValues.slice(-takeCount);
+                const timesTail = candlestickTimes.slice(-takeCount);
+
+                const rsiData = rsiValuesTail
+                    .map((val, idx) => ({ time: timesTail[idx], value: val }))
+                    .filter(item => item.value !== null && !isNaN(item.value));
+
+                console.log(`[RSI] 后端计算完成: ${rsiData.length}根`);
+                displayRSIData(rsiData);
+
+            } catch (error) {
+                console.error('[RSI] 获取后端数据失败:', error);
+                alert('RSI指标计算失败，请查看控制台');
+            }
+        }
+
+        function displayRSIData(rsiData) {
+            console.log('[RSI] displayRSIData开始执行');
+
+            // 获取当前激活的指标列表
+            const activeList = Object.keys(activeIndicators).filter(k => activeIndicators[k]);
+
+            // 计算RSI的垂直位置
+            const margins = layoutManager.getIndicatorMargins('RSI', activeList);
+            const priceScaleId = layoutManager.getPriceScaleId('RSI');
+
+            console.log(`[RSI] 使用价格刻度 ${priceScaleId}，位置: top=${margins.top.toFixed(2)}, bottom=${margins.bottom.toFixed(2)}`);
+
+            // ⭐ 先配置priceScale
+            chart.priceScale(priceScaleId).applyOptions({
+                scaleMargins: margins,
+                autoScale: true
+            });
+
+            const rsiSeries = chart.addLineSeries({
+                color: '#9c27b0',
+                lineWidth: 1,
+                priceLineVisible: false,
+                lastValueVisible: true,
+                title: 'RSI',
+                priceScaleId: priceScaleId
+            });
+
+            rsiSeries.setData(rsiData);
+
+            indicators.RSI = {
+                rsi: { series: rsiSeries, data: rsiData }
+            };
+
+            console.log('✅ RSI指标已显示（单图表架构）');
+        }
+
+        /**
+         * 显示CCI指标 - 使用后端TA-Lib计算
+         */
+        async function showCCI() {
+            console.log('[CCI] showCCI开始执行');
+
+            if (!allData.candlestick || allData.candlestick.length === 0) {
+                console.error('[CCI] 没有K线数据，无法计算CCI');
+                alert('没有K线数据，请先加载K线');
+                return;
+            }
+
+            try {
+                const symbol = CONFIG.symbol;
+                const period = CONFIG.period;
+                const count = allData.candlestick.length;
+
+                const response = await fetch(`/api/indicators/cci?symbol=${encodeURIComponent(symbol)}&period=${period}&count=${count}`);
+                const result = await response.json();
+
+                if (!result.success || !result.cci) {
+                    console.error('[CCI] 后端返回失败:', result);
+                    alert('CCI指标计算失败');
+                    return;
+                }
+
+                const candlestickTimes = allData.candlestick.map(k => k.time);
+                const cciValues = result.cci;
+
+                const takeCount = Math.min(candlestickTimes.length, cciValues.length);
+                const cciValuesTail = cciValues.slice(-takeCount);
+                const timesTail = candlestickTimes.slice(-takeCount);
+
+                const cciData = cciValuesTail
+                    .map((val, idx) => ({ time: timesTail[idx], value: val }))
+                    .filter(item => item.value !== null && !isNaN(item.value));
+
+                console.log(`[CCI] 后端计算完成: ${cciData.length}根`);
+                displayCCIData(cciData);
+
+            } catch (error) {
+                console.error('[CCI] 获取后端数据失败:', error);
+                alert('CCI指标计算失败，请查看控制台');
+            }
+        }
+
+        function displayCCIData(cciData) {
+            console.log('[CCI] displayCCIData开始执行');
+
+            // 获取当前激活的指标列表
+            const activeList = Object.keys(activeIndicators).filter(k => activeIndicators[k]);
+
+            // 计算CCI的垂直位置
+            const margins = layoutManager.getIndicatorMargins('CCI', activeList);
+            const priceScaleId = layoutManager.getPriceScaleId('CCI');
+
+            console.log(`[CCI] 使用价格刻度 ${priceScaleId}，位置: top=${margins.top.toFixed(2)}, bottom=${margins.bottom.toFixed(2)}`);
+
+            // ⭐ 先配置priceScale
+            chart.priceScale(priceScaleId).applyOptions({
+                scaleMargins: margins,
+                autoScale: true
+            });
+
+            const cciSeries = chart.addLineSeries({
+                color: '#ff9800',
+                lineWidth: 1,
+                priceLineVisible: false,
+                lastValueVisible: true,
+                title: 'CCI',
+                priceScaleId: priceScaleId
+            });
+
+            cciSeries.setData(cciData);
+
+            indicators.CCI = {
+                cci: { series: cciSeries, data: cciData }
+            };
+
+            console.log('✅ CCI指标已显示（单图表架构）');
+        }
+
+        /**
+         * 显示WR指标 - 使用后端TA-Lib计算
+         */
+        async function showWR() {
+            console.log('[WR] showWR开始执行');
+
+            if (!allData.candlestick || allData.candlestick.length === 0) {
+                console.error('[WR] 没有K线数据，无法计算WR');
+                alert('没有K线数据，请先加载K线');
+                return;
+            }
+
+            try {
+                const symbol = CONFIG.symbol;
+                const period = CONFIG.period;
+                const count = allData.candlestick.length;
+
+                const response = await fetch(`/api/indicators/wr?symbol=${encodeURIComponent(symbol)}&period=${period}&count=${count}`);
+                const result = await response.json();
+
+                if (!result.success || !result.wr) {
+                    console.error('[WR] 后端返回失败:', result);
+                    alert('WR指标计算失败');
+                    return;
+                }
+
+                const candlestickTimes = allData.candlestick.map(k => k.time);
+                const wrValues = result.wr;
+
+                const takeCount = Math.min(candlestickTimes.length, wrValues.length);
+                const wrValuesTail = wrValues.slice(-takeCount);
+                const timesTail = candlestickTimes.slice(-takeCount);
+
+                const wrData = wrValuesTail
+                    .map((val, idx) => ({ time: timesTail[idx], value: val }))
+                    .filter(item => item.value !== null && !isNaN(item.value));
+
+                console.log(`[WR] 后端计算完成: ${wrData.length}根`);
+                displayWRData(wrData);
+
+            } catch (error) {
+                console.error('[WR] 获取后端数据失败:', error);
+                alert('WR指标计算失败，请查看控制台');
+            }
+        }
+
+        function displayWRData(wrData) {
+            console.log('[WR] displayWRData开始执行');
+
+            // 获取当前激活的指标列表
+            const activeList = Object.keys(activeIndicators).filter(k => activeIndicators[k]);
+
+            // 计算WR的垂直位置
+            const margins = layoutManager.getIndicatorMargins('WR', activeList);
+            const priceScaleId = layoutManager.getPriceScaleId('WR');
+
+            console.log(`[WR] 使用价格刻度 ${priceScaleId}，位置: top=${margins.top.toFixed(2)}, bottom=${margins.bottom.toFixed(2)}`);
+
+            // ⭐ 先配置priceScale
+            chart.priceScale(priceScaleId).applyOptions({
+                scaleMargins: margins,
+                autoScale: true
+            });
+
+            const wrSeries = chart.addLineSeries({
+                color: '#00bcd4',
+                lineWidth: 1,
+                priceLineVisible: false,
+                lastValueVisible: true,
+                title: 'WR',
+                priceScaleId: priceScaleId
+            });
+
+            wrSeries.setData(wrData);
+
+            indicators.WR = {
+                wr: { series: wrSeries, data: wrData }
+            };
+
+            console.log('✅ WR指标已显示（单图表架构）');
+        }
+
+        /**
+         * 显示ATR指标 - 使用后端TA-Lib计算
+         */
+        async function showATR() {
+            console.log('[ATR] showATR开始执行');
+
+            if (!allData.candlestick || allData.candlestick.length === 0) {
+                console.error('[ATR] 没有K线数据，无法计算ATR');
+                alert('没有K线数据，请先加载K线');
+                return;
+            }
+
+            try {
+                const symbol = CONFIG.symbol;
+                const period = CONFIG.period;
+                const count = allData.candlestick.length;
+
+                const response = await fetch(`/api/indicators/atr?symbol=${encodeURIComponent(symbol)}&period=${period}&count=${count}`);
+                const result = await response.json();
+
+                if (!result.success || !result.atr) {
+                    console.error('[ATR] 后端返回失败:', result);
+                    alert('ATR指标计算失败');
+                    return;
+                }
+
+                const candlestickTimes = allData.candlestick.map(k => k.time);
+                const atrValues = result.atr;
+
+                const takeCount = Math.min(candlestickTimes.length, atrValues.length);
+                const atrValuesTail = atrValues.slice(-takeCount);
+                const timesTail = candlestickTimes.slice(-takeCount);
+
+                const atrData = atrValuesTail
+                    .map((val, idx) => ({ time: timesTail[idx], value: val }))
+                    .filter(item => item.value !== null && !isNaN(item.value));
+
+                console.log(`[ATR] 后端计算完成: ${atrData.length}根`);
+                displayATRData(atrData);
+
+            } catch (error) {
+                console.error('[ATR] 获取后端数据失败:', error);
+                alert('ATR指标计算失败，请查看控制台');
+            }
+        }
+
+        function displayATRData(atrData) {
+            console.log('[ATR] displayATRData开始执行');
+
+            // 获取当前激活的指标列表
+            const activeList = Object.keys(activeIndicators).filter(k => activeIndicators[k]);
+
+            // 计算ATR的垂直位置
+            const margins = layoutManager.getIndicatorMargins('ATR', activeList);
+            const priceScaleId = layoutManager.getPriceScaleId('ATR');
+
+            console.log(`[ATR] 使用价格刻度 ${priceScaleId}，位置: top=${margins.top.toFixed(2)}, bottom=${margins.bottom.toFixed(2)}`);
+
+            // ⭐ 先配置priceScale
+            chart.priceScale(priceScaleId).applyOptions({
+                scaleMargins: margins,
+                autoScale: true
+            });
+
+            const atrSeries = chart.addLineSeries({
+                color: '#4caf50',
+                lineWidth: 1,
+                priceLineVisible: false,
+                lastValueVisible: true,
+                title: 'ATR',
+                priceScaleId: priceScaleId
+            });
+
+            atrSeries.setData(atrData);
+
+            indicators.ATR = {
+                atr: { series: atrSeries, data: atrData }
+            };
+
+            console.log('✅ ATR指标已显示（单图表架构）');
+        }
+
+        /**
+         * 显示OBV指标 - 使用后端TA-Lib计算
+         */
+        async function showOBV() {
+            console.log('[OBV] showOBV开始执行');
+
+            if (!allData.candlestick || allData.candlestick.length === 0) {
+                console.error('[OBV] 没有K线数据，无法计算OBV');
+                alert('没有K线数据，请先加载K线');
+                return;
+            }
+
+            try {
+                const symbol = CONFIG.symbol;
+                const period = CONFIG.period;
+                const count = allData.candlestick.length;
+
+                const response = await fetch(`/api/indicators/obv?symbol=${encodeURIComponent(symbol)}&period=${period}&count=${count}`);
+                const result = await response.json();
+
+                if (!result.success || !result.obv) {
+                    console.error('[OBV] 后端返回失败:', result);
+                    alert('OBV指标计算失败');
+                    return;
+                }
+
+                const candlestickTimes = allData.candlestick.map(k => k.time);
+                const obvValues = result.obv;
+
+                const takeCount = Math.min(candlestickTimes.length, obvValues.length);
+                const obvValuesTail = obvValues.slice(-takeCount);
+                const timesTail = candlestickTimes.slice(-takeCount);
+
+                const obvData = obvValuesTail
+                    .map((val, idx) => ({ time: timesTail[idx], value: val }))
+                    .filter(item => item.value !== null && !isNaN(item.value));
+
+                console.log(`[OBV] 后端计算完成: ${obvData.length}根`);
+                displayOBVData(obvData);
+
+            } catch (error) {
+                console.error('[OBV] 获取后端数据失败:', error);
+                alert('OBV指标计算失败，请查看控制台');
+            }
+        }
+
+        function displayOBVData(obvData) {
+            console.log('[OBV] displayOBVData开始执行');
+
+            // 获取当前激活的指标列表
+            const activeList = Object.keys(activeIndicators).filter(k => activeIndicators[k]);
+
+            // 计算OBV的垂直位置
+            const margins = layoutManager.getIndicatorMargins('OBV', activeList);
+            const priceScaleId = layoutManager.getPriceScaleId('OBV');
+
+            console.log(`[OBV] 使用价格刻度 ${priceScaleId}，位置: top=${margins.top.toFixed(2)}, bottom=${margins.bottom.toFixed(2)}`);
+
+            // ⭐ 先配置priceScale
+            chart.priceScale(priceScaleId).applyOptions({
+                scaleMargins: margins,
+                autoScale: true
+            });
+
+            const obvSeries = chart.addLineSeries({
+                color: '#ff5722',
+                lineWidth: 1,
+                priceLineVisible: false,
+                lastValueVisible: true,
+                title: 'OBV',
+                priceScaleId: priceScaleId
+            });
+
+            obvSeries.setData(obvData);
+
+            indicators.OBV = {
+                obv: { series: obvSeries, data: obvData }
+            };
+
+            console.log('✅ OBV指标已显示（单图表架构）');
+        }
+
+        /**
+         * 清除单个指标
+         */
+        function clearIndicator(indicatorName) {
+            if (!indicators[indicatorName]) {
+                return;
+            }
+
+            try {
+                const indicator = indicators[indicatorName];
+
+                // 移除所有series
+                Object.keys(indicator).forEach(key => {
+                    if (indicator[key] && indicator[key].series) {
+                        try {
+                            chart.removeSeries(indicator[key].series);
+                            console.log(`[清除指标] 已移除 ${indicatorName}.${key} series`);
+                        } catch (e) {
+                            console.warn(`[清除指标] 移除 ${indicatorName}.${key} series 失败:`, e);
+                        }
+                    }
+                });
+
+                indicators[indicatorName] = null;
+                console.log(`[清除指标] ${indicatorName} 已清除`);
+            } catch (e) {
+                console.error(`[清除指标] 清除 ${indicatorName} 失败:`, e);
+            }
+        }
+
+        /**
+         * 清除所有指标
+         */
+        function clearIndicators() {
+            Object.keys(activeIndicators).forEach(key => {
+                if (activeIndicators[key]) {
+                    clearIndicator(key);
+                    activeIndicators[key] = false;
+                    const btn = document.getElementById('btn' + key);
+                    if (btn) {
+                        btn.classList.remove('active');
+                    }
+                }
+            });
+            console.log('已清除所有技术指标');
+        }
+
+        // ========== 自定义指标管理 ==========
+
+        /**
+         * 打开自定义指标管理器
+         */
+        function openCustomIndicatorManager() {
+            window.open('/indicator-manager.html', '_blank', 'width=1200,height=800');
+        }
+
+        /**
+         * 加载并显示自定义指标列表到下拉菜单
+         */
+        async function loadCustomIndicators() {
+            try {
+                const response = await fetch('/api/custom-indicators/list');
+                const result = await response.json();
+
+                if (result.success && result.indicators) {
+                    const container = document.getElementById('custom-indicators-list');
+                    if (container) {
+                        container.innerHTML = result.indicators.map(ind => `
+                            <div class="custom-indicator-item">
+                                <span>${ind.name}</span>
+                                <button onclick="toggleCustomIndicator('${ind.name}')" class="btn-toggle">显示</button>
+                            </div>
+                        `).join('');
+                    }
+                    return result.indicators;
+                }
+            } catch (error) {
+                console.error('加载自定义指标失败:', error);
+            }
+            return [];
+        }
+
+        /**
+         * 切换自定义指标显示
+         */
+        async function toggleCustomIndicator(indicatorName) {
+            const isActive = activeIndicators[indicatorName];
+
+            if (isActive) {
+                // 隐藏指标
+                clearIndicator(indicatorName);
+                activeIndicators[indicatorName] = false;
+                console.log(`已隐藏自定义指标 ${indicatorName}`);
+            } else {
+                // 显示指标
+                activeIndicators[indicatorName] = true;
+                await showCustomIndicator(indicatorName);
+            }
+        }
+
+        /**
+         * 显示自定义指标
+         */
+        async function showCustomIndicator(indicatorName) {
+            try {
+                console.log(`[自定义指标] 正在显示 ${indicatorName}...`);
+
+                if (!allData.candlestick || allData.candlestick.length === 0) {
+                    alert('没有K线数据，无法显示指标');
+                    return;
+                }
+
+                // 调用后端API执行指标
+                const response = await fetch(`/api/custom-indicators/execute/${indicatorName}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        symbol: CONFIG.symbol,
+                        period: CONFIG.period,
+                        count: allData.candlestick.length,
+                        parameters: {}
+                    })
+                });
+
+                const result = await response.json();
+
+                if (!result.success) {
+                    throw new Error(result.error || '执行指标失败');
+                }
+
+                // 显示指标数据
+                displayCustomIndicatorData(indicatorName, result.result);
+
+            } catch (error) {
+                console.error(`[自定义指标] 显示失败:`, error);
+                alert(`显示自定义指标失败: ${error.message}`);
+            }
+        }
+
+        /**
+         * 显示自定义指标数据到图表
+         */
+        function displayCustomIndicatorData(indicatorName, result) {
+            console.log(`[自定义指标] ${indicatorName} 数据:`, result);
+
+            // 获取当前激活的指标列表
+            const activeList = Object.keys(activeIndicators).filter(k => activeIndicators[k]);
+
+            // 为自定义指标添加到布局管理器
+            layoutManager.indicatorOrder.push(indicatorName);
+
+            // 计算垂直位置
+            const margins = layoutManager.getIndicatorMargins(indicatorName, activeList);
+            const priceScaleId = `custom-${indicatorName.toLowerCase()}-scale`;
+
+            const indicatorType = result.type || 'line';
+            const data = result.data || {};
+
+            // 根据类型添加不同的series
+            const series = [];
+
+            for (const [key, values] of Object.entries(data)) {
+                if (indicatorType === 'line') {
+                    const lineSeries = chart.addLineSeries({
+                        color: getRandomColor(),
+                        lineWidth: 1,
+                        priceLineVisible: false,
+                        lastValueVisible: true,
+                        title: key,
+                        priceScaleId: priceScaleId
+                    });
+
+                    // 转换数据格式
+                    const seriesData = values.map((v, i) => {
+                        if (v === null || v === undefined) return null;
+                        const time = allData.candlestick[allData.candlestick.length - values.length + i]?.time;
+                        return time ? { time, value: v } : null;
+                    }).filter(item => item !== null);
+
+                    lineSeries.setData(seriesData);
+                    series.push(lineSeries);
+                } else if (indicatorType === 'histogram') {
+                    const histSeries = chart.addHistogramSeries({
+                        color: getRandomColor(),
+                        priceFormat: {
+                            type: 'price',
+                            precision: 2,
+                        },
+                        priceLineVisible: false,
+                        lastValueVisible: true,
+                        title: key,
+                        priceScaleId: priceScaleId
+                    });
+
+                    const seriesData = values.map((v, i) => {
+                        if (v === null || v === undefined) return null;
+                        const time = allData.candlestick[allData.candlestick.length - values.length + i]?.time;
+                        return time ? { time, value: v } : null;
+                    }).filter(item => item !== null);
+
+                    histSeries.setData(seriesData);
+                    series.push(histSeries);
+                }
+            }
+
+            // 配置价格刻度
+            chart.priceScale(priceScaleId).applyOptions({
+                scaleMargins: margins,
+                autoScale: true
+            });
+
+            // 保存引用
+            indicators[indicatorName] = {
+                series: series,
+                data: data
+            };
+
+            console.log(`✅ 自定义指标 ${indicatorName} 已显示`);
+        }
+
+        /**
+         * 生成随机颜色
+         */
+        function getRandomColor() {
+            const colors = ['#ef5350', '#26a69a', '#ff9800', '#9c27b0', '#2196F3', '#4caf50', '#ff5722'];
+            return colors[Math.floor(Math.random() * colors.length)];
+        }
+
+        // ========== 指标设置面板函数 ==========
+
+        /**
+         * 打开指标设置面板
+         */
+        function openIndicatorSettings() {
+            document.getElementById('indicatorSettingsPanel').style.display = 'block';
+            document.getElementById('settingsOverlay').style.display = 'block';
+
+            // 从maConfig加载当前配置到界面
+            document.getElementById('ma5_enable').checked = maConfig.ma5.enable;
+            document.getElementById('ma5_period').value = maConfig.ma5.period;
+            document.getElementById('ma10_enable').checked = maConfig.ma10.enable;
+            document.getElementById('ma10_period').value = maConfig.ma10.period;
+            document.getElementById('ma20_enable').checked = maConfig.ma20.enable;
+            document.getElementById('ma20_period').value = maConfig.ma20.period;
+            document.getElementById('ma60_enable').checked = maConfig.ma60.enable;
+            document.getElementById('ma60_period').value = maConfig.ma60.period;
+            document.getElementById('ma120_enable').checked = maConfig.ma120.enable;
+            document.getElementById('ma120_period').value = maConfig.ma120.period;
+        }
+
+        /**
+         * 关闭指标设置面板
+         */
+        function closeIndicatorSettings() {
+            document.getElementById('indicatorSettingsPanel').style.display = 'none';
+            document.getElementById('settingsOverlay').style.display = 'none';
+        }
+
+        /**
+         * 应用指标设置
+         */
+        function applyIndicatorSettings() {
+            // 保存界面配置到maConfig
+            maConfig.ma5.enable = document.getElementById('ma5_enable').checked;
+            maConfig.ma5.period = parseInt(document.getElementById('ma5_period').value);
+            maConfig.ma10.enable = document.getElementById('ma10_enable').checked;
+            maConfig.ma10.period = parseInt(document.getElementById('ma10_period').value);
+            maConfig.ma20.enable = document.getElementById('ma20_enable').checked;
+            maConfig.ma20.period = parseInt(document.getElementById('ma20_period').value);
+            maConfig.ma60.enable = document.getElementById('ma60_enable').checked;
+            maConfig.ma60.period = parseInt(document.getElementById('ma60_period').value);
+            maConfig.ma120.enable = document.getElementById('ma120_enable').checked;
+            maConfig.ma120.period = parseInt(document.getElementById('ma120_period').value);
+
+            console.log('[MA设置] 已保存配置:', maConfig);
+
+            // 如果MA指标已激活，重新显示
+            if (activeIndicators.MA) {
+                clearIndicator('MA');
+                showMA();
+            }
+
+            closeIndicatorSettings();
+        }
+
+        // 处理可见时间范围变化
+        let isLoadingMore = false;
+        async function handleVisibleTimeRangeChange(visibleRange) {
+            if (isLoadingMore || !allData.candlestick || allData.candlestick.length === 0) {
+                return;
+            }
+
+            const visibleStart = new Date(visibleRange.from * 1000);
+            const visibleEnd = new Date(visibleRange.to * 1000);
+
+            // 获取当前最早的数据日期
+            const dates = allData.candlestick.map(d => new Date(d.time));
+            dates.sort((a, b) => a - b);
+            const oldestDate = dates[0];
+
+            // 计算buffer：10天（提前加载，避免用户看到空白区域）
+            const bufferDays = 10;
+            const bufferTime = bufferDays * 24 * 60 * 60 * 1000; // 10天的毫秒数
+            const triggerDate = new Date(oldestDate.getTime() - bufferTime);
+
+            console.log(`[自动加载检查] 可见范围: ${visibleStart.toISOString().split('T')[0]} ~ ${visibleEnd.toISOString().split('T')[0]}, 最早数据: ${oldestDate.toISOString().split('T')[0]}, 触发阈值: ${triggerDate.toISOString().split('T')[0]}`);
+
+            // 如果可见范围开始时间早于触发日期，则加载更多历史数据
+            if (visibleStart.getTime() < triggerDate.getTime()) {
+                console.log(`[自动加载] 触发！可见范围早于阈值，开始加载历史数据...`);
+                await loadMoreHistoricalData(visibleStart);
+            }
+        }
+
+        // 加载更多历史数据（v3.2：使用loadmore stage）
+        async function loadMoreHistoricalData(targetDate) {
+            if (isLoadingMore) {
+                console.log('正在加载更多历史数据，跳过重复请求');
+                return;
+            }
+
+            isLoadingMore = true;
+            console.log(`开始加载 ${targetDate.toISOString().split('T')[0]} 之前的历史数据...`);
+
+            try {
+                // 计算需要加载的日期范围
+                const endDate = targetDate.toISOString().split('T')[0];
+                const loadCount = CONFIG.loadMoreCount;
+
+                // ⭐ v3.2：使用 loadmore stage → L3 完整数据
+                const newData = await loadKlineData(CONFIG.symbol, loadCount, endDate, 'loadmore');
+
+                if (newData && newData.length > 0) {
+                    // 使用prepend模式，将新数据添加到前面
+                    updateChartData(newData, true);
+                    console.log(`✅ 成功加载 ${newData.length} 根历史K线，总计 ${allData.candlestick.length} 根`);
+                } else {
+                    console.log('⚠️ 没有更多历史数据可加载');
+                }
+            } catch (error) {
+                console.error('加载历史数据失败:', error);
+            } finally {
+                isLoadingMore = false;
+            }
+        }
+
+        // 从API加载K线数据（v3.2：支持后端数据级别）
+        async function loadKlineData(symbol, count, endDate = null, stage = 'initial') {
+            if (isLoading) {
+                console.log('正在加载中，跳过重复请求');
+                return null;
+            }
+
+            isLoading = true;
+            updateStatus('loading');
+
+            try {
+                // ⭐ v3.2新增：根据前端阶段获取后端数据级别
+                const dataLevel = getDataLevel(stage);
+
+                // 构建请求体
+                const requestBody = {
+                    symbol: symbol,
+                    period: CONFIG.period,
+                    count: count,
+                    adjust_type: CONFIG.adjustType,
+                    data_level: dataLevel  // ⭐ v3.2新增：明确指定后端数据级别
+                };
+
+                if (endDate) {
+                    requestBody.end_date = endDate;
+                }
+
+                console.log(`[前端阶段: ${stage}] [后端级别: ${dataLevel}] 正在加载: ${symbol} ${count}根K线`);
+
+                const response = await fetch(`${CONFIG.apiBaseUrl}/api/v1/market/kline/data`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(requestBody)
+                });
+
+                if (!response.ok) {
+                    throw new Error(`API请求失败: ${response.status}`);
+                }
+
+                const result = await response.json();
+
+                if (!result.success) {
+                    throw new Error(result.message || '获取数据失败');
+                }
+
+                console.log(`✅ [阶段: ${stage}] [级别: ${dataLevel}] 成功加载: ${result.count}根K线 | 数据源: ${result.data_source || '未知'}`);
+                updateStatus('success');
+
+                // 更新数据源显示
+                if (result.data_source) {
+                    const sourceEl = document.getElementById('sourceInfo');
+                    sourceEl.textContent = ` | 数据源: ${result.data_source}`;
+                }
+
+                // ⭐ 数据验证：修复null值问题
+                const rawData = result.data || [];
+
+                // 🔍 调试：输出第一条数据查看格式
+                if (rawData.length > 0) {
+                    console.log('🔍 [数据格式调试] 第一条原始数据:', JSON.stringify(rawData[0]));
+                    console.log('🔍 [数据格式调试] 数据字段:', Object.keys(rawData[0] || {}));
+                    console.log('🔍 [数据格式调试] 返回数据数量:', rawData.length);
+                }
+
+                // ⭐ 修复：使用宽松验证，只检查必要字段
+                const validData = rawData.filter(item => {
+                    // 必须有item对象
+                    if (!item) return false;
+
+                    // 必须有time字段且不为null
+                    if (item.time === null || item.time === undefined) return false;
+
+                    // OHLC必须存在且为有效数字（允许0，但不允许null/undefined/NaN）
+                    const checkNumber = (val) => val !== null && val !== undefined && typeof val === 'number' && !isNaN(val);
+                    if (!checkNumber(item.open) || !checkNumber(item.high) ||
+                        !checkNumber(item.low) || !checkNumber(item.close)) {
+                        return false;
+                    }
+
+                    // volume必须存在且为有效数字
+                    if (!checkNumber(item.volume)) return false;
+
+                    return true;
+                });
+
+                if (validData.length === 0 && rawData.length > 0) {
+                    console.warn(`⚠️ 所有数据都未通过验证（${rawData.length}条原始数据）`);
+                }
+
+                if (validData.length !== rawData.length) {
+                    console.warn(`⚠️ 过滤了 ${rawData.length - validData.length} 条无效数据（共${rawData.length}条）`);
+                }
+
+                return validData;
+
+            } catch (error) {
+                console.error('❌ 加载数据失败:', error);
+                updateStatus('error');
+
+                // ⚠️ 只在严重错误时弹出alert，"未获取到数据"可能是正常的（非交易时段）
+                const errorMsg = error.message || '';
+                if (!errorMsg.includes('未获取到数据') && !errorMsg.includes('No module named')) {
+                    alert('加载数据失败: ' + errorMsg + '\n\n请确保后端API服务已启动');
+                }
+
+                return null;
+            } finally {
+                isLoading = false;
+            }
+        }
+
+        // 更新图表数据
+        function updateChartData(newData, prepend = false) {
+            if (!newData || newData.length === 0) {
+                console.log('没有新数据需要更新');
+                return;
+            }
+
+            // ⭐ 数据验证（已改进）
+            const validData = newData.filter(item => {
+                if (!item) return false;
+                if (item.time === null || item.time === undefined) return false;
+
+                const checkNumber = (val) => val !== null && val !== undefined && typeof val === 'number' && !isNaN(val);
+                if (!checkNumber(item.open) || !checkNumber(item.high) ||
+                    !checkNumber(item.low) || !checkNumber(item.close)) {
+                    return false;
+                }
+                if (!checkNumber(item.volume)) return false;
+
+                return true;
+            });
+
+            if (validData.length === 0) {
+                console.error('❌ 所有数据都无效，无法更新图表');
+                return;
+            }
+
+            console.log(`✅ 数据验证通过: ${validData.length}/${newData.length}条数据有效`);
+
+            const candlestickData = [];
+            const volumeData = [];
+
+            validData.forEach(item => {
+                // 再次确保数据完整性（防御性编程）
+                const cleanItem = {
+                    time: item.time,
+                    open: Number(item.open),
+                    high: Number(item.high),
+                    low: Number(item.low),
+                    close: Number(item.close)
+                };
+
+                // 最后一次验证，确保没有NaN或Infinity
+                if (isNaN(cleanItem.open) || isNaN(cleanItem.high) ||
+                    isNaN(cleanItem.low) || isNaN(cleanItem.close)) {
+                    console.warn('⚠️ 发现NaN值，跳过该数据:', item);
+                    return;
+                }
+
+                candlestickData.push(cleanItem);
+
+                const volumeColor = item.close >= item.open ? '#ef535080' : '#26a69a80';
+                volumeData.push({
+                    time: item.time,
+                    value: Number(item.volume),
+                    color: volumeColor
+                });
+            });
+
+            if (prepend) {
+                allData.candlestick = [...candlestickData, ...allData.candlestick];
+                allData.volume = [...volumeData, ...allData.volume];
+            } else {
+                allData.candlestick = candlestickData;
+                allData.volume = volumeData;
+            }
+
+            // ⚠️ 临时禁用最终验证
+            console.log(`⚠️ 最终验证已禁用，准备更新图表: ${allData.candlestick.length}根K线`);
+
+            // // ⭐ 最终验证：确保 allData 中所有数据都有效（特别是 prepend 模式下会包含旧数据）
+            // allData.candlestick = allData.candlestick.filter(item => {
+            //     return item &&
+            //            item.time !== null && item.time !== undefined &&
+            //            item.open !== null && item.open !== undefined && !isNaN(item.open) &&
+            //            item.high !== null && item.high !== undefined && !isNaN(item.high) &&
+            //            item.low !== null && item.low !== undefined && !isNaN(item.low) &&
+            //            item.close !== null && item.close !== undefined && !isNaN(item.close) &&
+            //            item.volume !== null && item.volume !== undefined && !isNaN(item.volume);
+            // });
+
+            // allData.volume = allData.volume.filter(item => {
+            //     return item &&
+            //            item.time !== null && item.time !== undefined &&
+            //            item.value !== null && item.value !== undefined && !isNaN(item.value);
+            // });
+
+            // 检查series是否存在（可能在切换周期时被销毁）
+            if (!candlestickSeries || !volumeSeries) {
+                console.warn('⚠️ 图表series未初始化，跳过数据更新');
+                return;
+            }
+
+            try {
+                console.log(`📊 准备调用 candlestickSeries.setData，数据量: ${allData.candlestick.length}`);
+
+                // 🔍 检查数据时间范围和连续性
+                if (allData.candlestick.length > 0) {
+                    const sortedData = [...allData.candlestick].sort((a, b) => a.time - b.time);
+                    const firstTime = sortedData[0].time;
+                    const lastTime = sortedData[sortedData.length - 1].time;
+
+                    const firstDate = new Date(firstTime * 1000);
+                    const lastDate = new Date(lastTime * 1000);
+
+                    console.log(`📅 数据时间范围: ${firstDate.toLocaleDateString()} ~ ${lastDate.toLocaleDateString()}`);
+
+                    // v3.4：使用交易日历索引检查真实数据缺口
+                    // 只有交易日历索引不连续时才是真正的数据缺失（周末/节假日不会误判）
+                    let gaps = [];
+                    for (let i = 1; i < Math.min(sortedData.length, 20); i++) {
+                        const current = sortedData[i];
+                        const previous = sortedData[i-1];
+
+                        // 检查是否有交易日历索引字段
+                        if (current.trading_day_index !== undefined && previous.trading_day_index !== undefined) {
+                            const indexDiff = current.trading_day_index - previous.trading_day_index;
+
+                            // 索引差值 > 1 表示中间缺失了交易日（真实的数据缺口）
+                            if (indexDiff > 1) {
+                                gaps.push({
+                                    index: i,
+                                    trading_days_missing: indexDiff - 1,  // 缺失的交易日数量
+                                    from: new Date(previous.time * 1000).toLocaleDateString(),
+                                    to: new Date(current.time * 1000).toLocaleDateString(),
+                                    from_index: previous.trading_day_index,
+                                    to_index: current.trading_day_index
+                                });
+                            }
+                        }
+                    }
+
+                    if (gaps.length > 0) {
+                        console.warn(`⚠️ 发现${gaps.length}个真实数据缺口（前20根数据中）:`, gaps);
+                    } else {
+                        console.log('✓ 数据连续性检查通过（使用交易日历）');
+                    }
+                }
+
+                console.log(`📊 candlestick数据前3条:`, allData.candlestick.slice(0, 3));
+                console.log(`📊 volume数据前3条:`, allData.volume.slice(0, 3));
+
+                try {
+                    candlestickSeries.setData(allData.candlestick);
+                    console.log('✅ candlestickSeries.setData 成功');
+                } catch (e) {
+                    console.error('❌ candlestickSeries.setData 失败:', e);
+                }
+
+                try {
+                    volumeSeries.setData(allData.volume);
+                    console.log('✅ volumeSeries.setData 成功');
+                } catch (e) {
+                    console.error('❌ volumeSeries.setData 失败:', e);
+                }
+
+                if (allData.candlestick.length > 0) {
+                    const dates = allData.candlestick.map(d => d.time);
+                    dates.sort();
+                    oldestDate = dates[0];
+                }
+
+                document.getElementById('dataInfo').textContent = `已加载: ${allData.candlestick.length}根K线`;
+                console.log(`✅ 图表数据已更新: 总计${allData.candlestick.length}根K线`);
+            } catch (error) {
+                console.error('❌ 更新图表数据失败:', error);
+            }
+        }
+
+        // 加载更多历史数据（v3.2：使用L3完整数据）
+        async function loadMoreData() {
+            if (!oldestDate) {
+                console.log('没有最早日期，无法加载更早数据');
+                return;
+            }
+
+            const endDateStr = oldestDate;
+
+            console.log(`📥 加载更早数据: 结束日期=${endDateStr}, 数量=${CONFIG.loadMoreCount}`);
+
+            // ⭐ v3.2：使用 loadmore stage → L3 完整数据
+            const newData = await loadKlineData(CONFIG.symbol, CONFIG.loadMoreCount, endDateStr, 'loadmore');
+            if (newData && newData.length > 0) {
+                updateChartData(newData, true);
+
+                const oldestDateObj = new Date(oldestDate);
+                chart.timeScale().setVisibleRange({
+                    from: oldestDateObj,
+                    to: new Date(allData.candlestick[allData.candlestick.length - 1].time)
+                });
+            } else {
+                console.log('没有更早的数据了');
+                alert('已经加载了所有可用的历史数据');
+            }
+        }
+
+        // 切换股票（v3.2：使用initial stage）
+        async function changeSymbol() {
+            const symbol = document.getElementById('symbolInput').value.trim();
+            if (!symbol) {
+                alert('请输入股票代码');
+                return;
+            }
+
+            CONFIG.symbol = symbol;
+            allData.candlestick = [];
+            allData.volume = [];
+            oldestDate = null;
+
+            console.log(`🔄 切换股票: ${symbol}`);
+
+            const periodConfig = KLINE_CONFIG[CONFIG.period] || KLINE_CONFIG['1d'];
+
+            // ⭐ v3.2：使用 initial stage → L1/L2 快速显示
+            const initialData = await loadKlineData(symbol, periodConfig.initial, null, 'initial');
+            if (initialData) {
+                updateChartData(initialData);
+                chart.timeScale().fitContent();
+
+                // 清空并重新计算技术指标
+                clearIndicators();
+            }
+        }
+
+        // 切换周期（v3.2：使用initial stage）
+        async function changePeriod(newPeriod) {
+            if (newPeriod === CONFIG.period) {
+                console.log('当前已经是该周期');
+                return;
+            }
+
+            console.log(`🔄 切换周期: ${CONFIG.period} -> ${newPeriod}`);
+
+            // 更新按钮状态
+            const buttons = document.querySelectorAll('.period-btn');
+            buttons.forEach(btn => {
+                btn.classList.remove('active');
+                if (btn.textContent.includes(getPeriodDisplayName(newPeriod))) {
+                    btn.classList.add('active');
+                }
+            });
+
+            // 更新配置
+            CONFIG.period = newPeriod;
+
+            // ⭐ v3.2.1：更新时间格式（自适应）
+            updateTimeScaleOptions();
+
+            // ⭐ v3.2.1修复：不要在这里清空数据，等数据加载成功后再清空
+            // 这样可以防止数据加载失败时图表变空白
+            // allData.candlestick = [];
+            // allData.volume = [];
+            // oldestDate = null;
+
+            // ⭐ 保存当前激活的指标列表（切换周期后自动重新激活）
+            const prevActiveIndicators = { ...activeIndicators };
+            console.log('[周期切换] 已保存激活状态:', Object.keys(prevActiveIndicators).filter(k => prevActiveIndicators[k]));
+            console.log('[周期切换] ⭐ 将自动重新激活这些指标');
+
+            // 清空技术指标
+            clearIndicators();
+
+            // 【分时图特殊处理】
+            if (newPeriod === '1m') {
+                // 切换到分时图模式
+                if (!isIntradayMode) {
+                    // 移除K线系列，添加分时折线系列
+                    chart.removeSeries(candlestickSeries);
+                    chart.removeSeries(volumeSeries);
+
+                    // 创建分时折线系列
+                    intradaySeries = chart.addLineSeries({
+                        color: '#2962ff',
+                        lineWidth: 2,
+                        priceLineVisible: false,
+                        lastValueVisible: true,
+                        title: '分时'
+                    });
+
+                    isIntradayMode = true;
+                    console.log('✅ 已切换到分时图模式（折线图）');
+                    console.log('📊 分时图显示当日每分钟收盘价走势');
+                }
+
+                // 加载当日分时数据（1分钟数据，240根约4小时交易时间）
+                const periodConfig = KLINE_CONFIG[newPeriod] || KLINE_CONFIG['1d'];
+                const initialCount = periodConfig.initial;  // 240
+                console.log(`📊 加载分时图数据: ${initialCount}根（当日走势）`);
+
+                // ⭐ v3.2：使用 initial stage → L3 完整数据（分时图需要全天数据）
+                const initialData = await loadKlineData(CONFIG.symbol, initialCount, null, 'initial');
+                if (initialData && initialData.length > 0) {
+                    // 分时图只使用收盘价绘制折线
+                    const intradayData = initialData.map(item => ({
+                        time: item.time,
+                        value: item.close  // 使用收盘价
+                    }));
+
+                    intradaySeries.setData(intradayData);
+                    document.getElementById('dataInfo').textContent = `已加载: ${intradayData.length}根分时（当日走势）`;
+                    chart.timeScale().fitContent();
+
+                    // ⭐ 分时图不重新激活指标（分时图通常不显示技术指标）
+                    console.log('✅ 已切换到分时图（技术指标已禁用）');
+                }
+                return;
+            }
+
+            // 【K线图模式】
+            if (isIntradayMode) {
+                // 从分时图切换回K线图
+                try {
+                    chart.removeSeries(intradaySeries);
+                } catch (e) {
+                    console.warn('[切换周期] 移除分时series失败:', e);
+                }
+
+                // ⭐ 先清理所有技术指标（避免旧series干扰）
+                try {
+                    Object.keys(indicators).forEach(indicatorName => {
+                        if (indicators[indicatorName]) {
+                            clearIndicator(indicatorName);
+                        }
+                    });
+                } catch (e) {
+                    console.warn('[切换周期] 清理指标失败:', e);
+                }
+
+                // 重新创建K线和成交量系列
+                try {
+                    candlestickSeries = chart.addCandlestickSeries({
+                        upColor: '#ef5350',
+                        downColor: '#26a69a',
+                        borderVisible: false,
+                        wickUpColor: '#ef5350',
+                        wickDownColor: '#26a69a',
+                    });
+
+                    volumeSeries = chart.addHistogramSeries({
+                        color: '#26a69a',
+                        priceFormat: {
+                            type: 'volume',
+                        },
+                        priceScaleId: '',
+                    });
+
+                    volumeSeries.priceScale().applyOptions({
+                        scaleMargins: {
+                            top: 0.8,
+                            bottom: 0,
+                        },
+                    });
+
+                    isIntradayMode = false;
+                    console.log('✅ 已切换到K线图模式（蜡烛图）');
+                } catch (e) {
+                    console.error('[切换周期] 创建K线series失败:', e);
+                    throw e;
+                }
+            }
+
+            // 根据KLINE_CONFIG确定初始加载量
+            const periodConfig = KLINE_CONFIG[newPeriod] || KLINE_CONFIG['1d'];
+            const initialCount = periodConfig.initial;
+
+            console.log(`📊 加载${newPeriod}周期数据: ${initialCount}根`);
+
+            // ⭐ v3.2：使用 initial stage → L1/L2 快速显示
+            const initialData = await loadKlineData(CONFIG.symbol, initialCount, null, 'initial');
+            if (initialData && initialData.length > 0) {
+                updateChartData(initialData);
+                chart.timeScale().fitContent();
+
+                // ⭐ 自动重新激活之前显示的指标（MA问题已修复）
+                const reactivateIndicators = () => {
+                    console.log('[周期切换] 开始重新激活指标:', Object.keys(prevActiveIndicators).filter(k => prevActiveIndicators[k]));
+
+                    Object.keys(prevActiveIndicators).forEach(indicatorName => {
+                        if (prevActiveIndicators[indicatorName]) {
+                            try {
+                                console.log(`[周期切换] 重新激活 ${indicatorName}`);
+                                showIndicator(indicatorName);
+                                activeIndicators[indicatorName] = true;
+                                const btn = document.getElementById('btn' + indicatorName);
+                                if (btn) {
+                                    btn.classList.add('active');
+                                }
+                            } catch (error) {
+                                console.error(`[周期切换] 重新激活${indicatorName}失败:`, error);
+                                // 失败时标记为未激活，但不影响其他指标
+                                activeIndicators[indicatorName] = false;
+                            }
+                        }
+                    });
+                    console.log(`✅ 周期切换完成，已重新激活技术指标`);
+                };
+
+                // 等待3帧（约50ms）确保chart完全渲染
+                requestAnimationFrame(() => {
+                    requestAnimationFrame(() => {
+                        requestAnimationFrame(reactivateIndicators);
+                    });
+                });
+            } else {
+                // ⭐ v3.2.1修复：不阻止切换，只是提示用户
+                console.warn(`⚠️ ${newPeriod}周期暂无数据（可能为非交易时段或数据源限制）`);
+                document.getElementById('dataInfo').textContent = `暂无数据（${newPeriod}）`;
+                // 保持当前周期，不恢复
+            }
+        }
+
+        // 获取周期显示名称
+        function getPeriodDisplayName(period) {
+            const names = {
+                '1m': '分时',
+                '5m': '5分',
+                '15m': '15分',
+                '30m': '30分',
+                '60m': '60分',
+                '1d': '日线',
+                '1w': '周线',
+                '1mon': '月线'
+            };
+            return names[period] || period;
+        }
+
+        // 重置视图
+        function resetView() {
+            chart.timeScale().fitContent();
+        }
+
+        // 更新状态显示
+        function updateStatus(status) {
+            const statusEl = document.getElementById('status');
+            statusEl.className = 'status ' + status;
+
+            const statusText = {
+                'loading': '正在加载...',
+                'success': 'API已连接',
+                'error': '连接失败'
+            };
+            statusEl.textContent = statusText[status] || status;
+        }
+
+        // 初始化（v3.2：三层加载机制）
+        async function init() {
+            console.log('🚀 开始初始化...');
+
+            initChart();
+
+            // 检查API连接
+            try {
+                const response = await fetch(`${CONFIG.apiBaseUrl}/api/v1/market/kline/health`);
+                if (response.ok) {
+                    const health = await response.json();
+                    console.log('✅ API健康检查:', health);
+                    updateStatus('success');
+
+                    // ⭐ v3.2三层加载机制
+                    const periodConfig = KLINE_CONFIG[CONFIG.period] || KLINE_CONFIG['1d'];
+
+                    // 【第一层】立即显示（100根L3 + 1根L1）
+                    console.log('📊 === 第一层：立即显示 ===');
+
+                    // 1. 加载历史数据（L3，100根）
+                    const historicalData = await loadKlineData(
+                        CONFIG.symbol,
+                        100,  // 固定100根历史数据
+                        null,
+                        'initial'
+                    );
+
+                    if (historicalData) {
+                        updateChartData(historicalData);
+
+                        // 2. 加载今日实时数据（L1，1根）
+                        const realtimeData = await loadKlineData(
+                            CONFIG.symbol,
+                            1,
+                            null,
+                            'realtime'  // 使用L1级别，自动转换为K线格式
+                        );
+
+                        if (realtimeData && realtimeData.length > 0) {
+                            // 验证实时数据
+                            const validRealtimeData = realtimeData.filter(item => {
+                                return item &&
+                                       item.time !== null && item.time !== undefined &&
+                                       item.open !== null && item.open !== undefined && !isNaN(item.open) &&
+                                       item.high !== null && item.high !== undefined && !isNaN(item.high) &&
+                                       item.low !== null && item.low !== undefined && !isNaN(item.low) &&
+                                       item.close !== null && item.close !== undefined && !isNaN(item.close) &&
+                                       item.volume !== null && item.volume !== undefined && !isNaN(item.volume);
+                            });
+
+                            if (validRealtimeData.length > 0) {
+                                // 合并数据（历史 + 今日实时）
+                                const mergedData = [...historicalData, ...validRealtimeData];
+                                updateChartData(mergedData);
+                                chart.timeScale().fitContent();
+                                console.log(`✅ 第一层完成：${mergedData.length}根K线已显示（历史${historicalData.length}根 + 实时${validRealtimeData.length}根）`);
+                            } else {
+                                console.log('⚠️ 实时数据全部无效，仅显示历史数据');
+                                updateChartData(historicalData);
+                                chart.timeScale().fitContent();
+                            }
+                        } else {
+                            // 如果没有实时数据（非交易时间），只显示历史数据
+                            chart.timeScale().fitContent();
+                            console.log(`✅ 第一层完成：${historicalData.length}根K线已显示（无实时数据）`);
+                        }
+                    }
+
+                    // 【第二层】后台预加载（preload → L3，完整数据）
+                    // 使用 setTimeout 让出主线程，确保UI先渲染
+                    setTimeout(async () => {
+                        console.log('💾 === 第二层：后台预加载完整数据 ===');
+                        try {
+                            // 基于第一层的最早日期继续向前加载，避免复权断层
+                            if (allData.candlestick.length > 0) {
+                                const earliestTimestamp = allData.candlestick[0].time;
+                                const endDate = new Date(earliestTimestamp * 1000);
+                                const endDateStr = endDate.toISOString().split('T')[0];
+
+                                console.log(`📅 第二层将基于 ${endDateStr} 继续向前加载...`);
+
+                                const historicalData = await loadKlineData(
+                                    CONFIG.symbol,
+                                    periodConfig.preload,
+                                    endDateStr,
+                                    'preload'  // ⭐ stage: preload
+                                );
+
+                                if (historicalData && historicalData.length > 0) {
+                                    // 验证历史数据
+                                    const validHistoricalData = historicalData.filter(item => {
+                                        return item &&
+                                               item.time !== null && item.time !== undefined &&
+                                               item.open !== null && item.open !== undefined && !isNaN(item.open) &&
+                                               item.high !== null && item.high !== undefined && !isNaN(item.high) &&
+                                               item.low !== null && item.low !== undefined && !isNaN(item.low) &&
+                                               item.close !== null && item.close !== undefined && !isNaN(item.close) &&
+                                               item.volume !== null && item.volume !== undefined && !isNaN(item.volume);
+                                    });
+
+                                    if (validHistoricalData.length === 0) {
+                                        console.log('⚠️ 第二层：加载的历史数据全部无效，跳过');
+                                        return;
+                                    }
+
+                                    console.log(`✅ 第二层数据验证: ${validHistoricalData.length}/${historicalData.length}条有效`);
+
+                                    // 合并数据：历史数据 + 当前数据
+                                    const mergedData = [...validHistoricalData, ...allData.candlestick];
+
+                                    // 更新图表
+                                    updateChartData(mergedData);
+                                    console.log(`✅ 第二层完成：后台已加载${mergedData.length}根K线到内存`);
+                                    console.log('💾 现在缩放/拖动图表将无需等待，数据已在内存中');
+                                } else {
+                                    console.log('ℹ️ 第二层：没有更早的历史数据可加载');
+                                }
+                            } else {
+                                console.log('⚠️ 第二层：第一层没有数据，跳过');
+                            }
+                        } catch (error) {
+                            console.warn('⚠️ 后台预加载失败，不影响当前显示:', error);
+                        }
+                    }, 100);
+
+                    // 【第三层】启动实时更新（realtime → L1，1ms最快速度）
+                    console.log('🔄 === 第三层：启动实时更新 ===');
+                    startRealtimeUpdate();
+
+                } else {
+                    throw new Error('API健康检查失败');
+                }
+            } catch (error) {
+                console.error('❌ API连接失败:', error);
+                updateStatus('error');
+                document.getElementById('status').innerHTML =
+                    'API未连接 - 请启动后端服务:<br>python start_kline_server.py';
+            }
+
+            // ⭐ 恢复保存的激活指标状态
+            setTimeout(() => {
+                restoreActiveIndicators();
+            }, 500);
+
+            // ⭐ 加载自定义指标列表
+            loadCustomIndicators();
+
+            console.log('✅ 初始化完成');
+        }
+
+        /**
+         * 恢复之前保存的激活指标
+         */
+        function restoreActiveIndicators() {
+            if (typeof configManager === 'undefined') {
+                console.log('[恢复状态] configManager未定义，跳过恢复');
+                return;
+            }
+
+            const savedActiveIndicators = configManager.getActiveIndicators();
+            const indicatorNames = Object.keys(savedActiveIndicators);
+
+            if (indicatorNames.length === 0) {
+                console.log('[恢复状态] 没有保存的激活指标');
+                return;
+            }
+
+            console.log(`[恢复状态] 准备恢复${indicatorNames.length}个激活指标:`, indicatorNames);
+
+            indicatorNames.forEach(indicatorName => {
+                if (savedActiveIndicators[indicatorName]) {
+                    try {
+                        console.log(`[恢复状态] 正在恢复 ${indicatorName}...`);
+                        // ⭐ 先设置状态，再显示
+                        activeIndicators[indicatorName] = true;
+                        showIndicator(indicatorName);
+                        const btn = document.getElementById('btn' + indicatorName);
+                        if (btn) {
+                            btn.classList.add('active');
+                        }
+                        console.log(`[恢复状态] ✅ ${indicatorName} 已恢复`);
+                    } catch (error) {
+                        console.error(`[恢复状态] ❌ ${indicatorName} 恢复失败:`, error);
+                    }
+                }
+            });
+
+            console.log('[恢复状态] 指标恢复完成');
+        }
+
+        /**
+         * 保存当前激活的指标状态
+         */
+        function saveActiveIndicators() {
+            if (typeof configManager !== 'undefined') {
+                configManager.updateActiveIndicators(activeIndicators);
+            }
+        }
+
+        // ⭐ 修改toggleIndicator函数，保存状态
+        const originalToggleIndicator = toggleIndicator;
+        toggleIndicator = function(indicatorName) {
+            originalToggleIndicator(indicatorName);
+            // 保存状态
+            setTimeout(() => {
+                saveActiveIndicators();
+            }, 100);
+        };
+
+        // ⭐ 修改clearIndicators函数，清除保存的状态
+        const originalClearIndicators = clearIndicators;
+        clearIndicators = function() {
+            originalClearIndicators();
+            // 清除保存的状态（添加存在性检查）
+            if (typeof configManager !== 'undefined') {
+                configManager.updateActiveIndicators({});
+            }
+        };
+
+        // ⭐ 创建专门的函数用于切换周期时清理指标（不保存状态）
+        function clearIndicatorsForPeriodChange() {
+            originalClearIndicators();
+        }
+
+        // ⭐ v3.2新增：检查是否在交易时间内
+        function isTradingTime() {
+            const now = new Date();
+            const day = now.getDay();  // 0=周日, 6=周六
+
+            // 周末不交易
+            if (day === 0 || day === 6) {
+                return false;
+            }
+
+            const hour = now.getHours();
+            const minute = now.getMinutes();
+            const currentTime = hour * 60 + minute;
+
+            // 集合竞价：9:15-9:25 (555-565分钟)
+            const callAuctionStart = 9 * 60 + 15;  // 555
+            const callAuctionEnd = 9 * 60 + 25;    // 565
+
+            // 上午交易时间：9:30-11:30 (570-690分钟)
+            const morningStart = 9 * 60 + 30;  // 570
+            const morningEnd = 11 * 60 + 30;   // 690
+
+            // 下午交易时间：13:00-15:00 (780-900分钟)
+            const afternoonStart = 13 * 60;    // 780
+            const afternoonEnd = 15 * 60;      // 900
+
+            // 检查是否在交易时间内（包含集合竞价）
+            return (currentTime >= callAuctionStart && currentTime <= callAuctionEnd) ||
+                   (currentTime >= morningStart && currentTime <= morningEnd) ||
+                   (currentTime >= afternoonStart && currentTime <= afternoonEnd);
+        }
+
+        // ⭐ v3.2新增：实时更新功能（使用L1级别，最快速度）
+        function startRealtimeUpdate() {
+            // 清除旧的定时器
+            if (window.realtimeTimer) {
+                clearInterval(window.realtimeTimer);
+            }
+
+            // 每3秒更新一次
+            window.realtimeTimer = setInterval(async () => {
+                // 只在K线图模式下更新（分时图不需要实时更新）
+                if (!isIntradayMode) {
+                    // ⭐ v3.2新增：检查是否在交易时间内
+                    if (!isTradingTime()) {
+                        // 非交易时间跳过更新（不打印日志，避免刷屏）
+                        return;
+                    }
+
+                    try {
+                        const data = await loadKlineData(
+                            CONFIG.symbol,
+                            1,  // 只获取最新1根K线
+                            null,
+                            'realtime'  // ⭐ stage: realtime
+                        );
+
+                        if (data && data.length > 0) {
+                            const latestBar = data[0];
+                            // ⭐ 检查candlestickSeries是否存在（可能在切换周期时被销毁）
+                            if (candlestickSeries && typeof candlestickSeries.updateData === 'function') {
+                                updateLatestBar(latestBar);
+                            } else {
+                                console.warn('⚠️ candlestickSeries不存在，跳过本次更新');
+                            }
+                        }
+                    } catch (error) {
+                        console.warn('⚠️ 实时更新失败（将在下次重试）:', error);
+                    }
+                }
+            }, 3000);  // 每3秒更新一次
+
+            const tradingStatus = isTradingTime() ? '交易时间内' : '非交易时间';
+            console.log(`✅ 实时更新已启动（每3秒更新最新K线，使用L1级别，仅在${tradingStatus}更新）`);
+        }
+
+        // ⭐ v3.2新增：更新最后一根K线
+        function updateLatestBar(latestBar) {
+            // ⭐ 数据验证：过滤null值
+            if (!latestBar ||
+                latestBar.time === null || latestBar.time === undefined ||
+                latestBar.open === null || latestBar.open === undefined || isNaN(latestBar.open) ||
+                latestBar.high === null || latestBar.high === undefined || isNaN(latestBar.high) ||
+                latestBar.low === null || latestBar.low === undefined || isNaN(latestBar.low) ||
+                latestBar.close === null || latestBar.close === undefined || isNaN(latestBar.close) ||
+                latestBar.volume === null || latestBar.volume === undefined || isNaN(latestBar.volume)) {
+                console.warn('⚠️ 最新K线数据无效，跳过更新');
+                return;
+            }
+
+            // ⭐ 检查candlestickSeries和volumeSeries是否存在
+            if (!candlestickSeries || !volumeSeries) {
+                console.warn('⚠️ 图表series不存在，无法更新K线');
+                return;
+            }
+
+            if (allData.candlestick.length === 0) {
+                console.warn('⚠️ 没有现有数据，无法更新K线');
+                return;
+            }
+
+            const lastBar = allData.candlestick[allData.candlestick.length - 1];
+
+            if (latestBar.time === lastBar.time) {
+                // 更新最后一根（时间相同，更新数据）
+                allData.candlestick[allData.candlestick.length - 1] = latestBar;
+
+                // 更新成交量
+                if (allData.volume.length > 0) {
+                    allData.volume[allData.volume.length - 1] = {
+                        time: latestBar.time,
+                        value: latestBar.volume,
+                        color: latestBar.close >= latestBar.open ? '#ef535080' : '#26a69a80'
+                    };
+                }
+
+                // ⭐ 检查updateData方法是否存在
+                if (typeof candlestickSeries.updateData === 'function') {
+                    candlestickSeries.updateData(latestBar);
+                }
+                if (typeof volumeSeries.updateData === 'function') {
+                    volumeSeries.updateData(allData.volume[allData.volume.length - 1]);
+                }
+
+                console.log('🔄 已更新最新K线');
+            } else {
+                // 新增一根（时间不同，添加新K线）
+                allData.candlestick.push(latestBar);
+                allData.volume.push({
+                    time: latestBar.time,
+                    value: latestBar.volume,
+                    color: latestBar.close >= latestBar.open ? '#ef535080' : '#26a69a80'
+                });
+
+                // ⭐ 检查updateData方法是否存在
+                if (typeof candlestickSeries.updateData === 'function') {
+                    candlestickSeries.updateData(latestBar);
+                }
+                if (typeof volumeSeries.updateData === 'function') {
+                    volumeSeries.updateData(allData.volume[allData.volume.length - 1]);
+                }
+
+                console.log('➕ 已新增最新K线');
+            }
+
+            // 更新数据计数显示
+            document.getElementById('dataInfo').textContent = `已加载: ${allData.candlestick.length}根K线`;
+        }
+
+        window.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>

@@ -1,0 +1,30 @@
+/* 统一深色下拉框样式 */
+.form-select,
+select.form-select {
+  background-color: #1a1a2e;
+  color: #f8fafc;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 14px;
+  
+  option {
+    background: #1a1a2e;
+    color: #f8fafc;
+    padding: 8px 12px;
+    
+    &:hover {
+      background: rgba(37, 99, 235, 0.1);
+    }
+    
+    &:selected {
+      background: rgba(37, 99, 235, 0.2);
+    }
+  }
+  
+  &:focus {
+    outline: none;
+    border-color: #2563eb;
+    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2);
+  }
+}

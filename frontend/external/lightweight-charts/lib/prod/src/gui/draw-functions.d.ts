@@ -1,0 +1,13 @@
+import { CanvasRenderingTarget2D } from 'fancy-canvas';
+import { IDataSource, IDataSourcePaneViews } from '../model/idata-source';
+import { Pane } from '../model/pane';
+import { IPaneRenderer } from '../renderers/ipane-renderer';
+import { IAxisViewsGetter } from './iaxis-view-getters';
+import { IPaneViewsGetter } from './ipane-view-getter';
+export type DrawFunction = (renderer: IPaneRenderer, target: CanvasRenderingTarget2D, isHovered: boolean, hitTestData?: unknown) => void;
+export declare function drawBackground(renderer: IPaneRenderer, target: CanvasRenderingTarget2D, isHovered: boolean, hitTestData?: unknown): void;
+export declare function drawForeground(renderer: IPaneRenderer, target: CanvasRenderingTarget2D, isHovered: boolean, hitTestData?: unknown): void;
+type DrawRendererFn = (renderer: IPaneRenderer) => void;
+export type ViewsGetter<T> = T extends IDataSource ? IAxisViewsGetter : IPaneViewsGetter;
+export declare function drawSourceViews<T extends IDataSource | IDataSourcePaneViews>(paneViewsGetter: ViewsGetter<T>, drawRendererFn: DrawRendererFn, source: T, pane: Pane): void;
+export {};

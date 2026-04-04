@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API 测试 - MyQuant v9.0.0</title>
+</head>
+<body>
+    <h1>API 测试页面</h1>
+    <p>请打开浏览器控制台查看详细日志</p>
+    <button onclick="testAPI()">测试后端连接</button>
+    <div id="result"></div>
+
+    <script>
+        async function testAPI() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = '<p>测试中...</p>';
+
+            try {
+                const response = await fetch('/api/health');
+                const data = await response.json();
+                resultDiv.innerHTML = '<p style="color: green;">✓ 后端连接成功!</p>';
+                console.log('后端响应:', data);
+            } catch (error) {
+                resultDiv.innerHTML = '<p style="color: red;">✗ 后端连接失败: ' + error.message + '</p>';
+                console.error('错误:', error);
+            }
+        }
+    </script>
+</body>
+</html>

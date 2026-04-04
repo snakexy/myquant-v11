@@ -1,0 +1,91 @@
+// 临时修复文件
+const togglePaneIndicator_FIXED = async (key: string) => {
+  const refMap: Record<string, any> = {
+    'MACD': hasMACD,
+    'RSI': hasRSI
+  }
+
+  const isActive = refMap[key]
+  const shouldEnable = !isActive.value  // 目标状态
+
+  // ✅ 使用固定的paneIndex，避免多个窗口问题
+  const FIXED_PANE_INDEX: Record<string, number> = {
+    'MACD': 1,   // MACD固定使用pane 1
+    'RSI': 2     // RSI固定使用pane 2
+  }
+
+  const targetPaneIndex = FIXED_PANE_INDEX[key]
+
+  if (shouldEnable) {
+    // 创建指标
+    console.log(`[togglePaneIndicator] 准备创建 ${key} 窗格，固定paneIndex=${targetPaneIndex}`)
+
+    try {
+      if (key === 'MACD' && chart) {
+        await addMACDIndicator(chart, klineBars, indicatorPanes, targetPaneIndex)
+        indicatorKeyToPaneIndex.set('MACD', targetPaneIndex)
+        hasMACD.value = true
+        console.log(`[togglePaneIndicator] ✅ MACD 窗格创建成功，固定paneIndex=${targetPaneIndex}`)
+      } else if (key === 'RSI' && chart) {
+        await addRSIIndicator(chart, klineBars, indicatorPanes, targetPaneIndex)
+        indicatorKeyToPaneIndex.set('RSI', targetPaneIndex)
+        hasRSI.value = true
+        console.log(`[togglePaneIndicator] ✅ RSI 窗格创建成功，固定paneIndex=${targetPaneIndex}`)
+      }
+
+      // ✅ 保存设置
+      savePreferences()
+    } catch (error) {
+      console.error(`[togglePaneIndicator] ❌ 创建 ${key} 失败:`, error)
+      if (key === 'MACD') hasMACD.value = false
+      if (key === 'RSI') hasRSI.value = false
+    }
+  } else {
+    // 删除指标
+    if (!chart) return
+
+    console.log(`[togglePaneIndicator] 准备删除 ${key} 窗格，固定paneIndex=${targetPaneIndex}`)
+
+    // ✅ 获取该pane的所有系列并删除
+    const seriesList = indicatorPanes.get(targetPaneIndex)
+    console.log(`[togglePaneIndicator] pane ${targetPaneIndex} 的系列列表:`, seriesList)
+
+    if (seriesList && seriesList.length > 0) {
+      try {
+        // 逐个删除系列
+        console.log(`[togglePaneIndicator] 开始删除 ${seriesList.length} 个系列`)
+        let deletedCount = 0
+
+        seriesList.forEach((series: any) => {
+          try {
+            chart.removeSeries(series)
+            deletedCount++
+          } catch (e) {
+            console.error(`[togglePaneIndicator] 删除系列失败:`, e)
+          }
+        })
+
+        console.log(`[togglePaneIndicator] 成功删除 ${deletedCount}/${seriesList.length} 个系列`)
+        console.log(`[togglePaneIndicator] 删除后窗格数:`, chart.panes().length)
+
+        // 清理所有相关的映射
+        indicatorPanes.delete(targetPaneIndex)
+        indicatorKeyToPaneIndex.delete(key)
+
+        if (key === 'MACD') hasMACD.value = false
+        if (key === 'RSI') hasRSI.value = false
+
+        console.log(`[togglePaneIndicator] ✅ ${key} 窗格已删除`)
+      } catch (error) {
+        console.error(`[togglePaneIndicator] ❌ 删除 ${key} 失败:`, error)
+      }
+    } else {
+      console.warn(`[togglePaneIndicator] ⚠️ pane ${targetPaneIndex} 没有找到系列`)
+      // 即使没有系列，也要清理状态
+      indicatorPanes.delete(targetPaneIndex)
+      indicatorKeyToPaneIndex.delete(key)
+      if (key === 'MACD') hasMACD.value = false
+      if (key === 'RSI') hasRSI.value = false
+    }
+  }
+}

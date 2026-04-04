@@ -113,6 +113,28 @@ export const fetchKline = async (
   return data
 }
 
+/** 增量获取K线数据（从指定时间之后）
+ *
+ * 用于 useKlineData 的增量更新，避免重复传输历史数据
+ */
+export const fetchKlineIncremental = async (
+  symbol: string,
+  period: string = '1d',
+  afterTime: number,
+  count: number = 800,
+  adjustType: string = 'qfq'
+): Promise<KlineResponse & { incremental: boolean }> => {
+  const { data } = await v5Api.get<KlineResponse>(`/kline/realtime/${symbol}`, {
+    params: {
+      period,
+      count,
+      adjust_type: adjustType,
+      after_time: afterTime
+    }
+  })
+  return { ...data, incremental: true }
+}
+
 /** 获取单只股票快照 */
 export const fetchSnapshot = async (symbol: string): Promise<QuoteSnapshot> => {
   const { data } = await rawApi.get<QuoteSnapshot>(`/quotes/snapshot/${symbol}`)

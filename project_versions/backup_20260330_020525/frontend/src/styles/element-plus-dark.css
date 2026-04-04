@@ -1,0 +1,395 @@
+/* Element Plus 深色主题全局样式 */
+/* 用于所有通过 Portal 渲染到 body 下的弹出层组件 */
+
+/* ==================== 通用输入框深色样式 ==================== */
+/* 使用更高优先级的选择器来覆盖组件的 scoped 样式 */
+
+/* 覆盖 color-scheme - 这很重要！*/
+.el-input__wrapper,
+.el-select .el-input__wrapper,
+.el-date-editor .el-input__wrapper,
+.el-select--small .el-input__wrapper,
+.el-date-editor--small .el-input__wrapper,
+body .el-input__wrapper,
+html .el-input__wrapper {
+  color-scheme: dark !important;
+}
+
+/* 基础输入框样式 - 使用三重选择器提高优先级 */
+body .el-input__wrapper.el-input__wrapper.el-input__wrapper,
+html .el-input__wrapper.el-input__wrapper.el-input__wrapper {
+  background-color: rgba(102, 126, 234, 0.08) !important;
+  box-shadow: none !important;
+  border: 1px solid rgba(102, 126, 234, 0.3) !important;
+  border-radius: 4px !important;
+}
+
+body .el-input__wrapper.el-input__wrapper.el-input__wrapper:hover,
+html .el-input__wrapper.el-input__wrapper.el-input__wrapper:hover {
+  background-color: rgba(102, 126, 234, 0.12) !important;
+  border-color: rgba(102, 126, 234, 0.6) !important;
+}
+
+body .el-input__wrapper.el-input__wrapper.el-input__wrapper.is-focus,
+html .el-input__wrapper.el-input__wrapper.el-input__wrapper.is-focus {
+  background-color: rgba(102, 126, 234, 0.15) !important;
+  border-color: #667eea !important;
+  box-shadow: 0 0 0 1px rgba(102, 126, 234, 0.3) !important;
+}
+
+body .el-input__inner.el-input__inner,
+html .el-input__inner.el-input__inner {
+  color: rgba(255, 255, 255, 0.9) !important;
+  background-color: transparent !important;
+}
+
+body .el-input__inner.el-input__inner::placeholder,
+html .el-input__inner.el-input__inner::placeholder {
+  color: rgba(255, 255, 255, 0.4) !important;
+}
+
+/* el-select 特定样式 - 更高优先级 */
+body .el-select .el-input__wrapper,
+html .el-select .el-input__wrapper,
+.el-select .el-input__wrapper.el-input__wrapper {
+  background-color: rgba(102, 126, 234, 0.08) !important;
+  box-shadow: none !important;
+}
+
+body .el-select .el-input__wrapper:hover,
+html .el-select .el-input__wrapper:hover {
+  background-color: rgba(102, 126, 234, 0.12) !important;
+}
+
+body .el-select .el-input__wrapper.is-focus,
+html .el-select .el-input__wrapper.is-focus {
+  background-color: rgba(102, 126, 234, 0.15) !important;
+}
+
+/* el-date-editor 特定样式 - 更高优先级 */
+body .el-date-editor.el-input__wrapper,
+html .el-date-editor.el-input__wrapper,
+.el-date-editor.el-input__wrapper {
+  background-color: rgba(102, 126, 234, 0.08) !important;
+  box-shadow: none !important;
+  border: 1px solid rgba(102, 126, 234, 0.3) !important;
+}
+
+body .el-date-editor .el-input__wrapper,
+html .el-date-editor .el-input__wrapper {
+  background-color: rgba(102, 126, 234, 0.08) !important;
+  box-shadow: none !important;
+}
+
+/* 针对时间范围控件的特别样式 - 使用 !important 确保优先级 */
+body .timeline-start-picker .el-input__wrapper,
+body .timeline-end-picker .el-input__wrapper,
+body .timeline-controls .el-input__wrapper,
+.timeline-start-picker .el-input__wrapper,
+.timeline-end-picker .el-input__wrapper,
+.timeline-controls .el-input__wrapper {
+  background-color: rgba(102, 126, 234, 0.08) !important;
+  box-shadow: none !important;
+  border: 1px solid rgba(102, 126, 234, 0.3) !important;
+}
+
+/* 全局强制所有 .el-input__wrapper 使用深色背景 */
+body div.el-input__wrapper,
+body span.el-input__wrapper,
+html div.el-input__wrapper,
+html span.el-input__wrapper {
+  background-color: rgba(102, 126, 234, 0.08) !important;
+  box-shadow: none !important;
+}
+
+/* 覆盖任何可能的白色背景 - 最强选择器 */
+body .el-input__wrapper[style*="background"],
+html .el-input__wrapper[style*="background"] {
+  background-color: rgba(102, 126, 234, 0.08) !important;
+}
+
+/* 直接覆盖 Element Plus 的默认类 */
+.el-input__wrapper,
+.el-select--small .el-input__wrapper,
+.el-date-editor--small .el-input__wrapper,
+.el-select--small.el-input__wrapper,
+.el-date-editor--small.el-input__wrapper {
+  background-color: rgba(102, 126, 234, 0.08) !important;
+  box-shadow: none !important;
+}
+
+/* 针对 el-tooltip__trigger 的特殊处理 */
+body .el-tooltip__trigger.el-input__wrapper,
+html .el-tooltip__trigger.el-input__wrapper,
+.el-tooltip__trigger.el-input__wrapper,
+body .el-tooltip__trigger,
+html .el-tooltip__trigger {
+  background-color: rgba(102, 126, 234, 0.08) !important;
+  background: rgba(102, 126, 234, 0.08) !important;
+  box-shadow: none !important;
+  border: 1px solid rgba(102, 126, 234, 0.3) !important;
+  color-scheme: dark !important;
+}
+
+/* 使用属性选择器匹配包含 el-tooltip__trigger 类名的元素 */
+body [class*="el-tooltip__trigger"],
+html [class*="el-tooltip__trigger"] {
+  color-scheme: dark !important;
+}
+
+body [class*="el-tooltip__trigger"].el-input__wrapper,
+html [class*="el-tooltip__trigger"].el-input__wrapper,
+[class*="el-tooltip__trigger"].el-input__wrapper {
+  background-color: rgba(102, 126, 234, 0.08) !important;
+  background: rgba(102, 126, 234, 0.08) !important;
+  box-shadow: none !important;
+  border: 1px solid rgba(102, 126, 234, 0.3) !important;
+}
+
+/* el-tooltip__trigger hover 和 focus 状态 */
+body .el-tooltip__trigger.el-input__wrapper:hover,
+html .el-tooltip__trigger.el-input__wrapper:hover,
+.el-tooltip__trigger.el-input__wrapper:hover,
+body [class*="el-tooltip__trigger"].el-input__wrapper:hover,
+html [class*="el-tooltip__trigger"].el-input__wrapper:hover,
+[class*="el-tooltip__trigger"].el-input__wrapper:hover {
+  background-color: rgba(102, 126, 234, 0.12) !important;
+  background: rgba(102, 126, 234, 0.12) !important;
+}
+
+body .el-tooltip__trigger.el-input__wrapper.is-focus,
+html .el-tooltip__trigger.el-input__wrapper.is-focus,
+.el-tooltip__trigger.el-input__wrapper.is-focus,
+body [class*="el-tooltip__trigger"].el-input__wrapper.is-focus,
+html [class*="el-tooltip__trigger"].el-input__wrapper.is-focus,
+[class*="el-tooltip__trigger"].el-input__wrapper.is-focus {
+  background-color: rgba(102, 126, 234, 0.15) !important;
+  background: rgba(102, 126, 234, 0.15) !important;
+  border-color: #667eea !important;
+}
+
+.el-input__wrapper:hover,
+.el-select--small .el-input__wrapper:hover,
+.el-date-editor--small .el-input__wrapper:hover {
+  background-color: rgba(102, 126, 234, 0.12) !important;
+}
+
+.el-input__wrapper.is-focus,
+.el-select--small .el-input__wrapper.is-focus,
+.el-date-editor--small .el-input__wrapper.is-focus {
+  background-color: rgba(102, 126, 234, 0.15) !important;
+  border-color: #667eea !important;
+}
+
+/* ==================== el-select 下拉框深色样式 ==================== */
+/* 使用 body > 选择器确保能够选中通过 Teleport 渲染的元素 */
+body > .el-select-dropdown {
+  background-color: rgba(30, 41, 59, 0.95) !important;
+  border: 1px solid rgba(102, 126, 234, 0.3) !important;
+  backdrop-filter: blur(10px);
+}
+
+/* 也尝试不带 body 前缀的通用选择器 */
+div.el-select-dropdown {
+  background-color: rgba(30, 41, 59, 0.95) !important;
+  border: 1px solid rgba(102, 126, 234, 0.3) !important;
+}
+
+.el-select-dropdown__item {
+  color: rgba(255, 255, 255, 0.85) !important;
+  font-size: 14px;
+}
+
+.el-select-dropdown__item:hover {
+  background-color: rgba(102, 126, 234, 0.15) !important;
+  color: #ffffff !important;
+}
+
+.el-select-dropdown__item.is-selected {
+  background-color: rgba(102, 126, 234, 0.25) !important;
+  color: #ffffff !important;
+  font-weight: 500;
+}
+
+.el-select-dropdown__item.is-disabled {
+  color: rgba(255, 255, 255, 0.3) !important;
+  cursor: not-allowed;
+}
+
+/* ==================== el-date-picker 日期选择器深色样式 ==================== */
+body > .el-picker-dropdown,
+div.el-picker-dropdown {
+  background-color: rgba(30, 41, 59, 0.95) !important;
+  border: 1px solid rgba(102, 126, 234, 0.3) !important;
+  backdrop-filter: blur(10px);
+}
+
+.el-picker-panel {
+  background-color: rgba(30, 41, 59, 0.95) !important;
+  border-color: rgba(102, 126, 234, 0.3) !important;
+  color: rgba(255, 255, 255, 0.85) !important;
+}
+
+/* 日期选择器头部 */
+.el-date-picker__header-label {
+  color: rgba(255, 255, 255, 0.9) !important;
+  font-weight: 500;
+}
+
+.el-date-picker__header-label:hover {
+  color: #667eea !important;
+}
+
+.el-date-picker__header-btn {
+  color: rgba(255, 255, 255, 0.7) !important;
+}
+
+.el-date-picker__header-btn:hover {
+  color: #667eea !important;
+}
+
+/* 月份表格 */
+.el-month-table td .cell {
+  color: rgba(255, 255, 255, 0.85) !important;
+  font-size: 14px;
+}
+
+.el-month-table td .cell:hover {
+  background-color: rgba(102, 126, 234, 0.15) !important;
+  color: #ffffff !important;
+}
+
+.el-month-table td.in-range .cell,
+.el-month-table td.start-range .cell,
+.el-month-table td.end-range .cell {
+  background-color: rgba(102, 126, 234, 0.2) !important;
+  color: #ffffff !important;
+}
+
+.el-month-table td.current .cell {
+  background-color: #667eea !important;
+  color: #ffffff !important;
+  font-weight: 600;
+}
+
+.el-month-table td.today .cell {
+  color: #667eea !important;
+  font-weight: 600;
+}
+
+/* 日期表格 */
+.el-date-table td .cell {
+  color: rgba(255, 255, 255, 0.85) !important;
+}
+
+.el-date-table td .cell:hover {
+  background-color: rgba(102, 126, 234, 0.15) !important;
+  color: #ffffff !important;
+}
+
+.el-date-table td.in-range .cell,
+.el-date-table td.start-range .cell,
+.el-date-table td.end-range .cell {
+  background-color: rgba(102, 126, 234, 0.2) !important;
+  color: #ffffff !important;
+}
+
+.el-date-table td.current .cell {
+  background-color: #667eea !important;
+  color: #ffffff !important;
+}
+
+.el-date-table td.today .cell {
+  color: #667eea !important;
+}
+
+/* 边框和分隔线 */
+.el-picker-panel__content {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1) !important;
+}
+
+/* 滚动条样式 */
+.el-select-dropdown__wrap,
+.el-picker-panel__content {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(102, 126, 234, 0.3) rgba(255, 255, 255, 0.05);
+}
+
+.el-select-dropdown__wrap::-webkit-scrollbar,
+.el-picker-panel__content::-webkit-scrollbar {
+  width: 6px;
+}
+
+.el-select-dropdown__wrap::-webkit-scrollbar-track,
+.el-picker-panel__content::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 3px;
+}
+
+.el-select-dropdown__wrap::-webkit-scrollbar-thumb,
+.el-picker-panel__content::-webkit-scrollbar-thumb {
+  background: rgba(102, 126, 234, 0.3);
+  border-radius: 3px;
+}
+
+.el-select-dropdown__wrap::-webkit-scrollbar-thumb:hover,
+.el-picker-panel__content::-webkit-scrollbar-thumb:hover {
+  background: rgba(102, 126, 234, 0.5);
+}
+
+/* ==================== el-popover 弹出框深色样式 ==================== */
+.el-popover {
+  background-color: rgba(30, 41, 59, 0.95) !important;
+  border: 1px solid rgba(102, 126, 234, 0.3) !important;
+  backdrop-filter: blur(10px);
+  color: rgba(255, 255, 255, 0.85);
+}
+
+/* ==================== el-dropdown 下拉菜单深色样式 ==================== */
+.el-dropdown-menu {
+  background-color: rgba(30, 41, 59, 0.95) !important;
+  border: 1px solid rgba(102, 126, 234, 0.3) !important;
+  backdrop-filter: blur(10px);
+}
+
+.el-dropdown-menu__item {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.el-dropdown-menu__item:hover {
+  background-color: rgba(102, 126, 234, 0.15) !important;
+  color: #ffffff;
+}
+
+.el-dropdown-menu__item.is-disabled {
+  color: rgba(255, 255, 255, 0.3);
+  cursor: not-allowed;
+}
+
+/* ==================== el-autocomplete 自动完成深色样式 ==================== */
+.el-autocomplete-suggestion {
+  background-color: rgba(30, 41, 59, 0.95) !important;
+  border: 1px solid rgba(102, 126, 234, 0.3) !important;
+  backdrop-filter: blur(10px);
+}
+
+.el-autocomplete-suggestion__wrap {
+  background-color: transparent;
+}
+
+.el-autocomplete-suggestion__list {
+  background-color: transparent;
+}
+
+.el-autocomplete-suggestion__item {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.el-autocomplete-suggestion__item:hover {
+  background-color: rgba(102, 126, 234, 0.15);
+}
+
+.el-autocomplete-suggestion__item.highlighted {
+  background-color: rgba(102, 126, 234, 0.25);
+  color: #ffffff;
+}

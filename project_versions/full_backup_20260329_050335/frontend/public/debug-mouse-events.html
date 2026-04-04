@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>调试鼠标事件</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: monospace;
+            background: #1a1a2e;
+            color: #f8fafc;
+        }
+        .info {
+            background: #252530;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            border: 1px solid #334155;
+        }
+        code {
+            background: #1a1a2e;
+            padding: 2px 6px;
+            border-radius: 4px;
+            color: #10b981;
+        }
+        .warning {
+            color: #f59e0b;
+        }
+        .error {
+            color: #ef4444;
+        }
+        .success {
+            color: #10b981;
+        }
+    </style>
+</head>
+<body>
+    <h1>鼠标事件调试工具</h1>
+
+    <div class="info">
+        <h3>使用方法：</h3>
+        <p>1. 打开浏览器开发者工具（F12）</p>
+        <p>2. 在K线图页面，打开Console标签</p>
+        <p>3. 复制并运行以下代码：</p>
+        <code id="code1"></code>
+    </div>
+
+    <div class="info">
+        <h3>如何解读结果：</h3>
+        <p><span class="error">❌ 问题：</span>如果看到大量元素（>10个），说明有元素重叠</p>
+        <p><span class="warning">⚠️ 检查：</span>查看哪些元素的<code>pointer-events</code>不是<code>auto</code></p>
+        <p><span class="success">✅ 正常：</span>图表canvas应该是最后的元素之一</p>
+    </div>
+
+    <script>
+        document.getElementById('code1').textContent = `
+// 检测图表中心点的所有元素
+const chartEl = document.querySelector('.tv-chart');
+if (chartEl) {
+    const rect = chartEl.getBoundingClientRect();
+    const centerX = Math.floor(rect.left + rect.width / 2);
+    const centerY = Math.floor(rect.top + rect.height / 2);
+
+    console.log('图表位置:', rect);
+    console.log('中心点:', { x: centerX, y: centerY });
+
+    const elements = document.elementsFromPoint(centerX, centerY);
+    console.log('====== 鼠标事件检测结果 ======');
+    console.log('中心点位置:', { x: centerX, y: centerY });
+    console.log('元素数量:', elements.length);
+
+    elements.forEach((el, index) => {
+        const styles = window.getComputedStyle(el);
+        const zIndex = styles.zIndex === 'auto' ? 'auto' : styles.zIndex;
+        const pointerEvents = styles.pointerEvents;
+        const position = styles.position;
+        const display = styles.display;
+
+        console.log(\`\${index + 1}. \${el.tagName}.\${el.className}\`, {
+            zIndex,
+            pointerEvents,
+            position,
+            display,
+            width: styles.width,
+            height: styles.height
+        });
+    });
+} else {
+    console.error('找不到图表元素！请确保在K线图页面运行此脚本');
+}
+        `.trim();
+    </script>
+</body>
+</html>

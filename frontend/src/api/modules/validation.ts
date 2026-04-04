@@ -39,11 +39,3 @@ export type {
   NotificationChannel,
   NotificationTemplate
 } from './alerts'
-
-// 统一导出所有Validation API
-export const validationApi = {
-  simulation: () => import('./simulation').then(m => m.simulationApi),
-  training: () => import('./training').then(m => m.trainingApi),
-  monitoring: () => import('./monitoring').then(m => m.monitoringApi),
-  alerts: () => import('./alerts').then(m => m.alertApi)
-}

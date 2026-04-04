@@ -1,6 +1,10 @@
 """
 复权因子服务
 
+[状态: 未使用 - 2026-04-04]
+短期策略不需要复权，此服务已禁用。
+需要恢复时，在 SeamlessKlineService 中取消注释复权调用。
+
 提供复权因子表的预计算和缓存管理
 支持混合模式：日线用前复权，分钟线用等比前复权
 """
@@ -423,8 +427,7 @@ class AdjustmentFactorService:
     def _get_xdxr_data(self, symbol: str) -> list:
         """获取XDXR数据
 
-        从seamless_service获取（共享其缓存）
-        注意：这里会触发循环导入，所以改为独立获取
+        通过 XdxrService 获取（统一管理，避免循环依赖）
 
         Args:
             symbol: 股票代码
@@ -433,10 +436,9 @@ class AdjustmentFactorService:
             XDXR数据列表
         """
         try:
-            # 直接从seamless_service导入并获取
-            from myquant.core.market.services.seamless_service import get_seamless_kline_service
-            service = get_seamless_kline_service()
-            return service._get_xdxr_data(symbol)
+            from myquant.core.market.services.xdxr_service import get_xdxr_service
+            xdxr_service = get_xdxr_service()
+            return xdxr_service.get_xdxr_data(symbol)
         except Exception as e:
             logger.warning(f"[FactorService] 获取XDXR数据失败: {e}")
             return []
