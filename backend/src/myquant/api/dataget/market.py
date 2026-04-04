@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from loguru import logger
 
 from myquant.core.market.services import get_realtime_market_service, get_seamless_kline_service
-from myquant.core.market.utils.trading_time import TradingTimeChecker
+from myquant.core.market.utils.trading_time_detector import TradingTimeDetectorV2
 
 
 router = APIRouter(tags=["实时行情"])
@@ -61,7 +61,8 @@ async def get_realtime_quotes(
 
 @router.get("/snapshot/")
 async def get_snapshot_batch(
-    symbols: str = Query(..., description="逗号分隔的股票代码，如 000001.SZ,600000.SH")
+    symbols: str = Query(..., description="逗号分隔的股票代码，如 000001.SZ,600000.SH"),
+    no_cache: bool = Query(False, description="禁用缓存（调试用）")
 ):
     """批量获取股票快照（GET 方式）
 
@@ -71,7 +72,7 @@ async def get_snapshot_batch(
         codes = [s.strip() for s in symbols.split(',') if s.strip()]
         service = get_realtime_market_service()
         quotes, data_source = service.get_realtime_quotes(
-            codes=codes, use_cache=True
+            codes=codes, use_cache=not no_cache
         )
         return JSONResponse({
             'data': [
@@ -322,22 +323,24 @@ async def get_quotes_market_status():
     try:
         from datetime import datetime
 
-        checker = TradingTimeChecker()
-        phase = checker.get_current_phase()
-        is_trading = checker.is_trading_time()
+        # 使用带节假日判断的交易时间检测器
+        detector = TradingTimeDetectorV2()
+        phase_info = detector.get_trading_phase()
+        is_trading = detector.is_trading_time()
         now = datetime.now()
 
         data = {
             'is_open': is_trading,
-            'phase': phase.value,
-            'phase_description': checker.get_phase_description(),
+            'phase': phase_info.value,
+            'phase_description': detector.get_phase_description(),
             'market': 'A股',
             'date': now.strftime('%Y-%m-%d'),
             'time': now.strftime('%H:%M:%S'),
             'status': '交易中' if is_trading else '休市',
-            'is_weekend': phase.name == 'WEEKEND',
-            'refresh_interval': checker.get_next_refresh_interval(),
-            'cache_ttl': checker.get_cache_ttl(),
+            'is_weekend': phase_info.value == 'weekend',
+            'is_holiday': not detector.is_trading_day(),  # 新增：是否为节假日
+            'refresh_interval': detector.get_cache_ttl(),  # 使用缓存TTL作为刷新间隔
+            'cache_ttl': detector.get_cache_ttl(),
         }
 
         logger.debug("市场状态查询: {}", data['status'])

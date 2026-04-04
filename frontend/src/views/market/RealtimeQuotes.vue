@@ -257,12 +257,12 @@
 
           <div class="trade-section">
             <div class="price-display">
-              <div :class="['current-price', currentQuote.change >= 0 ? 'positive' : 'negative']">
-                {{ currentQuote.price || '--' }}
+              <div :class="['current-price', realtimeQuote.quote.value.change >= 0 ? 'positive' : 'negative']">
+                {{ realtimeQuote.quote.value.price || '--' }}
               </div>
-              <div :class="['price-change', currentQuote.change >= 0 ? 'positive' : 'negative']">
-                {{ currentQuote.change >= 0 ? '+' : '' }}{{ currentQuote.change }}
-                ({{ currentQuote.change_percent >= 0 ? '+' : '' }}{{ currentQuote.change_percent }}%)
+              <div :class="['price-change', realtimeQuote.quote.value.change >= 0 ? 'positive' : 'negative']">
+                {{ realtimeQuote.quote.value.change >= 0 ? '+' : '' }}{{ realtimeQuote.quote.value.change }}
+                ({{ realtimeQuote.quote.value.change_percent >= 0 ? '+' : '' }}{{ realtimeQuote.quote.value.change_percent }}%)
               </div>
             </div>
           </div>
@@ -271,7 +271,7 @@
             <div class="section-title">{{ isZh ? '五档盘口' : 'Order Book' }}</div>
             <div class="order-book">
               <div class="order-column">
-                <div v-for="(ask, i) in asks.slice().reverse()" :key="'ask'+i" class="order-row sell">
+                <div v-for="(ask, i) in realtimeQuote.asks.value.slice().reverse()" :key="'ask'+i" class="order-row sell">
                   <span>{{ isZh ? '卖' : 'Sell' }} {{ i + 1 }}</span>
                   <span class="order-price">{{ ask.price }}</span>
                   <span class="order-size">
@@ -281,7 +281,7 @@
                 </div>
               </div>
               <div class="order-column">
-                <div v-for="(bid, i) in bids" :key="'bid'+i" class="order-row buy">
+                <div v-for="(bid, i) in realtimeQuote.bids.value" :key="'bid'+i" class="order-row buy">
                   <span>{{ isZh ? '买' : 'Buy' }} {{ i + 1 }}</span>
                   <span class="order-price">{{ bid.price }}</span>
                   <span class="order-size">
@@ -298,84 +298,84 @@
             <div class="info-grid">
               <div class="info-item">
                 <div class="info-label">{{ isZh ? '开盘' : 'Open' }}</div>
-                <div class="info-value">{{ currentQuote.open || '--' }}</div>
+                <div class="info-value">{{ realtimeQuote.quote.value.open || '--' }}</div>
               </div>
               <div class="info-item">
                 <div class="info-label">{{ isZh ? '最高' : 'High' }}</div>
-                <div class="info-value">{{ currentQuote.high || '--' }}</div>
+                <div class="info-value">{{ realtimeQuote.quote.value.high || '--' }}</div>
               </div>
               <div class="info-item">
                 <div class="info-label">{{ isZh ? '最低' : 'Low' }}</div>
-                <div class="info-value">{{ currentQuote.low || '--' }}</div>
+                <div class="info-value">{{ realtimeQuote.quote.value.low || '--' }}</div>
               </div>
               <div class="info-item">
                 <div class="info-label">{{ isZh ? '昨收' : 'Prev' }}</div>
-                <div class="info-value">{{ currentQuote.prev_close || '--' }}</div>
+                <div class="info-value">{{ realtimeQuote.quote.value.prev_close || '--' }}</div>
               </div>
               <div class="info-item">
                 <div class="info-label">{{ isZh ? '成交量' : 'Volume' }}</div>
-                <div class="info-value">{{ formatVolume(currentQuote.volume) }}</div>
+                <div class="info-value">{{ formatVolume(realtimeQuote.quote.value.volume) }}</div>
               </div>
               <div class="info-item">
                 <div class="info-label">{{ isZh ? '成交额' : 'Amount' }}</div>
-                <div class="info-value">{{ formatAmount(currentQuote.amount) }}</div>
+                <div class="info-value">{{ formatAmount(realtimeQuote.quote.value.amount) }}</div>
               </div>
               <div class="info-item">
                 <div class="info-label">{{ isZh ? '换手率' : 'Turnover' }}</div>
-                <div class="info-value">{{ currentQuote.turnover_rate ? currentQuote.turnover_rate + '%' : '--' }}</div>
+                <div class="info-value">{{ realtimeQuote.quote.value.turnover_rate ? realtimeQuote.quote.value.turnover_rate + '%' : '--' }}</div>
               </div>
               <div class="info-item">
                 <div class="info-label">{{ isZh ? '总量' : 'Volume' }}</div>
-                <div class="info-value">{{ formatVolume(currentQuote.volume) }}</div>
+                <div class="info-value">{{ formatVolume(realtimeQuote.quote.value.volume) }}</div>
               </div>
               <div class="info-item">
                 <div class="info-label">{{ isZh ? '振幅' : 'Amplitude' }}</div>
-                <div class="info-value">{{ currentQuote.amplitude ? currentQuote.amplitude + '%' : '--' }}</div>
+                <div class="info-value">{{ realtimeQuote.quote.value.amplitude ? realtimeQuote.quote.value.amplitude + '%' : '--' }}</div>
               </div>
               <div class="info-item">
                 <div class="info-label">{{ isZh ? '量比' : 'Vol Ratio' }}</div>
-                <div class="info-value" :class="currentQuote.volume_ratio > 1 ? 'positive' : currentQuote.volume_ratio < 1 ? 'negative' : ''">{{ currentQuote.volume_ratio || '--' }}</div>
+                <div class="info-value" :class="realtimeQuote.quote.value.volume_ratio > 1 ? 'positive' : realtimeQuote.quote.value.volume_ratio < 1 ? 'negative' : ''">{{ realtimeQuote.quote.value.volume_ratio || '--' }}</div>
               </div>
               <div class="info-item">
                 <div class="info-label">{{ isZh ? '外盘' : 'Outer' }}</div>
-                <div class="info-value positive">{{ formatVol(currentQuote.outer_vol) }}</div>
+                <div class="info-value positive">{{ formatVol(realtimeQuote.quote.value.outer_vol) }}</div>
               </div>
               <div class="info-item">
                 <div class="info-label">{{ isZh ? '内盘' : 'Inner' }}</div>
-                <div class="info-value negative">{{ formatVol(currentQuote.inner_vol) }}</div>
+                <div class="info-value negative">{{ formatVol(realtimeQuote.quote.value.inner_vol) }}</div>
               </div>
               <div class="info-item">
                 <div class="info-label">{{ isZh ? '市盈率' : 'P/E' }}</div>
-                <div class="info-value">{{ currentQuote.pe_ratio || '--' }}</div>
+                <div class="info-value">{{ realtimeQuote.quote.value.pe_ratio || '--' }}</div>
               </div>
               <div class="info-item">
                 <div class="info-label">{{ isZh ? '市净率' : 'P/B' }}</div>
-                <div class="info-value">{{ currentQuote.pb_ratio || '--' }}</div>
+                <div class="info-value">{{ realtimeQuote.quote.value.pb_ratio || '--' }}</div>
               </div>
               <div class="info-item">
                 <div class="info-label">{{ isZh ? '股息率' : 'Div Yield' }}</div>
-                <div class="info-value">{{ currentQuote.dy_ratio ? currentQuote.dy_ratio + '%' : '--' }}</div>
+                <div class="info-value">{{ realtimeQuote.quote.value.dy_ratio ? realtimeQuote.quote.value.dy_ratio + '%' : '--' }}</div>
               </div>
               <div class="info-item">
                 <div class="info-label">{{ isZh ? '涨停价' : 'Limit Up' }}</div>
-                <div class="info-value positive">{{ currentQuote.zt_price || '--' }}</div>
+                <div class="info-value positive">{{ realtimeQuote.quote.value.zt_price || '--' }}</div>
               </div>
               <div class="info-item">
                 <div class="info-label">{{ isZh ? '跌停价' : 'Limit Down' }}</div>
-                <div class="info-value negative">{{ currentQuote.dt_price || '--' }}</div>
+                <div class="info-value negative">{{ realtimeQuote.quote.value.dt_price || '--' }}</div>
               </div>
               <div class="info-item">
                 <div class="info-label">{{ isZh ? '贝塔系数' : 'Beta' }}</div>
-                <div class="info-value">{{ currentQuote.beta || '--' }}</div>
+                <div class="info-value">{{ realtimeQuote.quote.value.beta || '--' }}</div>
               </div>
               <div class="info-item">
                 <div class="info-label">{{ isZh ? '总股本' : 'Shares' }}</div>
-                <div class="info-value">{{ formatShares(currentQuote.total_shares) }}</div>
+                <div class="info-value">{{ formatShares(realtimeQuote.quote.value.total_shares) }}</div>
               </div>
               <div class="info-item" style="grid-column: 1 / -1;">
                 <div class="data-source-info">
                   <span class="data-source-label">{{ isZh ? '数据源' : 'Source' }}</span>
-                  <span class="data-source-value">{{ currentQuote.data_source }}</span>
+                  <span class="data-source-value">{{ realtimeQuote.quote.value.data_source }}</span>
                 </div>
               </div>
             </div>
@@ -389,7 +389,7 @@
         <div class="statusbar-section">
           <span class="stock-name-display">{{ currentStockName }}</span>
           <div class="statusbar-divider"></div>
-          <span>{{ isZh ? '成交' : 'Vol' }}: {{ formatAmount(currentQuote.amount) }}</span>
+          <span>{{ isZh ? '成交' : 'Vol' }}: {{ formatAmount(realtimeQuote.quote.value.amount) }}</span>
           <div class="statusbar-divider"></div>
           <template v-for="idx in indices" :key="idx.code">
             <span class="index-item">
@@ -401,7 +401,7 @@
             </span>
             <div class="statusbar-divider"></div>
           </template>
-          <span style="margin-left: auto; color: #4a4f60;">实时行情</span>
+          <span style="margin-left: auto; color: #4a4f60;">{{ statusbarText }}</span>
         </div>
       </div>
     </div>
@@ -428,36 +428,14 @@ import { createKlineWebSocket, type KlineBar } from '@/services/klineWebSocket'
 import { createKlineAggregator, type Timeframe } from '@/services/klineAggregator'
 import { initScheduler, getScheduler, type RefreshScheduler } from '@/utils/refreshScheduler'
 import { useKlineData } from '@/composables/useKlineData'
+import { useKlineBatch } from '@/composables/useKlineBatch'
+import { useMiniCharts, generateSparklinePoints } from '@/composables/useMiniCharts'
+import { useRealtimeQuote, type QuoteData } from '@/composables/useRealtimeQuote'
 import { UserPriceAlerts } from '@/components/charts/plugins'
 
 // 类型定义
 type ChartApi = any
 type SeriesApi = any
-
-interface QuoteData {
-  price: string | number
-  change: number
-  change_percent: number
-  open: string | number
-  high: string | number
-  low: string | number
-  prev_close: string | number
-  volume: number
-  amount: number
-  turnover_rate: number
-  amplitude: number
-  volume_ratio: number
-  outer_vol: number
-  inner_vol: number
-  pe_ratio: number
-  pb_ratio: number
-  dy_ratio: number
-  zt_price: string | number
-  dt_price: string | number
-  beta: number
-  total_shares: number
-  data_source: string
-}
 
 // 周期选项（响应语言切换）
 const timeframes = computed(() => [
@@ -495,16 +473,30 @@ const {
   autoLoad: false
 })
 
+// ========== Composables: 统一数据管理 ==========
+// 实时行情数据（五档盘口 + 统计数据）
+const realtimeQuote = useRealtimeQuote(selectedStock)
+
+// 批量预加载（用于缓存其他股票的其他周期）
+const klineBatch = useKlineBatch()
+
+// 迷你图数据（自选股列表的分时图）
+const miniCharts = useMiniCharts()
+
+// 转换 Map 为 Record 格式（兼容 WatchlistPanel）
+const miniChartsData = computed(() => {
+  const result: Record<string, Array<{time: Date, close: number}>> = {}
+  for (const [symbol, data] of miniCharts.data.value.entries()) {
+    result[symbol] = data
+  }
+  return result
+})
+
 // 智能刷新调度器
 let scheduler: RefreshScheduler | null = null
 
 const loading = ref(false)
 const adjustType = ref('qfq')
-
-// 后端 change_pct 字段兼容工具（pytdx 返回 change_pct，部分接口返回 change_percent）
-const getChangePct = (q: any): number => parseFloat(Number(q.change_pct ?? q.change_percent ?? 0).toFixed(2))
-
-// miniCharts removed, using miniChartsData with time-based X-axis instead
 
 // 沪深指数
 const indices = ref([
@@ -513,50 +505,7 @@ const indices = ref([
   { code: '399006.SZ', name: '创业板', price: '--', change: 0 },
 ])
 
-// 当前行情数据
-const currentQuote = ref<QuoteData>({
-  price: '--',
-  change: 0,
-  change_percent: 0,
-  open: '--',
-  high: '--',
-  low: '--',
-  prev_close: '--',
-  volume: 0,
-  amount: 0,
-  turnover_rate: 0,
-  amplitude: 0,
-  volume_ratio: 0,
-  outer_vol: 0,
-  inner_vol: 0,
-  pe_ratio: 0,
-  pb_ratio: 0,
-  dy_ratio: 0,
-  zt_price: '--',
-  dt_price: '--',
-  beta: 0,
-  total_shares: 0,
-  data_source: 'unknown'
-})
-
 // 自选股列表现在使用 DataStore (dataStore.watchlist)
-
-// 五档盘口数据（从API获取）
-const asks = ref([
-  { price: '--', size: 0 },
-  { price: '--', size: 0 },
-  { price: '--', size: 0 },
-  { price: '--', size: 0 },
-  { price: '--', size: 0 }
-])
-
-const bids = ref([
-  { price: '--', size: 0 },
-  { price: '--', size: 0 },
-  { price: '--', size: 0 },
-  { price: '--', size: 0 },
-  { price: '--', size: 0 }
-])
 
 // 图表实例
 const chartContainer = ref<HTMLElement>()
@@ -615,12 +564,27 @@ const currentStockNameForPanel = computed(() => {
   const stock = dataStore.watchlist.find(s => s.symbol === selectedStock.value)
   if (stock) return stock.name
 
+  // 从所有分组中查找
+  for (const group of dataStore.watchlistGroups) {
+    const groupStock = group.stocks.find(s => s.symbol === selectedStock.value)
+    if (groupStock) return groupStock.name
+  }
+
   // 其次从实时行情获取
   const quote = dataStore.quotes[selectedStock.value]
   if (quote && quote.name) return quote.name
 
   // 最后返回代码
   return selectedStock.value
+})
+
+// 状态栏文字（直接显示市场状态）
+const statusbarText = computed(() => {
+  const status = marketStatusCache.value
+  if (!status) return '行情'
+
+  // 直接显示市场状态：交易中 / 休市
+  return status.status || '行情'
 })
 
 // 格式化成交量
@@ -631,147 +595,9 @@ const formatVolume = (vol: number): string => {
   return vol.toString()
 }
 
-// 迷你折线图数据：存储带时间戳的K线 {time: Date, close: number}
-const miniChartsData = ref<Record<string, Array<{time: Date, close: number}>>>({})
-
-// 后台预加载自选股列表的K线数据（无感缓存）
-let preloadAbortController: AbortController | null = null
-
-const preloadWatchlistKlines = async () => {
-  const otherStocks = dataStore.watchlist.filter(s => s.symbol !== selectedStock.value)
-  if (otherStocks.length === 0) return
-
-  // 要预加载的周期（当前周期 + 常用周期）
-  const periodsToPreload = Array.from(new Set([
-    currentTimeframe.value,
-    '1m', '5m', '1d'  // 常用周期
-  ]))
-
-  console.log('[Preload] 开始后台预加载', otherStocks.length, '只自选股，周期:', periodsToPreload)
-
-  // 取消之前的预加载任务
-  if (preloadAbortController) {
-    preloadAbortController.abort()
-  }
-  preloadAbortController = new AbortController()
-  const signal = preloadAbortController.signal
-
-  let completed = 0
-  const total = otherStocks.length * periodsToPreload.length
-
-  for (const stock of otherStocks) {
-    for (const period of periodsToPreload) {
-      // 检查是否被取消
-      if (signal.aborted) return
-
-      // 延迟执行，避免阻塞主线程和突发请求
-      await new Promise(resolve => setTimeout(resolve, 100))
-
-      try {
-        // 低优先级获取，只缓存不显示（count=300足够近期使用）
-        await fetchKline(stock.symbol, period, 300, adjustType.value)
-        completed++
-
-        // 每完成5个打印一次日志
-        if (completed % 5 === 0 || completed === total) {
-          console.log(`[Preload] 进度: ${completed}/${total}`)
-        }
-      } catch (e) {
-        // 静默失败，不影响用户体验
-        console.debug(`[Preload] ${stock.symbol} ${period} 预加载失败`)
-      }
-    }
-  }
-
-  console.log('[Preload] 预加载完成，已缓存', completed, '条数据')
-}
-
-// 迷你折线图：获取自选股的当天 1 分钟收盘价
-const loadMiniCharts = async () => {
-  // 收集所有分组中的股票（去重）
-  const allStocksMap = new Map<string, string>()
-  for (const group of dataStore.watchlistGroups) {
-    for (const stock of group.stocks) {
-      allStocksMap.set(stock.symbol, stock.symbol)
-    }
-  }
-  const allStocks = Array.from(allStocksMap.values())
-
-  console.log(`[RealtimeQuotes] 加载迷你分时图: ${allStocks.length} 只股票`)
-
-  const tasks = allStocks.map(async (symbol) => {
-    try {
-      const res = await fetchKline(symbol, '1m', 240, 'none')  // 1分钟，全天240根
-      if (res.data && res.data.length >= 5) {
-        // 转换为带时间戳的数据，并按时间排序
-        const barsWithTime = res.data
-          .map((b: KlineItem) => ({
-            time: new Date(Number(b.time)),
-            close: Number(b.close)
-          }))
-          .sort((a, b) => a.time.getTime() - b.time.getTime())
-
-        // 找到最新一天的开盘时间
-        const latestTime = barsWithTime[barsWithTime.length - 1].time
-        const dayOpen = new Date(latestTime)
-        dayOpen.setHours(9, 30, 0, 0)
-
-        // 只保留当天开盘之后的数据
-        const todayBars = barsWithTime.filter(b => b.time >= dayOpen)
-        miniChartsData.value[symbol] = todayBars
-        console.log(`[RealtimeQuotes] 迷你图加载成功: ${symbol}, ${todayBars.length} 条数据`)
-      } else {
-        miniChartsData.value[symbol] = []
-        console.log(`[RealtimeQuotes] 迷你图无数据: ${symbol}`)
-      }
-    } catch (error) {
-      console.error(`[RealtimeQuotes] 迷你图加载失败: ${symbol}`, error)
-      miniChartsData.value[symbol] = []
-    }
-  })
-  await Promise.all(tasks)
-  console.log(`[RealtimeQuotes] 迷你图加载完成`)
-}
-
 // 将带时间戳的价格数组转为 SVG polyline points 字符串
 // X轴：按交易分钟数映射（A股240个交易分钟）
-// Y轴：价格映射
-const sparklinePoints = (data: Array<{time: Date, close: number}>): string => {
-  if (!data || data.length < 2) return ''
-  const W = 120, H = 28
-
-  // A股交易时间：240个1分钟K线
-  // 上午：9:30-11:30（120分钟）
-  // 下午：13:00-15:00（120分钟）
-  const TOTAL_TRADING_MINUTES = 240
-
-  const prices = data.map(d => d.close)
-  const min = Math.min(...prices)
-  const max = Math.max(...prices)
-  const range = max - min || 1
-
-  return data.map((d) => {
-    const hour = d.time.getHours()
-    const minute = d.time.getMinutes()
-
-    // 计算交易分钟数（从0开始）
-    let tradingMinutes = (hour - 9) * 60 + (minute - 30)
-
-    // 下午时段减去中午休市的90分钟（11:30-13:00）
-    if (hour >= 13) {
-      tradingMinutes -= 90
-    }
-
-    // 计算在240个交易分钟中的位置（0-1）
-    const position = tradingMinutes / TOTAL_TRADING_MINUTES
-
-    // 限制在 0-1 范围内
-    const clampedPos = Math.max(0, Math.min(1, position))
-    const x = clampedPos * W
-    const y = H - ((d.close - min) / range) * (H - 4) - 2
-    return `${x.toFixed(1)},${y.toFixed(1)}`
-  }).join(' ')
-}
+// Y轴：价格映射（已移至 useMiniCharts.generateSparklinePoints）
 
 const sparklineColor = (data: Array<{time: Date, close: number}>): string => {
   if (!data || data.length < 2) return '#4a4f60'
@@ -853,12 +679,11 @@ const initChart = () => {
       dateFormat: 'yyyy-MM-dd',
       timeFormatter: (timestamp: number) => {
         const date = new Date(timestamp * 1000)
-        const beijingDate = new Date(date.getTime() + 8 * 60 * 60 * 1000)
-        const year = beijingDate.getUTCFullYear()
-        const month = String(beijingDate.getUTCMonth() + 1).padStart(2, '0')
-        const day = String(beijingDate.getUTCDate()).padStart(2, '0')
-        const hours = String(beijingDate.getUTCHours()).padStart(2, '0')
-        const minutes = String(beijingDate.getUTCMinutes()).padStart(2, '0')
+        const year = date.getFullYear()
+        const month = String(date.getMonth() + 1).padStart(2, '0')
+        const day = String(date.getDate()).padStart(2, '0')
+        const hours = String(date.getHours()).padStart(2, '0')
+        const minutes = String(date.getMinutes()).padStart(2, '0')
         // 日线/周线只显示日期，分钟线显示日期+时间
         const isDaily = currentTimeframe.value === '1d' || currentTimeframe.value === '1w'
         return isDaily
@@ -1506,7 +1331,7 @@ const checkPriceAlerts = () => {
 
   if (!currentQuote) return
 
-  const currentPrice = currentQuote.close || currentQuote.price || 0
+  const currentPrice = realtimeQuote.quote.value.close || realtimeQuote.quote.value.price || 0
   if (!currentPrice) return
 
   // 检查每个启用了提醒的价格线
@@ -1668,7 +1493,9 @@ const loadKlineData = async () => {
         ])
 
         // 更新当前股票快照（右侧详情面板）
-        updateQuoteFromSnapshot(snapshotRes)
+        if (snapshotRes.data) {
+          realtimeQuote.updateFromSnapshot(snapshotRes.data)
+        }
 
         // 批量更新所有自选股的价格到 DataStore
         if (batchRes.data && batchRes.data.length > 0) {
@@ -1699,13 +1526,32 @@ const loadKlineData = async () => {
             const q = indexMap.get(idx.code)
             if (q) {
               idx.price = q.price ? Number(q.price).toFixed(2) : '--'
-              idx.change = getChangePct(q)
+              // 内联 getChangePct 实现
+              idx.change = parseFloat(Number(q.change_pct ?? q.change_percent ?? 0).toFixed(2))
             }
           }
         }
 
         // 第三步：后台预加载其他自选股K线
-        preloadWatchlistKlines()
+        const otherStocks = dataStore.watchlist.filter(s => s.symbol !== selectedStock.value)
+        if (otherStocks.length > 0) {
+          const periodsToPreload = Array.from(new Set([
+            currentTimeframe.value,
+            '1m', '5m', '1d'  // 常用周期
+          ]))
+          const tasks = otherStocks.flatMap(stock =>
+            periodsToPreload.map(period => ({
+              symbol: stock.symbol,
+              period,
+              count: 300,
+              adjustType: adjustType.value
+            }))
+          )
+          klineBatch.preload(tasks, {
+            concurrency: 3,
+            delay: 100
+          })
+        }
       } catch (error) {
         console.error('后台加载数据失败:', error)
       }
@@ -1912,63 +1758,6 @@ const onWsBarClose = (bar: KlineBar) => {
   }
 }
 
-// ─────────────────────────────────────────────
-// 从快照数据更新当前行情和五档盘口
-// ─────────────────────────────────────────────
-const updateQuoteFromSnapshot = (quote: any) => {
-  const price = Number(quote.price) || 0
-  const prevClose = Number(quote.pre_close ?? quote.prev_close ?? quote.last_close) || 0
-  const changeAmt = Number(quote.change ?? (price - prevClose))
-  currentQuote.value = {
-    price: price ? price.toFixed(2) : '--',
-    change: parseFloat(changeAmt.toFixed(2)),
-    change_percent: getChangePct(quote),
-    open: quote.open ? Number(quote.open).toFixed(2) : '--',
-    high: quote.high ? Number(quote.high).toFixed(2) : '--',
-    low: quote.low ? Number(quote.low).toFixed(2) : '--',
-    prev_close: prevClose ? prevClose.toFixed(2) : '--',
-    volume: quote.volume || 0,
-    amount: quote.amount || 0,
-    // 新增扩展指标
-    turnover_rate: quote.turnover_rate || quote.turnover || 0,
-    volume_ratio: quote.volume_ratio || quote.LB || 0,
-    amplitude: quote.amplitude || quote.ZAF || 0,
-    pe_ratio: quote.pe_ratio || quote.dyna_pe || 0,
-    pb_ratio: quote.pb_ratio || quote.pb_mrq || 0,
-    dy_ratio: quote.dy_ratio || quote.dyr || 0,
-    zt_price: quote.zt_price ? Number(quote.zt_price).toFixed(2) : '--',
-    dt_price: quote.dt_price ? Number(quote.dt_price).toFixed(2) : '--',
-    beta: quote.beta || quote.BetaValue || 0,
-    total_shares: quote.total_shares || quote.J_zgb || 0,
-    inner_vol: quote.inner_vol || 0,
-    outer_vol: quote.outer_vol || 0,
-    data_source: quote.data_source || 'unknown'
-  }
-  updateOrderBookFromSnapshot(quote)
-}
-
-// 从快照数据更新五档盘口
-const updateOrderBookFromSnapshot = (quote: QuoteSnapshot) => {
-  // 卖盘（价格从高到低：ask5 → ask1）
-  // 注意：0 是有效值（无挂单），只有 null/undefined 才显示 '--'
-  asks.value = [
-    { price: quote.ask5 != null ? Number(quote.ask5).toFixed(2) : '--', size: quote.ask_vol5 ?? 0 },
-    { price: quote.ask4 != null ? Number(quote.ask4).toFixed(2) : '--', size: quote.ask_vol4 ?? 0 },
-    { price: quote.ask3 != null ? Number(quote.ask3).toFixed(2) : '--', size: quote.ask_vol3 ?? 0 },
-    { price: quote.ask2 != null ? Number(quote.ask2).toFixed(2) : '--', size: quote.ask_vol2 ?? 0 },
-    { price: quote.ask1 != null ? Number(quote.ask1).toFixed(2) : '--', size: quote.ask_vol1 ?? 0 }
-  ]
-
-  // 买盘（价格从低到高：bid1 → bid5）
-  bids.value = [
-    { price: quote.bid1 != null ? Number(quote.bid1).toFixed(2) : '--', size: quote.bid_vol1 ?? 0 },
-    { price: quote.bid2 != null ? Number(quote.bid2).toFixed(2) : '--', size: quote.bid_vol2 ?? 0 },
-    { price: quote.bid3 != null ? Number(quote.bid3).toFixed(2) : '--', size: quote.bid_vol3 ?? 0 },
-    { price: quote.bid4 != null ? Number(quote.bid4).toFixed(2) : '--', size: quote.bid_vol4 ?? 0 },
-    { price: quote.bid5 != null ? Number(quote.bid5).toFixed(2) : '--', size: quote.bid_vol5 ?? 0 }
-  ]
-}
-
 /** 刷新快照数据：当前股票快照 + 自选股批量快照 + 指数（不含 K线） */
 const refreshSnapshots = async () => {
   if (!selectedStock.value) return
@@ -1993,8 +1782,10 @@ const refreshSnapshots = async () => {
     console.log('[RealtimeQuotes] batchRes.data:', batchRes.data)
     console.log('[RealtimeQuotes] batchRes.data length:', batchRes.data?.length)
 
-    // 更新当前股票快照（API 直接返回 QuoteSnapshot，无需解包）
-    updateQuoteFromSnapshot(snapshotRes)
+    // 更新当前股票快照（使用 realtimeQuote composable）
+    if (snapshotRes.data) {
+      realtimeQuote.updateFromSnapshot(snapshotRes.data)
+    }
 
     // 批量更新所有自选股的价格到 DataStore
     if (batchRes.data && batchRes.data.length > 0) {
@@ -2031,7 +1822,8 @@ const refreshSnapshots = async () => {
         const q = indexMap.get(idx.code)
         if (q) {
           idx.price = q.price ? Number(q.price).toFixed(2) : '--'
-          idx.change = getChangePct(q)
+          // 内联 getChangePct 实现
+          idx.change = parseFloat(Number(q.change_pct ?? q.change_percent ?? 0).toFixed(2))
         }
       }
     }
@@ -2043,7 +1835,7 @@ const refreshSnapshots = async () => {
 
 // 计算最大订单数量（用于进度条基准）
 const maxOrderSize = computed(() => {
-  const allSizes = [...asks.value, ...bids.value].map(item => item.size)
+  const allSizes = [...realtimeQuote.asks.value, ...realtimeQuote.bids.value].map(item => item.size)
   return Math.max(...allSizes, 1) // 至少为1，避免除以0
 })
 
@@ -2137,11 +1929,8 @@ const selectStock = (code: string) => {
     refreshPriceAlertsList()
   }
 
-  // 取消之前的预加载任务
-  if (preloadAbortController) {
-    preloadAbortController.abort()
-    preloadAbortController = null
-  }
+  // 加载快照数据
+  realtimeQuote.fetchSnapshot(code)
 
   // 切换 WebSocket 连接到新股票
   connectKlineWs()
@@ -2276,16 +2065,22 @@ const startRealtimeUpdate = async () => {
   // 初始注册
   registerGroups()
 
-  // 监听分组变化，重新注册
+  // 监听分组变化，重新注册刷新任务并加载迷你图
   watch(() => dataStore.watchlistGroups, () => {
     registerGroups()
+    // 重新加载迷你图数据（支持新添加股票后自动加载）
+    const allSymbols = dataStore.watchlistGroups.flatMap(g => g.stocks.map(s => s.symbol))
+    miniCharts.loadMiniCharts(allSymbols)
   }, { deep: true })
 }
 
 onMounted(() => {
   nextTick(() => {
     initChart()
-    loadMiniCharts()
+
+    // 加载迷你图数据（从所有分组收集股票）
+    const allSymbols = dataStore.watchlistGroups.flatMap(g => g.stocks.map(s => s.symbol))
+    miniCharts.loadMiniCharts(allSymbols)
 
     // 数据预热：启动时预加载标记为预热的分组数据
     dataStore.preheatData(async (symbols) => {

@@ -43,16 +43,20 @@ export interface KlineResponse {
 /** 行情快照 */
 export interface QuoteSnapshot {
   symbol: string
+  code?: string  // 后端可能返回 code 而不是 symbol
   name: string
   price: number
   change: number
   change_percent: number
+  change_pct?: number  // 后端可能返回 change_pct
   volume: number
   amount: number
   high: number
   low: number
   open: number
+  close?: number
   prev_close: number
+  pre_close?: number  // 后端可能返回 pre_close
   timestamp: number
   bid1: number
   bid_vol1: number
@@ -74,6 +78,32 @@ export interface QuoteSnapshot {
   bid_vol5: number
   ask5: number
   ask_vol5: number
+  // 扩展字段
+  turnover_rate?: number
+  turnover?: number
+  volume_ratio?: number
+  LB?: number
+  amplitude?: number
+  ZAF?: number
+  pe_ratio?: number
+  dyna_pe?: number
+  pb_ratio?: number
+  pb_mrq?: number
+  dy_ratio?: number
+  dyr?: number
+  zt_price?: number
+  dt_price?: number
+  beta?: number
+  BetaValue?: number
+  total_shares?: number
+  J_zgb?: number
+  inner_vol?: number
+  outer_vol?: number
+  data_source?: string
+  cur_vol?: number
+  his_high?: number
+  his_low?: number
+  float_shares?: number
 }
 
 /** 快照响应 */
@@ -151,6 +181,6 @@ export const fetchSnapshotBatch = async (symbols: string[]): Promise<SnapshotRes
 
 /** 获取市场状态 */
 export const fetchMarketStatus = async (): Promise<MarketStatus> => {
-  const { data } = await rawApi.get<MarketStatus>('/quotes/market/status')
-  return data
+  const { data } = await rawApi.get<{code: number, data: MarketStatus, message: string}>('/quotes/market/status')
+  return data.data
 }

@@ -34,12 +34,13 @@ class RealtimeMarketService:
             name: 适配器名称
             force_retry: 是否强制重试初始化（用于 TdxQuant 等可能初始化失败的适配器）
         """
-        # 先检查缓存
-        cached = self._adapter_cache.get(name)
-        if cached is not None:
-            return cached
+        # 强制重试时跳过缓存，重新获取
+        if not force_retry:
+            cached = self._adapter_cache.get(name)
+            if cached is not None:
+                return cached
 
-        # 缓存未命中，创建新适配器
+        # 缓存未命中或强制重试，创建新适配器
         adapter = get_adapter(name)
         if adapter is not None:
             # 如果是 TdxQuant 且强制重试，调用强制初始化
@@ -89,12 +90,11 @@ class RealtimeMarketService:
                 if adapter and adapter.is_available():
                     return (name, adapter)
         else:
-            # 非交易时间：优先尝试 TdxQuant/XtQuant 获取完整字段
-            for name in ['tdxquant', 'xtquant', 'pytdx']:
-                # 对 TdxQuant 强制重试，避免之前的失败标志影响
-                adapter = self._get_adapter_cached(name, force_retry=(name == 'tdxquant'))
+            # 非交易时间：XtQuant/PyTdx 基本行情 + TdxQuant 财务数据
+            for name in ['xtquant', 'pytdx']:
+                adapter = self._get_adapter_cached(name)
                 if adapter and adapter.is_available():
-                    logger.info(f"非交易时间使用 {name} 获取完整行情数据")
+                    logger.info(f"非交易时间使用 {name} 获取基本行情")
                     return (name, adapter)
 
         return None
@@ -257,7 +257,9 @@ class RealtimeMarketService:
                         self._fill_calculated_fields(result[code])
 
                         # 检查是否有关键字段缺失（如量比）
-                        if self._check_missing_key_fields(quote):
+                        missing = self._check_missing_key_fields(quote)
+                        logger.info(f"[Check] {code} 缺失关键字段: {missing}, quote={quote}")
+                        if missing:
                             missing_fields_codes.append(code)
 
                         # 4. 缓存完整数据
@@ -286,7 +288,8 @@ class RealtimeMarketService:
             如果缺少关键字段返回 True
         """
         # 定义关键字段（TdxQuant有但PyTdx没有的）
-        key_fields = ['volume_ratio', 'turnover_rate', 'pe_ratio', 'pb_ratio']
+        key_fields = ['volume_ratio', 'turnover_rate', 'pe_ratio', 'pb_ratio',
+                      'inner_vol', 'outer_vol', 'dy_ratio', 'beta']
 
         for field in key_fields:
             value = quote.get(field)
@@ -307,15 +310,61 @@ class RealtimeMarketService:
             result: 当前结果字典（会被修改）
             codes: 需要补充字段的股票代码列表
         """
-        # 尝试备用数据源（优先级：tdxquant > xtquant > pytdx）
-        fallback_sources = ['tdxquant', 'xtquant']
+        # 尝试备用数据源（优先级：tdxquant > pytdx > xtquant）
+        # pytdx 有 volume_ratio, turnover_rate 等字段
+        fallback_sources = ['tdxquant', 'pytdx', 'xtquant']
 
         for fallback_name in fallback_sources:
             if not codes:
                 break
 
-            fallback_adapter = self._get_adapter_cached(fallback_name)
-            if not fallback_adapter or not fallback_adapter.is_available():
+            logger.info(f"[Fallback] 尝试从 {fallback_name} 补充 {len(codes)} 只股票的缺失字段")
+            fallback_adapter = self._get_adapter_cached(fallback_name, force_retry=(fallback_name == 'tdxquant'))
+            if not fallback_adapter:
+                logger.warning(f"[Fallback] {fallback_name} 适配器获取失败")
+                continue
+
+            # tdxquant 特殊处理：即使 is_available() 为 False，也尝试获取完整行情（包含财务数据）
+            if fallback_name == 'tdxquant' and fallback_adapter:
+                logger.info(f"[Fallback] 尝试从 TdxQuant 获取完整行情（强制模式，含财务数据）")
+                still_missing = []
+                for code in codes:
+                    try:
+                        # 直接调用 get_quote() 获取完整行情（包含 pe_ratio, pb_ratio, beta, inner_vol, outer_vol 等全部字段）
+                        tdx_quotes = fallback_adapter.get_quote([code])
+                        if tdx_quotes and code in tdx_quotes and tdx_quotes[code]:
+                            tdx_quote = tdx_quotes[code]
+                            filled_count = 0
+                            # 合并所有 tdxquant 独有的字段
+                            for key, value in tdx_quote.items():
+                                current_value = result[code].get(key)
+                                # 只补充缺失或为0的字段
+                                if (not current_value or current_value == 0 or current_value == '0') and value:
+                                    result[code][key] = value
+                                    filled_count += 1
+
+                            if filled_count > 0:
+                                logger.info(f"[Fallback] {code} 从 TdxQuant 补充了 {filled_count} 个字段")
+
+                                # 更新缓存
+                                self._quote_cache.set(
+                                    f"quote:{code}",
+                                    result[code],
+                                    ttl=TradingTimeChecker.get_cache_ttl()
+                                )
+                            else:
+                                still_missing.append(code)
+                        else:
+                            still_missing.append(code)
+                    except Exception as e:
+                        logger.warning(f"[Fallback] {code} 从 TdxQuant 获取行情失败: {e}")
+                        still_missing.append(code)
+                codes = still_missing
+                if codes:
+                    continue  # 如果还有股票需要补充，尝试下一个数据源
+
+            if not fallback_adapter.is_available():
+                logger.warning(f"[Fallback] {fallback_name} 不可用")
                 continue
 
             logger.info(f"从 {fallback_name} 补充 {len(codes)} 只股票的缺失字段")
@@ -337,7 +386,8 @@ class RealtimeMarketService:
 
                     # 合并关键字段（只补充缺失的）
                     key_fields = ['volume_ratio', 'turnover_rate', 'pe_ratio',
-                                  'pb_ratio', 'amplitude', 'zt_price', 'dt_price']
+                                  'pb_ratio', 'amplitude', 'zt_price', 'dt_price',
+                                  'inner_vol', 'outer_vol', 'dy_ratio', 'beta']
 
                     filled_count = 0
                     for field in key_fields:

@@ -124,7 +124,8 @@
         :key="item.symbol"
         :class="['stock-item', { selected: selectedStock === item.symbol }]"
         @click="selectStock(item.symbol)"
-        @contextmenu.prevent="handleRemoveStock(item.symbol)"
+        @dblclick="showStockDetail(item.symbol)"
+        @contextmenu.prevent="showStockMenu($event, item.symbol)"
       >
         <!-- 股票信息（左列） -->
         <div class="stock-info">
@@ -133,7 +134,7 @@
         </div>
 
         <!-- 迷你折线图（中列） -->
-        <svg v-if="miniChartsData[item.symbol]" class="mini-chart" viewBox="0 0 120 28" preserveAspectRatio="none">
+        <svg v-if="miniChartsData && miniChartsData[item.symbol] && miniChartsData[item.symbol].length >= 2" class="mini-chart" viewBox="0 0 120 28" preserveAspectRatio="none">
           <polyline
             :points="sparklinePoints(miniChartsData[item.symbol])"
             fill="none"
@@ -156,6 +157,58 @@
 
         <!-- 删除按钮（hover显示） -->
         <div class="delete-hint" @click.stop="handleRemoveStock(item.symbol)">×</div>
+      </div>
+
+      <!-- 股票右键菜单 -->
+      <div
+        v-if="stockMenuVisible"
+        class="context-menu"
+        :style="{ left: stockMenuX + 'px', top: stockMenuY + 'px' }"
+        @click="hideStockMenu"
+      >
+        <div class="menu-item" @click.stop="selectStock(selectedStockForMenu)">
+          {{ isZh ? '查看详情' : 'View Details' }}
+        </div>
+        <div class="menu-item warning" @click.stop="handleRefreshStock">
+          {{ isZh ? '刷新数据' : 'Refresh Data' }}
+        </div>
+        <div class="menu-item" @click.stop="handleClearCache">
+          {{ isZh ? '清除缓存' : 'Clear Cache' }}
+        </div>
+        <div class="menu-item danger" @click.stop="handleRemoveStock(selectedStockForMenu)">
+          {{ isZh ? '删除股票' : 'Remove Stock' }}
+        </div>
+      </div>
+
+      <!-- 个股详情弹窗 -->
+      <div v-if="stockDetailVisible" class="stock-detail-overlay" @click="hideStockDetail">
+        <div class="stock-detail-dialog" @click.stop>
+          <div class="detail-header">
+            <h3>{{ stockDetailInfo.symbol }}</h3>
+            <span class="detail-name">{{ stockDetailInfo.name }}</span>
+            <button class="detail-close" @click="hideStockDetail">×</button>
+          </div>
+          <div class="detail-body">
+            <div class="detail-info">
+              <div class="detail-row">
+                <span class="label">{{ isZh ? '股票代码' : 'Code' }}:</span>
+                <span class="value">{{ stockDetailInfo.symbol }}</span>
+              </div>
+              <div class="detail-row">
+                <span class="label">{{ isZh ? '股票名称' : 'Name' }}:</span>
+                <span class="value">{{ stockDetailInfo.name }}</span>
+              </div>
+            </div>
+            <div class="detail-actions">
+              <button class="detail-btn primary" @click="handleSelectFromDetail">
+                {{ isZh ? '查看K线图' : 'View Chart' }}
+              </button>
+              <button class="detail-btn" @click="hideStockDetail">
+                {{ isZh ? '关闭' : 'Close' }}
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- 空状态 -->
@@ -198,6 +251,12 @@ const groupMenuX = ref(0)
 const groupMenuY = ref(0)
 const selectedGroupForMenu = ref<any>(null)
 
+// 股票右键菜单
+const stockMenuVisible = ref(false)
+const stockMenuX = ref(0)
+const stockMenuY = ref(0)
+const selectedStockForMenu = ref('')
+
 // 重命名对话框
 const renameDialogVisible = ref(false)
 const newGroupName = ref('')
@@ -209,6 +268,10 @@ const selectedRefreshInterval = ref(5000)
 
 // 监控面板
 const monitorVisible = ref(false)
+
+// 股票详情弹窗
+const stockDetailVisible = ref(false)
+const stockDetailInfo = ref({ symbol: '', name: '' })
 
 // 刷新频率选项
 const refreshOptions = computed(() => [
@@ -272,6 +335,20 @@ const showGroupMenu = (event: MouseEvent, group: any) => {
 const hideGroupMenu = () => {
   groupMenuVisible.value = false
   selectedGroupForMenu.value = null
+}
+
+// 显示股票右键菜单
+const showStockMenu = (event: MouseEvent, symbol: string) => {
+  selectedStockForMenu.value = symbol
+  stockMenuX.value = event.clientX
+  stockMenuY.value = event.clientY
+  stockMenuVisible.value = true
+}
+
+// 隐藏股票右键菜单
+const hideStockMenu = () => {
+  stockMenuVisible.value = false
+  selectedStockForMenu.value = ''
 }
 
 // 显示重命名对话框
@@ -378,6 +455,65 @@ const handleRemoveStock = (symbol: string) => {
   if (currentGroup) {
     dataStore.removeFromGroup(currentGroup.id, symbol)
   }
+  hideStockMenu()
+}
+
+// 刷新股票数据 - 清除缓存并重新加载
+const handleRefreshStock = async () => {
+  if (!selectedStockForMenu.value) return
+
+  const symbol = selectedStockForMenu.value
+  hideStockMenu()
+
+  try {
+    // 清除前端 IndexedDB 缓存
+    const { deleteSymbolCache } = await import('@/services/idbKline')
+    await deleteSymbolCache(symbol)
+    console.log(`[WatchlistPanel] 已清除 ${symbol} 的 K线缓存`)
+
+    // 触发重新加载（通过选中该股票）
+    selectStock(symbol)
+
+    console.log(`[WatchlistPanel] ${symbol} 缓存已清除，正在重新加载...`)
+  } catch (error) {
+    console.error('[WatchlistPanel] 刷新股票失败:', error)
+  }
+}
+
+// 清除缓存 - 只清除前端缓存，不删除自选股
+const handleClearCache = async () => {
+  if (!selectedStockForMenu.value) return
+
+  const symbol = selectedStockForMenu.value
+  hideStockMenu()
+
+  try {
+    // 清除前端 IndexedDB 缓存
+    const { deleteSymbolCache } = await import('@/services/idbKline')
+    await deleteSymbolCache(symbol)
+    console.log(`[WatchlistPanel] 已清除 ${symbol} 的所有周期缓存`)
+
+    console.log(`[WatchlistPanel] ${symbol} 缓存已清除`)
+  } catch (error) {
+    console.error('[WatchlistPanel] 清除缓存失败:', error)
+  }
+}
+
+// 显示股票详情（双击）- 在主图表中显示
+// TODO: 旧版有数据管理弹窗（删除HotDB错误数据、重新下载），待恢复
+const showStockDetail = (symbol: string) => {
+  selectStock(symbol)
+}
+
+// 隐藏股票详情弹窗
+const hideStockDetail = () => {
+  stockDetailVisible.value = false
+}
+
+// 从详情弹窗选择股票
+const handleSelectFromDetail = () => {
+  selectStock(stockDetailInfo.value.symbol)
+  hideStockDetail()
 }
 
 // 格式化价格
@@ -410,25 +546,15 @@ const getChangeClass = (item: any): string => {
 const sparklinePoints = (data: Array<{time: Date, close: number}>): string => {
   if (!data || data.length < 2) return ''
   const W = 120, H = 28
-  const TOTAL_TRADING_MINUTES = 240
 
   const prices = data.map(d => d.close)
   const min = Math.min(...prices)
   const max = Math.max(...prices)
   const range = max - min || 1
 
-  return data.map((d) => {
-    const hour = d.time.getHours()
-    const minute = d.time.getMinutes()
-
-    let tradingMinutes = (hour - 9) * 60 + (minute - 30)
-    if (hour >= 13) {
-      tradingMinutes -= 90
-    }
-
-    const position = tradingMinutes / TOTAL_TRADING_MINUTES
-    const clampedPos = Math.max(0, Math.min(1, position))
-    const x = clampedPos * W
+  // 简化处理：按索引均匀分布（不依赖时间戳）
+  return data.map((d, i) => {
+    const x = (i / (data.length - 1)) * W
     const y = H - ((d.close - min) / range) * (H - 4) - 2
     return `${x.toFixed(1)},${y.toFixed(1)}`
   }).join(' ')
@@ -643,6 +769,14 @@ onUnmounted(() => {
 
 .menu-item:hover {
   background: #2a2e39;
+}
+
+.menu-item.warning {
+  color: #ff9800;
+}
+
+.menu-item.warning:hover {
+  background: rgba(255, 152, 0, 0.15);
 }
 
 .menu-item.danger {
@@ -937,5 +1071,131 @@ onUnmounted(() => {
 
 .menu-item.checked:hover {
   background: rgba(16, 185, 129, 0.2);
+}
+
+/* 股票详情弹窗 */
+.stock-detail-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+}
+
+.stock-detail-dialog {
+  background: #1e222d;
+  border-radius: 8px;
+  min-width: 400px;
+  max-width: 90vw;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+}
+
+.detail-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 20px;
+  border-bottom: 1px solid #2a2e39;
+}
+
+.detail-header h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #d1d4dc;
+}
+
+.detail-name {
+  font-size: 13px;
+  color: #787b86;
+}
+
+.detail-close {
+  margin-left: auto;
+  background: none;
+  border: none;
+  font-size: 24px;
+  color: #787b86;
+  cursor: pointer;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.detail-close:hover {
+  background: #2a2e39;
+  color: #d1d4dc;
+}
+
+.detail-body {
+  padding: 20px;
+}
+
+.detail-info {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.detail-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.detail-row .label {
+  font-size: 13px;
+  color: #787b86;
+  min-width: 80px;
+}
+
+.detail-row .value {
+  font-size: 14px;
+  color: #d1d4dc;
+  font-weight: 500;
+}
+
+.detail-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.detail-btn {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.detail-btn.primary {
+  background: #ef5350;
+  color: white;
+}
+
+.detail-btn.primary:hover {
+  background: #f46f6c;
+}
+
+.detail-btn:not(.primary) {
+  background: #2a2e39;
+  color: #d1d4dc;
+}
+
+.detail-btn:not(.primary):hover {
+  background: #363a45;
 }
 </style>
