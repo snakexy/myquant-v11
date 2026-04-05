@@ -535,8 +535,59 @@ let chartResizeObserver: ResizeObserver | null = null
 // ========== 技术指标相关 ==========
 // 指标窗口显示状态
 const showIndicatorPanel = ref(false)
-const activeIndicators = ref<string[]>(['MACD'])  // 独立指标
-const overlayIndicators = ref<string[]>([])  // 主图叠加指标(MA/BOLL)
+// ========== 指标状态存储 ==========
+const INDICATOR_STORAGE_KEY = 'myquant_indicator_settings'
+
+// 从localStorage加载保存的指标设置
+function loadSavedIndicators(): {
+  activeIndicators: string[]
+  overlayIndicators: string[]
+  indicatorParams: Record<string, any>
+  paneHeights: Record<string, number>
+} {
+  try {
+    const saved = localStorage.getItem(INDICATOR_STORAGE_KEY)
+    console.log('[指标] 读取localStorage:', saved)
+    if (saved) {
+      const parsed = JSON.parse(saved)
+      console.log('[指标] 解析结果:', parsed)
+      return {
+        activeIndicators: parsed.activeIndicators || ['MACD'],
+        overlayIndicators: parsed.overlayIndicators || [],
+        indicatorParams: parsed.indicatorParams || {},
+        paneHeights: parsed.paneHeights || {}
+      }
+    }
+  } catch (e) {
+    console.warn('[指标] 加载存储设置失败:', e)
+  }
+  console.log('[指标] 使用默认设置')
+  return { activeIndicators: ['MACD'], overlayIndicators: [], indicatorParams: {}, paneHeights: {} }
+}
+
+const savedSettings = loadSavedIndicators()
+
+const activeIndicators = ref<string[]>(savedSettings.activeIndicators)  // 独立指标
+const overlayIndicators = ref<string[]>(savedSettings.overlayIndicators)  // 主图叠加指标(MA/BOLL)
+const indicatorParams = ref<Record<string, any>>(savedSettings.indicatorParams)  // 指标参数缓存
+const indicatorPaneHeights = ref<Record<string, number>>(savedSettings.paneHeights)  // 指标pane高度缓存
+
+// 保存指标设置到localStorage
+function saveIndicatorSettings() {
+  const settings = {
+    activeIndicators: activeIndicators.value,
+    overlayIndicators: overlayIndicators.value,
+    indicatorParams: indicatorParams.value,
+    paneHeights: indicatorPaneHeights.value
+  }
+  localStorage.setItem(INDICATOR_STORAGE_KEY, JSON.stringify(settings))
+  console.log('[指标] 保存设置:', settings)
+}
+
+// 监听指标变化，自动保存
+watch([activeIndicators, overlayIndicators, indicatorParams, indicatorPaneHeights], () => {
+  saveIndicatorSettings()
+}, { deep: true })
 
 // 主图叠加指标series存储
 const overlaySeriesMap = new Map<string, Record<string, SeriesApi>>()
@@ -1063,10 +1114,12 @@ const initIndicatorPane = (indicatorId: string): number => {
 
     indicatorSeriesMap.set(indicatorId, seriesMap)
 
-    // 设置pane伸展因子
+    // 设置pane伸展因子（从保存的设置恢复）
     const pane = chart.panes()[paneIndex]
     if (pane) {
-      pane.setStretchFactor(1)
+      const savedHeight = indicatorPaneHeights.value[indicatorId]
+      pane.setStretchFactor(savedHeight || 1)
+      console.log(`[指标] ${indicatorId} pane高度: ${savedHeight || 1}`)
     }
 
     // 配置price scale
@@ -1339,9 +1392,6 @@ const handleSettingsConfirm = (params: Record<string, any>) => {
 const showIndicatorSettings = ref(false)
 const settingsIndicatorId = ref('')
 const settingsParams = ref<Record<string, any>>({})
-
-// 指标参数缓存（用于存储用户自定义参数）
-const indicatorParams = ref<Record<string, Record<string, any>>>({})
 
 // ==================== 价格预警功能 ====================
 
@@ -2461,7 +2511,29 @@ const disconnectKlineWs = () => {
 
 // ─────────────────────────────────────────────
 // 选择股票
+
+// 保存当前指标pane高度
+function saveCurrentPaneHeights() {
+  if (!chart) return
+
+  const panes = chart.panes()
+  activeIndicators.value.forEach((indicatorId, index) => {
+    const paneIndex = index + 1  // pane 0 是主图
+    if (paneIndex < panes.length) {
+      const pane = panes[paneIndex]
+      if (pane) {
+        // 获取pane高度（用stretchFactor作为比例）
+        indicatorPaneHeights.value[indicatorId] = pane.getStretchFactor?.() || 1
+      }
+    }
+  })
+  console.log('[指标] 保存pane高度:', indicatorPaneHeights.value)
+}
+
 const selectStock = (code: string) => {
+  // 切换前保存当前pane高度
+  saveCurrentPaneHeights()
+
   selectedStock.value = code
   isInitialLoad.value = true  // 切换股票时重新适应显示范围
   // 切换价格预警：清除旧的，加载新的
@@ -2682,6 +2754,9 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  // 保存指标pane高度
+  saveCurrentPaneHeights()
+
   if (statusTimer) clearInterval(statusTimer)
   if (scheduler) {
     scheduler.destroy()

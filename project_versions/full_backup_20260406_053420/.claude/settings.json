@@ -1,0 +1,36 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash", "Read", "Write", "Edit", "Glob", "Grep",
+      "WebFetch", "WebSearch", "Task", "LSP", "NotebookEdit"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd E:/MyQuant_v11 \u0026\u0026 python .claude/scripts/plan_check.py \"$FILE\" \"$TOOL\""
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd E:/MyQuant_v11 \u0026\u0026 python .claude/scripts/check_file_scope.py \"$FILE\""
+          },
+          {
+            "type": "command",
+            "command": "cd E:/MyQuant_v11 \u0026\u0026 python .claude/scripts/check_architecture.py"
+          }
+        ]
+      }
+    ]
+  }
+}
