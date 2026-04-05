@@ -910,6 +910,14 @@ const initChart = () => {
   })
   chartResizeObserver.observe(chartContainer.value)
 
+  // 监听鼠标释放事件，保存pane高度
+  chartContainer.value.addEventListener('mouseup', () => {
+    // 延迟保存，确保pane高度已更新
+    setTimeout(() => {
+      saveCurrentPaneHeights()
+    }, 100)
+  })
+
   // 初始化价格预警插件
   if (!userPriceAlerts && candleSeries) {
     userPriceAlerts = new UserPriceAlerts({
@@ -1118,8 +1126,14 @@ const initIndicatorPane = (indicatorId: string): number => {
     const pane = chart.panes()[paneIndex]
     if (pane) {
       const savedHeight = indicatorPaneHeights.value[indicatorId]
-      pane.setStretchFactor(savedHeight || 1)
-      console.log(`[指标] ${indicatorId} pane高度: ${savedHeight || 1}`)
+      console.log(`[指标] ${indicatorId} 准备设置高度, savedHeight:`, savedHeight, 'indicatorPaneHeights:', JSON.stringify(indicatorPaneHeights.value))
+      if (savedHeight && savedHeight !== 1) {
+        pane.setStretchFactor(savedHeight)
+        console.log(`[指标] ${indicatorId} 已应用保存的高度: ${savedHeight}`)
+      } else {
+        pane.setStretchFactor(1)
+        console.log(`[指标] ${indicatorId} 使用默认高度: 1`)
+      }
     }
 
     // 配置price scale
@@ -2020,6 +2034,26 @@ const loadKlineData = async () => {
       // K线加载完成，立即结束loading
       loading.value = false
 
+      // 统一设置所有指标pane的高度（需要在所有pane创建完成后统一设置）
+      const panes = chart?.panes()
+      if (panes && panes.length > 1) {
+        // 设置主图pane
+        const mainPane = panes[0]
+        mainPane.setStretchFactor(3)  // 主图占3份
+
+        // 设置指标pane
+        for (let i = 1; i < panes.length; i++) {
+          const indicatorId = activeIndicators.value[i - 1]
+          const savedHeight = indicatorPaneHeights.value[indicatorId]
+          if (savedHeight) {
+            panes[i].setStretchFactor(savedHeight)
+            console.log(`[指标] 统一设置 ${indicatorId} pane高度: ${savedHeight}`)
+          } else {
+            panes[i].setStretchFactor(1)
+          }
+        }
+      }
+
       // 设置图表显示范围
       if (isInitialLoad.value) {
         const total = lastBarsCount
@@ -2517,17 +2551,33 @@ function saveCurrentPaneHeights() {
   if (!chart) return
 
   const panes = chart.panes()
-  activeIndicators.value.forEach((indicatorId, index) => {
-    const paneIndex = index + 1  // pane 0 是主图
-    if (paneIndex < panes.length) {
-      const pane = panes[paneIndex]
-      if (pane) {
-        // 获取pane高度（用stretchFactor作为比例）
-        indicatorPaneHeights.value[indicatorId] = pane.getStretchFactor?.() || 1
+  if (panes.length <= 1) return  // 只有主图，无需保存
+
+  // 遍历所有pane，从pane 1开始（pane 0是主图）
+  const newHeights: Record<string, number> = { ...indicatorPaneHeights.value }
+  let changed = false
+
+  for (let i = 1; i < panes.length; i++) {
+    const pane = panes[i]
+    const indicatorId = activeIndicators.value[i - 1]  // 对应的指标
+    if (pane && indicatorId) {
+      try {
+        const stretchFactor = pane.getStretchFactor()
+        if (newHeights[indicatorId] !== stretchFactor) {
+          newHeights[indicatorId] = stretchFactor
+          changed = true
+          console.log(`[指标] ${indicatorId} pane ${i} stretchFactor: ${stretchFactor}`)
+        }
+      } catch (e) {
+        console.warn(`[指标] 获取pane ${i} 高度失败:`, e)
       }
     }
-  })
-  console.log('[指标] 保存pane高度:', indicatorPaneHeights.value)
+  }
+
+  if (changed) {
+    indicatorPaneHeights.value = newHeights  // 触发响应式更新
+    console.log('[指标] pane高度已更新:', JSON.stringify(indicatorPaneHeights.value))
+  }
 }
 
 const selectStock = (code: string) => {
@@ -2556,6 +2606,9 @@ const selectStock = (code: string) => {
 // 切换周期
 const changeTimeframe = (tf: string) => {
   if (currentTimeframe.value === tf) return  // 周期没变，不处理
+
+  // 切换前保存当前pane高度
+  saveCurrentPaneHeights()
 
   console.log('[RealtimeQuotes] 切换周期:', currentTimeframe.value, '->', tf)
   currentTimeframe.value = tf
@@ -2768,7 +2821,8 @@ onBeforeUnmount(() => {
     cancelAnimationFrame(priceAlertRafId)
   }
   // 清理指标系列
-  indicatorSeries = {}
+  indicatorSeriesMap.clear()
+  overlaySeriesMap.clear()
   if (chart) chart.remove()
 })
 </script>
