@@ -412,6 +412,14 @@
         </div>
       </div>
     </div>
+
+    <!-- 指标参数设置弹窗 -->
+    <IndicatorSettings
+      v-model:visible="showIndicatorSettings"
+      :indicator-id="settingsIndicatorId"
+      :current-params="settingsParams"
+      @confirm="handleSettingsConfirm"
+    />
   </div>
 </template>
 
@@ -440,6 +448,7 @@ import { useMiniCharts, generateSparklinePoints } from '@/composables/useMiniCha
 import { useRealtimeQuote, type QuoteData } from '@/composables/useRealtimeQuote'
 import { UserPriceAlerts } from '@/components/charts/plugins'
 import IndicatorSelector from '@/components/charts/IndicatorSelector.vue'
+import IndicatorSettings from '@/components/charts/IndicatorSettings.vue'
 
 // 类型定义
 type ChartApi = any
@@ -529,59 +538,63 @@ const showIndicatorPanel = ref(false)
 const activeIndicators = ref<string[]>(['MACD'])  // 独立指标
 const overlayIndicators = ref<string[]>([])  // 主图叠加指标(MA/BOLL)
 
-// 监听指标变化，重新加载数据
-watch(activeIndicators, (newVal, oldVal) => {
-  // 找出被移除的指标
-  const removed = oldVal.filter(id => !newVal.includes(id))
-  // 找出新添加的指标
-  const added = newVal.filter(id => !oldVal.includes(id))
+// 主图叠加指标series存储
+const overlaySeriesMap = new Map<string, Record<string, SeriesApi>>()
 
-  if (removed.length > 0 || added.length > 0) {
-    // 重新加载数据
-    loadKlineData()
+// ========== 多指标管理 ==========
+import {
+  INDICATOR_REGISTRY,
+  getIndicatorConfig,
+  type IndicatorConfig,
+  type SeriesConfig
+} from '@/components/charts/indicator-registry'
+
+// ========== 多指标Pane管理 ==========
+// 指标系列存储（每个指标的多个series）
+const indicatorSeriesMap = new Map<string, Record<string, SeriesApi>>()
+
+// 指标数据缓存（后端返回的原始数据）
+const indicatorDataCache = ref<Record<string, any>>({})
+
+// 当前指标pane数量（用于动态分配索引）
+let currentIndicatorPaneCount = 0
+
+/**
+ * 清除所有指标pane和series
+ */
+const clearAllIndicatorPanes = () => {
+  // 清除所有series数据
+  indicatorSeriesMap.forEach(seriesMap => {
+    Object.values(seriesMap).forEach(series => {
+      series?.setData([])
+    })
+  })
+  indicatorSeriesMap.clear()
+  indicatorPaneIndexMap.clear()
+
+  // 移除所有指标pane（从后往前移除，避免索引变化）
+  const paneCount = chart?.panes().length || 0
+  for (let i = paneCount - 1; i >= 1; i--) {
+    try {
+      chart?.removePane(i)
+    } catch (e) {}
   }
-}, { deep: true })
-
-// 指标系列存储（用于更新数据）
-let indicatorSeries: {
-  macd?: SeriesApi | null
-  signal?: SeriesApi | null
-  histogram?: SeriesApi | null
-} = {}
-
-// 指标pane索引
-const MACD_PANE_INDEX = 1
-
-// 保存用户调整的MACD伸展因子
-let savedMacdStretchFactor = 1
-
-// 指标数据缓存
-const indicatorData = ref<{
-  macd?: number[]
-  signal?: number[]
-  histogram?: number[]
-  datetime?: string[]
-}>({})
-
-// ========== 通用指标Pane状态管理 ==========
-// 存储每个指标的pane状态（为后续多指标支持做准备）
-interface IndicatorPaneState {
-  paneIndex: number
-  stretchFactor: number
-  visible: boolean
+  currentIndicatorPaneCount = 0
+  console.log('[指标] 已清除所有指标pane')
 }
-const indicatorPaneStates = new Map<string, IndicatorPaneState>()
-let nextPaneIndex = 1
 
-// 注册指标pane
-function registerIndicatorPane(indicatorId: string): number {
-  if (indicatorPaneStates.has(indicatorId)) {
-    return indicatorPaneStates.get(indicatorId)!.paneIndex
-  }
-  const paneIndex = nextPaneIndex++
-  indicatorPaneStates.set(indicatorId, { paneIndex, stretchFactor: 1, visible: true })
-  console.log(`[指标管理] 注册 ${indicatorId} pane, 索引: ${paneIndex}`)
-  return paneIndex
+/**
+ * 为指标分配pane索引（动态分配，从1开始连续）
+ */
+const allocatePaneIndex = (): number => {
+  return ++currentIndicatorPaneCount
+}
+
+/**
+ * 获取指标的pane索引
+ */
+const getIndicatorPaneIndex = (indicatorId: string): number => {
+  return indicatorPaneIndexMap.get(indicatorId) || 0
 }
 
 // ========== 价格预警相关 ==========
@@ -813,8 +826,7 @@ const initChart = () => {
     }
   })
 
-  // 初始化MACD指标pane（创建但不显示，点击MACD按钮后才显示数据）
-  initMACDPane()
+  // 指标pane将在用户选择指标时动态创建
 
   // 从 chart-area 反算正确高度（避免 canvas 干扰 clientHeight 读取）
   let retries = 0
@@ -989,67 +1001,77 @@ const initChart = () => {
 
 // ========== 技术指标功能 ==========
 
+// 指标到pane索引的映射（动态分配）
+const indicatorPaneIndexMap = new Map<string, number>()
+
 /**
- * 初始化MACD指标Pane
+ * 初始化指标Pane（动态分配索引）
  */
-const initMACDPane = () => {
-  if (!chart) return
+const initIndicatorPane = (indicatorId: string): number => {
+  if (!chart) return 0
+
+  const config = getIndicatorConfig(indicatorId)
+  if (!config) {
+    console.warn(`[指标] 未找到配置: ${indicatorId}`)
+    return 0
+  }
+
+  // 已存在则返回已有索引
+  if (indicatorSeriesMap.has(indicatorId)) {
+    return indicatorPaneIndexMap.get(indicatorId) || 0
+  }
+
+  // 分配新的pane索引
+  const paneIndex = allocatePaneIndex()
+  indicatorPaneIndexMap.set(indicatorId, paneIndex)
 
   try {
-    // 检查pane是否已存在
-    const panes = chart.panes()
-    console.log('[指标] 当前pane数量:', panes.length)
-
-    if (indicatorSeries.macd) {
-      // 已经初始化过
-      console.log('[指标] MACD series已存在')
-      return
-    }
-
-    // 确保pane 1存在
-    if (panes.length <= MACD_PANE_INDEX) {
-      console.log('[指标] 创建pane 1')
+    // 确保pane存在
+    while (chart.panes().length <= paneIndex) {
+      console.log(`[指标] 创建pane ${chart.panes().length}`)
       chart.addPane()
     }
 
-    // 在pane 1创建MACD线
-    console.log('[指标] 创建MACD series...')
-    indicatorSeries.macd = chart.addSeries(LineSeries, {
-      color: '#FF6B6B',
-      lineWidth: 2,
-      title: 'MACD',
-      lastValueVisible: true,
-      priceLineVisible: false,
-    }, MACD_PANE_INDEX)
+    console.log(`[指标] 初始化 ${indicatorId}, pane: ${paneIndex}`)
 
-    // 信号线
-    indicatorSeries.signal = chart.addSeries(LineSeries, {
-      color: '#26A69A',
-      lineWidth: 2,
-      title: 'Signal',
-      lastValueVisible: true,
-      priceLineVisible: false,
-    }, MACD_PANE_INDEX)
+    // 获取用户自定义参数
+    const customParams = indicatorParams.value[indicatorId] || {}
 
-    // 柱状图
-    indicatorSeries.histogram = chart.addSeries(HistogramSeries, {
-      priceFormat: { type: 'price', precision: 2 },
-      lastValueVisible: true,
-      priceLineVisible: false,
-    }, MACD_PANE_INDEX)
+    // 创建series
+    const seriesMap: Record<string, SeriesApi> = {}
 
-    // 设置pane高度比例：主图占75%，MACD占25%
-    const mainPane = chart.panes()[0]
-    if (mainPane) {
-      mainPane.setStretchFactor(3)  // 3份
+    config.series.forEach(s => {
+      // 获取该线条的自定义设置
+      const lineParams = customParams[s.key] || {}
+
+      const seriesOptions: any = {
+        color: lineParams.color || s.color,
+        lineWidth: lineParams.lineWidth || s.lineWidth || 2,
+        lineStyle: lineParams.lineStyle ?? 0,
+        title: s.label,
+        lastValueVisible: true,
+        priceLineVisible: false,
+      }
+
+      if (s.type === 'histogram') {
+        seriesOptions.priceFormat = { type: 'price', precision: 2 }
+        seriesMap[s.key] = chart.addSeries(HistogramSeries, seriesOptions, paneIndex)
+      } else {
+        seriesMap[s.key] = chart.addSeries(LineSeries, seriesOptions, paneIndex)
+      }
+    })
+
+    indicatorSeriesMap.set(indicatorId, seriesMap)
+
+    // 设置pane伸展因子
+    const pane = chart.panes()[paneIndex]
+    if (pane) {
+      pane.setStretchFactor(1)
     }
-    const macdPane = chart.panes()[MACD_PANE_INDEX]
-    if (macdPane) {
-      macdPane.setStretchFactor(1)  // 1份
-    }
-    // 配置MACD pane的right price scale
+
+    // 配置price scale
     try {
-      chart?.priceScale('right', MACD_PANE_INDEX).applyOptions({
+      chart?.priceScale('right', paneIndex).applyOptions({
         visible: true,
         autoScale: true,
         borderVisible: true,
@@ -1057,93 +1079,223 @@ const initMACDPane = () => {
         scaleMargins: { top: 0.1, bottom: 0.1 }
       })
     } catch (e) {
-      console.log('[指标] init price scale配置失败:', e)
+      console.log(`[指标] ${indicatorId} price scale配置失败:`, e)
     }
 
-    console.log('[指标] MACD pane初始化完成')
-    console.log('[指标] pane数量:', chart.panes().length)
-    console.log('[指标] indicatorSeries:', Object.keys(indicatorSeries))
+    console.log(`[指标] ${indicatorId} pane初始化完成`)
 
-    // 注册MACD pane状态（为后续多指标支持做准备）
-    registerIndicatorPane('MACD')
-
-    // 触发一次resize确保pane正确显示
+    // 触发resize
     if (chartContainer.value) {
       const rect = chartContainer.value.getBoundingClientRect()
       chart.resize(rect.width, rect.height)
     }
   } catch (e) {
-    console.error('[指标] MACD pane初始化失败:', e)
+    console.error(`[指标] ${indicatorId} pane初始化失败:`, e)
   }
 }
 
 /**
- * 更新MACD指标数据
+ * 更新指标数据（通用版本）
  */
-const updateMACDData = (klineData: any[]) => {
-  if (!indicatorSeries.macd || !indicatorSeries.signal || !indicatorSeries.histogram) {
-    console.log('[指标] MACD系列未初始化')
+const updateIndicatorData = (indicatorId: string, klineData: any[]) => {
+  const seriesMap = indicatorSeriesMap.get(indicatorId)
+  if (!seriesMap) {
+    console.log(`[指标] ${indicatorId} series未初始化`)
     return
   }
 
-  if (!indicatorData.value.macd || indicatorData.value.macd.length === 0) {
-    console.log('[指标] 无MACD数据')
+  const indicatorData = indicatorDataCache.value[indicatorId]
+  if (!indicatorData) {
+    console.log(`[指标] 无${indicatorId}数据`)
     return
   }
 
-  const { macd, signal, histogram, datetime } = indicatorData.value
-  if (!datetime || !macd || !signal || !histogram) return
+  const config = getIndicatorConfig(indicatorId)
+  if (!config) return
 
-  // 构建时间戳映射（从K线数据）
-  const timeMap = new Map()
+  const datetime = indicatorData.datetime
+  if (!datetime) return
+
+  // 构建时间戳映射
+  const timeMap = new Map<number, number>()
   klineData.forEach((bar, index) => {
     if (datetime[index]) {
-      // 将datetime字符串转为时间戳（与K线数据保持一致，不添加时区偏移）
       const ts = new Date(datetime[index]).getTime() / 1000
       timeMap.set(index, ts)
     }
   })
 
-  // 准备MACD线数据
-  const macdLineData: any[] = []
-  const signalLineData: any[] = []
-  const histogramData: any[] = []
+  // 为每个series准备数据
+  config.series.forEach(s => {
+    const values = indicatorData[s.key]
+    if (!values || !seriesMap[s.key]) return
 
-  for (let i = 0; i < macd.length; i++) {
-    const time = timeMap.get(i)
-    if (!time || isNaN(macd[i]) || macd[i] === null) continue
+    const data: any[] = []
+    for (let i = 0; i < values.length; i++) {
+      const time = timeMap.get(i)
+      const value = values[i]
+      if (!time || value === null || isNaN(value)) continue
 
-    macdLineData.push({ time, value: macd[i] })
-    signalLineData.push({ time, value: signal[i] })
-    histogramData.push({
-      time,
-      value: histogram[i],
-      color: histogram[i] >= 0 ? '#ef4444' : '#10b981'
-    })
-  }
+      if (s.type === 'histogram') {
+        data.push({ time, value, color: value >= 0 ? '#ef4444' : '#10b981' })
+      } else {
+        data.push({ time, value })
+      }
+    }
 
-  // 设置数据
-  console.log('[指标] 设置MACD数据:', macdLineData.length, signalLineData.length, histogramData.length)
-  console.log('[指标] series对象:', !!indicatorSeries.macd, !!indicatorSeries.signal, !!indicatorSeries.histogram)
+    seriesMap[s.key]?.setData(data)
+    console.log(`[指标] ${indicatorId}.${s.key} 设置 ${data.length} 条数据`)
+  })
 
-  indicatorSeries.macd?.setData(macdLineData)
-  indicatorSeries.signal?.setData(signalLineData)
-  indicatorSeries.histogram?.setData(histogramData)
-
-  // 确保MACD price scale可见（使用right price scale）
+  // 确保price scale可见
+  const paneIndex = getIndicatorPaneIndex(indicatorId)
   try {
-    chart?.priceScale('right', MACD_PANE_INDEX).applyOptions({
+    chart?.priceScale('right', paneIndex).applyOptions({
       visible: true,
-      autoScale: true,
-      borderVisible: true,
-      borderColor: 'rgba(42, 46, 57, 0.8)',
-      scaleMargins: { top: 0.1, bottom: 0.1 }
+      autoScale: true
     })
-  } catch (e) {
-    console.log('[指标] price scale配置失败:', e)
+  } catch (e) {}
+}
+
+// ========== 主图叠加指标 ==========
+
+/**
+ * 初始化主图叠加指标
+ */
+const initOverlayIndicator = (indicatorId: string) => {
+  if (!chart) return
+
+  const config = getIndicatorConfig(indicatorId)
+  if (!config) return
+
+  // 已存在则跳过
+  if (overlaySeriesMap.has(indicatorId)) {
+    console.log(`[叠加指标] ${indicatorId} series已存在`)
+    return
   }
 
-  console.log(`[指标] MACD数据更新完成`)
+  console.log(`[叠加指标] 初始化 ${indicatorId}`)
+
+  // 获取用户自定义参数
+  const customParams = indicatorParams.value[indicatorId] || {}
+
+  // 创建series（pane 0 = 主图）
+  const seriesMap: Record<string, SeriesApi> = {}
+
+  config.series.forEach(s => {
+    // MA指标：检查是否在可见列表中
+    if (indicatorId === 'MA' && customParams.visibleLines) {
+      if (!customParams.visibleLines.includes(s.key)) {
+        console.log(`[叠加指标] MA ${s.key} 未勾选，跳过`)
+        return
+      }
+    }
+
+    // 获取该线条的自定义设置
+    const lineParams = customParams[s.key] || {}
+    const lineColor = lineParams.color || s.color
+    const lineWidth = parseInt(lineParams.lineWidth) || s.lineWidth || 1
+    const lineStyle = parseInt(lineParams.lineStyle) || 0
+
+    const seriesOptions: any = {
+      color: lineColor,
+      lineWidth: lineWidth,
+      lineStyle: lineStyle,
+      title: s.label,
+      lastValueVisible: true,
+      priceLineVisible: false,
+    }
+
+    console.log(`[叠加指标] ${indicatorId}.${s.key} 选项:`, { color: lineColor, lineWidth, lineStyle })
+
+    seriesMap[s.key] = chart.addSeries(LineSeries, seriesOptions, 0)
+  })
+
+  overlaySeriesMap.set(indicatorId, seriesMap)
+  console.log(`[叠加指标] ${indicatorId} 初始化完成, 创建了 ${Object.keys(seriesMap).length} 条线`)
+}
+
+/**
+ * 更新主图叠加指标数据
+ */
+const updateOverlayData = (indicatorId: string, klineData: any[]) => {
+  const seriesMap = overlaySeriesMap.get(indicatorId)
+  if (!seriesMap) return
+
+  const indicatorData = indicatorDataCache.value[indicatorId]
+  console.log(`[叠加指标] ${indicatorId} 数据检查:`, indicatorData ? Object.keys(indicatorData) : '无数据')
+  if (!indicatorData) {
+    console.log(`[叠加指标] 无${indicatorId}数据, cache内容:`, Object.keys(indicatorDataCache.value))
+    return
+  }
+
+  const config = getIndicatorConfig(indicatorId)
+  if (!config) return
+
+  // 构建时间戳映射
+  const timeMap = new Map<number, number>()
+  klineData.forEach((bar, index) => {
+    timeMap.set(index, bar.time)
+  })
+
+  // 为每个series准备数据
+  config.series.forEach(s => {
+    const values = indicatorData[s.key]
+    if (!values || !seriesMap[s.key]) return
+
+    const data: any[] = []
+    for (let i = 0; i < values.length; i++) {
+      const time = timeMap.get(i)
+      const value = values[i]
+      if (!time || value === null || isNaN(value)) continue
+      data.push({ time, value })
+    }
+
+    seriesMap[s.key]?.setData(data)
+    console.log(`[叠加指标] ${indicatorId}.${s.key} 设置 ${data.length} 条数据`)
+  })
+}
+
+/**
+ * 清除主图叠加指标
+ */
+const clearOverlayIndicator = (indicatorId: string) => {
+  const seriesMap = overlaySeriesMap.get(indicatorId)
+  if (!seriesMap) return
+
+  // 清除所有series数据
+  Object.values(seriesMap).forEach(series => {
+    series?.setData([])
+  })
+
+  overlaySeriesMap.delete(indicatorId)
+  console.log(`[叠加指标] ${indicatorId} 已清除`)
+}
+
+/**
+ * 隐藏指标Pane
+ */
+const hideIndicatorPane = (indicatorId: string) => {
+  const seriesMap = indicatorSeriesMap.get(indicatorId)
+
+  if (!seriesMap) return
+
+  // 清除所有series数据
+  Object.values(seriesMap).forEach(series => {
+    series?.setData([])
+  })
+
+  // 从map中移除
+  indicatorSeriesMap.delete(indicatorId)
+
+  // 移除对应的pane
+  const paneIndex = getIndicatorPaneIndex(indicatorId)
+  try {
+    chart?.removePane(paneIndex)
+    console.log(`[指标] ${indicatorId} pane ${paneIndex} 已移除`)
+  } catch (e) {
+    console.log(`[指标] ${indicatorId} pane ${paneIndex} 移除失败:`, e)
+  }
 }
 
 /**
@@ -1165,8 +1317,31 @@ const toggleIndicator = (indicator: string) => {
  */
 const openIndicatorSettings = (indicatorId: string) => {
   console.log('[指标设置] 打开设置:', indicatorId)
-  // TODO: 实现参数设置弹窗
+  settingsIndicatorId.value = indicatorId
+  // 获取当前参数（如果有）
+  settingsParams.value = indicatorParams.value[indicatorId] ||
+    getIndicatorConfig(indicatorId)?.defaultParams || {}
+  showIndicatorSettings.value = true
 }
+
+/**
+ * 确认指标参数设置
+ */
+const handleSettingsConfirm = (params: Record<string, any>) => {
+  console.log('[指标设置] 确认参数:', settingsIndicatorId.value, params)
+  // 保存参数
+  indicatorParams.value[settingsIndicatorId.value] = params
+  // 重新加载数据
+  loadKlineData()
+}
+
+// 指标参数设置状态
+const showIndicatorSettings = ref(false)
+const settingsIndicatorId = ref('')
+const settingsParams = ref<Record<string, any>>({})
+
+// 指标参数缓存（用于存储用户自定义参数）
+const indicatorParams = ref<Record<string, Record<string, any>>>({})
 
 // ==================== 价格预警功能 ====================
 
@@ -1693,10 +1868,10 @@ const loadKlineData = async () => {
   let lastBarsCount = 0  // 记录本次加载的 bar 数量，供 setVisibleLogicalRange 使用
 
   try {
-    // 确定需要请求的指标
-    const indicatorsToFetch = activeIndicators.value.length > 0
-      ? activeIndicators.value
-      : undefined
+    // 确定需要请求的指标（合并独立指标和叠加指标）
+    const allIndicators = [...activeIndicators.value, ...overlayIndicators.value]
+    const indicatorsToFetch = allIndicators.length > 0 ? allIndicators : undefined
+    console.log('[指标] 请求指标:', allIndicators)
 
     // 第一步：优先只加载K线数据（最核心的）- 同时请求指标
     const klineRes = await fetchKline(
@@ -1709,8 +1884,9 @@ const loadKlineData = async () => {
 
     // 保存指标数据
     if (klineRes.indicators) {
-      indicatorData.value = klineRes.indicators
+      indicatorDataCache.value = klineRes.indicators
       console.log('[指标] 收到指标数据:', Object.keys(klineRes.indicators))
+      console.log('[指标] MA数据:', klineRes.indicators['MA'])
     }
 
     // 处理K线数据
@@ -1756,42 +1932,42 @@ const loadKlineData = async () => {
       }))
       volumeSeries?.setData(volumeData)
 
-      // 更新MACD指标数据
-      if (activeIndicators.value.includes('MACD')) {
-        // 确保指标数据已正确设置（后端返回格式: indicators.MACD.macd）
-        if (klineRes.indicators?.MACD) {
-          indicatorData.value = {
-            macd: klineRes.indicators.MACD.macd,
-            signal: klineRes.indicators.MACD.signal,
-            histogram: klineRes.indicators.MACD.histogram,
-            datetime: klineRes.indicators.MACD.datetime
-          }
-        }
-        // 确保MACD pane已初始化
-        initMACDPane()
-        updateMACDData(deduped)
-        // 恢复伸展因子（从状态管理获取）
-        const macdPane = chart?.panes()[MACD_PANE_INDEX]
-        const macdState = indicatorPaneStates.get('MACD')
-        if (macdPane && macdState) {
-          macdPane.setStretchFactor(macdState.stretchFactor)
-          macdState.visible = true
-        }
-      } else {
-        // MACD未被选中，保存伸展因子并隐藏
-        const macdPane = chart?.panes()[MACD_PANE_INDEX]
-        const macdState = indicatorPaneStates.get('MACD')
-        if (macdPane && indicatorSeries.macd && macdState) {
-          macdState.stretchFactor = 1
-          macdState.visible = false
-          indicatorSeries.macd.setData([])
-          indicatorSeries.signal?.setData([])
-          indicatorSeries.histogram?.setData([])
-          macdPane.setHeight(0)
-        }
-      }
+      // 先清除所有指标pane，再按需重建
+      clearAllIndicatorPanes()
 
-      // K线加载完成，立即结束loading（提升用户体验）
+      // 处理所有独立指标（按顺序创建）
+      activeIndicators.value.forEach(indicatorId => {
+        const config = getIndicatorConfig(indicatorId)
+        if (!config || config.type === 'overlay') return  // 跳过主图叠加指标
+
+        // 保存指标数据
+        if (klineRes.indicators?.[indicatorId]) {
+          indicatorDataCache.value[indicatorId] = klineRes.indicators[indicatorId]
+        }
+
+        // 初始化pane并更新数据
+        initIndicatorPane(indicatorId)
+        updateIndicatorData(indicatorId, deduped)
+      })
+
+      // 处理主图叠加指标（MA/BOLL）
+      overlayIndicators.value.forEach(indicatorId => {
+        const config = getIndicatorConfig(indicatorId)
+        if (!config || config.type !== 'overlay') return
+
+        // 初始化并更新数据
+        initOverlayIndicator(indicatorId)
+        updateOverlayData(indicatorId, deduped)
+      })
+
+      // 清除未选中的叠加指标
+      overlaySeriesMap.forEach((_, indicatorId) => {
+        if (!overlayIndicators.value.includes(indicatorId)) {
+          clearOverlayIndicator(indicatorId)
+        }
+      })
+
+      // K线加载完成，立即结束loading
       loading.value = false
 
       // 设置图表显示范围
@@ -1895,6 +2071,32 @@ const loadKlineData = async () => {
   }
 }
 
+// 监听指标变化，重新加载数据
+watch(activeIndicators, (newVal, oldVal) => {
+  const removed = oldVal.filter(id => !newVal.includes(id))
+  const added = newVal.filter(id => !oldVal.includes(id))
+
+  if (removed.length > 0 || added.length > 0) {
+    // 先隐藏被移除的指标
+    removed.forEach(id => hideIndicatorPane(id))
+    // 重新加载数据
+    loadKlineData()
+  }
+}, { deep: true })
+
+// 监听主图叠加指标变化
+watch(overlayIndicators, (newVal, oldVal) => {
+  const removed = oldVal.filter(id => !newVal.includes(id))
+  const added = newVal.filter(id => !oldVal.includes(id))
+
+  if (removed.length > 0 || added.length > 0) {
+    // 先清除被移除的叠加指标
+    removed.forEach(id => clearOverlayIndicator(id))
+    // 重新加载数据
+    loadKlineData()
+  }
+}, { deep: true })
+
 // ─────────────────────────────────────────────
 // watch: 使用 useKlineData 的数据更新图表（新逻辑）
 // ─────────────────────────────────────────────
@@ -1938,10 +2140,13 @@ watch(klineBars, (bars) => {
 
   console.log('[RealtimeQuotes] useKlineData 更新图表:', bars.length, '根')
 
-  // 更新MACD指标（如果已启用）
-  if (activeIndicators.value.includes('MACD') && indicatorData.value.macd) {
-    updateMACDData(chartData)
-  }
+  // 更新所有已启用的指标
+  activeIndicators.value.forEach(indicatorId => {
+    const config = getIndicatorConfig(indicatorId)
+    if (config && config.type !== 'overlay') {
+      updateIndicatorData(indicatorId, chartData)
+    }
+  })
 }, { deep: true })
 
 // ─────────────────────────────────────────────

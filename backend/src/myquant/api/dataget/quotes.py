@@ -195,11 +195,11 @@ def _calculate_indicators(indicator_service, df: pd.DataFrame, indicator_list: L
             ind_upper = indicator.upper()
 
             if ind_upper == 'MA':
-                # 计算多条均线
+                # 计算多条均线（使用calculate_sma，因为它接受Series）
                 periods = [5, 10, 20, 30, 60]
                 ma_data = {}
                 for p in periods:
-                    ma_values = indicator_service.calculate_ma(close, period=p).tolist()
+                    ma_values = indicator_service.calculate_sma(close, period=p).tolist()
                     ma_data[f'ma{p}'] = clean_values(ma_values)
                 result['MA'] = ma_data
 
