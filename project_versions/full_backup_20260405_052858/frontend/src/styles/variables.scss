@@ -1,0 +1,100 @@
+// ================================
+// MyQuant v9.0.0 - SCSS Variables
+// 继承v8.0.1的暗色科技风格
+// ================================
+
+// 主色调 - 使用蓝色
+$primary-color: #2962ff;      // 蓝色主色
+$primary-hover: #1565c0;
+$primary-light: #5c8aff;
+$secondary-color: #3b82f6;    // 蓝色辅色
+$success-color: #ef4444;      // 红色（上涨）
+$error-color: #10b981;        // 绿色（下跌）
+$warning-color: #f59e0b;
+$info-color: #06b6d4;
+
+// 背景色（暗色主题）
+$bg-deep: #0a0a0f;            // 深黑背景
+$bg-surface: #1a1a2e;         // 表面背景
+$bg-elevated: #252530;        // 抬升背景
+$bg-hover: #2d2d3a;           // 悬停背景
+
+// 文字色
+$text-primary: #f8fafc;       // 主要文字
+$text-secondary: #cbd5e1;     // 次要文字
+$text-muted: #94a3b8;         // 弱化文字
+$text-disabled: #64748b;      // 禁用文字
+
+// 边框色
+$border-light: rgba(255, 255, 255, 0.06);
+$border-medium: rgba(255, 255, 255, 0.12);
+$border-dark: rgba(255, 255, 255, 0.18);
+
+// 渐变 - 使用蓝色
+$gradient-primary: linear-gradient(135deg, #2962ff 0%, #3b82f6 100%);
+$gradient-surface: linear-gradient(135deg, rgba(41, 98, 255, 0.05) 0%, rgba(59, 130, 246, 0.05) 100%);
+$gradient-hover: linear-gradient(135deg, rgba(41, 98, 255, 0.1) 0%, rgba(59, 130, 246, 0.1) 100%);
+
+// 阴影
+$shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
+$shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -1px rgba(0, 0, 0, 0.3);
+$shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -2px rgba(0, 0, 0, 0.4);
+$shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.6), 0 10px 10px -5px rgba(0, 0, 0, 0.5);
+$shadow-glow: 0 0 20px rgba(41, 98, 255, 0.3);
+
+// 圆角
+$radius-sm: 4px;
+$radius-md: 6px;
+$radius-lg: 8px;
+$radius-xl: 12px;
+$radius-2xl: 16px;
+$radius-full: 9999px;
+
+// 间距
+$spacing-xs: 4px;
+$spacing-sm: 8px;
+$spacing-md: 12px;
+$spacing-lg: 16px;
+$spacing-xl: 20px;
+$spacing-2xl: 24px;
+$spacing-3xl: 32px;
+
+// 字体大小
+$font-xs: 12px;
+$font-sm: 14px;
+$font-md: 16px;
+$font-lg: 18px;
+$font-xl: 20px;
+$font-2xl: 24px;
+$font-3xl: 30px;
+
+// 过渡
+$transition-fast: 0.15s ease;
+$transition-base: 0.2s ease;
+$transition-slow: 0.3s ease;
+
+// Z-index
+$z-dropdown: 1000;
+$z-sticky: 1020;
+$z-fixed: 1030;
+$z-modal-backdrop: 1040;
+$z-modal: 1050;
+$z-popover: 1060;
+$z-tooltip: 1070;
+
+// 涨跌颜色
+$color-up: #ef4444;           // 红色涨
+$color-down: #10b981;         // 绿色跌
+$color-flat: #94a3b8;         // 平盘
+
+// 布局
+$header-height: 60px;
+$sidebar-width: 240px;
+$footer-height: 40px;
+
+// 断点
+$breakpoint-sm: 640px;
+$breakpoint-md: 768px;
+$breakpoint-lg: 1024px;
+$breakpoint-xl: 1280px;
+$breakpoint-2xl: 1536px;

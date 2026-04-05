@@ -1,0 +1,238 @@
+import axios from 'axios'
+import type { AxiosInstance, AxiosRequestConfig, AxiosResponse, InternalAxiosRequestConfig } from 'axios'
+import { useAppStore } from '@/stores'
+// UI store已合并到AppStore，使用appStore代替
+
+// API响应接口
+interface ApiResponse<T = any> {
+  code: number
+  message: string
+  data: T
+  success: boolean
+}
+
+// 请求配置接口
+interface RequestConfig extends AxiosRequestConfig {
+  showLoading?: boolean
+  showError?: boolean
+}
+
+// 扩展请求配置以支持metadata
+declare module 'axios' {
+  interface InternalAxiosRequestConfig {
+    metadata?: {
+      requestId: string
+    }
+  }
+}
+
+// 创建axios实例
+const createApiInstance = (): AxiosInstance => {
+  const instance = axios.create({
+    baseURL: import.meta.env.VITE_API_BASE_URL || '/api/v1',
+    timeout: 60000,  // 增加超时时间到60秒
+    headers: {
+      'Content-Type': 'application/json'
+    }
+  })
+
+  // 请求拦截器
+  instance.interceptors.request.use(
+    (config: InternalAxiosRequestConfig) => {
+      const appStore = useAppStore()
+      // const uiStore = useUIStore() // TODO: UI store已合并，需要使用AppStore中的对应方法
+
+      // 添加认证token
+      const token = localStorage.getItem('token')
+      if (token) {
+        config.headers.Authorization = `Bearer ${token}`
+      }
+
+      // 显示加载状态
+      const requestConfig = config as RequestConfig
+      // if (requestConfig.showLoading !== false) {
+      //   uiStore.setLoading('api', true)
+      // }
+
+      // 添加请求ID用于跟踪
+      config.metadata = { requestId: Date.now().toString() }
+
+      const fullUrl = `${config.baseURL || ''}${config.url || ''}`
+      console.log(`[API Request] ${config.method?.toUpperCase()} ${fullUrl}`)
+      console.log(`[API Request] Config:`, {
+        url: config.url,
+        baseURL: config.baseURL,
+        method: config.method,
+        timeout: config.timeout,
+        data: config.data
+      })
+
+      return config
+    },
+    (error) => {
+      // const uiStore = useUIStore()
+      // uiStore.setLoading('api', false)
+
+      console.error('[API Request Error]', error)
+      return Promise.reject(error)
+    }
+  )
+
+  // 响应拦截器
+  instance.interceptors.response.use(
+    (response: AxiosResponse<ApiResponse>) => {
+      // const uiStore = useUIStore() // UI store已合并到AppStore
+      const appStore = useAppStore()
+      
+      // 隐藏加载状态
+      // uiStore.setLoading('api', false) // TODO: 需要使用AppStore的方法
+      
+      const { data, config } = response
+      const requestConfig = config as RequestConfig
+      
+      console.log(`[API Response] ${config.method?.toUpperCase()} ${config.url}`, data)
+      
+      // 处理业务错误
+      // 支持两种响应格式：{code: 200, ...} 或 {success: true, ...}
+      const isSuccess = (data.code === 200) || (data.success === true)
+
+      if (!isSuccess) {
+        // TODO: 需要使用AppStore的toast方法替代uiStore
+        // if (requestConfig.showError !== false) {
+        //   const errorMessage = data.message || '请求失败'
+        //   uiStore.showToast({
+        //     type: 'error',
+        //     message: errorMessage
+        //   })
+        // }
+
+        // 处理特定错误码
+        if (data.code === 401) {
+          // 未授权，清除token并跳转登录
+          localStorage.removeItem('token')
+          appStore.addNotification({
+            type: 'warning',
+            title: '登录过期',
+            message: '请重新登录',
+            read: false
+          })
+        }
+
+        return Promise.reject(new Error(data.message))
+      }
+      
+      return response
+    },
+    (error) => {
+      // const uiStore = useUIStore() // UI store已合并到AppStore
+      
+      // 隐藏加载状态
+      // uiStore.setLoading('api', false) // TODO: 需要使用AppStore的方法
+      
+      console.error('[API Response Error]', error)
+      console.error('[API Error Details]', {
+        message: error.message,
+        code: error.code,
+        config: {
+          url: error.config?.url,
+          method: error.config?.method,
+          baseURL: error.config?.baseURL,
+          timeout: error.config?.timeout
+        },
+        response: error.response ? {
+          status: error.response.status,
+          data: error.response.data
+        } : undefined,
+        request: error.request ? 'Request was made but no response received' : undefined
+      })
+
+      let errorMessage = '网络错误'
+
+      if (error.response) {
+        // 服务器响应错误
+        const { status, data } = error.response
+        errorMessage = data?.message || `请求失败 (${status})`
+      } else if (error.request) {
+        // 网络错误
+        errorMessage = `网络连接失败: 无法连接到 ${error.config?.baseURL || '后端服务器'}`
+      } else {
+        // 其他错误
+        errorMessage = error.message || '未知错误'
+      }
+      
+      const requestConfig = error.config as RequestConfig
+      if (requestConfig?.showError !== false) {
+        uiStore.showToast({
+          type: 'error',
+          message: errorMessage
+        })
+      }
+      
+      return Promise.reject(error)
+    }
+  )
+
+  return instance
+}
+
+// 创建API实例
+const api = createApiInstance()
+
+// API方法封装
+export const apiRequest = {
+  // GET请求
+  get<T = any>(url: string, config?: RequestConfig): Promise<ApiResponse<T>> {
+    return api.get(url, config).then((response: AxiosResponse<ApiResponse<T>>) => response.data)
+  },
+
+  // POST请求
+  post<T = any>(url: string, data?: any, config?: RequestConfig): Promise<ApiResponse<T>> {
+    return api.post(url, data, config).then((response: AxiosResponse<ApiResponse<T>>) => response.data)
+  },
+
+  // PUT请求
+  put<T = any>(url: string, data?: any, config?: RequestConfig): Promise<ApiResponse<T>> {
+    return api.put(url, data, config).then((response: AxiosResponse<ApiResponse<T>>) => response.data)
+  },
+
+  // DELETE请求
+  delete<T = any>(url: string, config?: RequestConfig): Promise<ApiResponse<T>> {
+    return api.delete(url, config).then((response: AxiosResponse<ApiResponse<T>>) => response.data)
+  },
+
+  // PATCH请求
+  patch<T = any>(url: string, data?: any, config?: RequestConfig): Promise<ApiResponse<T>> {
+    return api.patch(url, data, config).then((response: AxiosResponse<ApiResponse<T>>) => response.data)
+  },
+
+  // 文件上传
+  upload<T = any>(url: string, formData: FormData, config?: RequestConfig): Promise<ApiResponse<T>> {
+    return api.post(url, formData, {
+      ...config,
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      }
+    }).then((response: AxiosResponse<ApiResponse<T>>) => response.data)
+  },
+
+  // 文件下载
+  download(url: string, filename?: string, config?: RequestConfig): Promise<void> {
+    return api.get(url, {
+      ...config,
+      responseType: 'blob'
+    }).then((response: AxiosResponse) => {
+      const blob = new Blob([response.data])
+      const downloadUrl = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = downloadUrl
+      link.download = filename || 'download'
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      window.URL.revokeObjectURL(downloadUrl)
+    })
+  }
+}
+
+export default api
+export type { ApiResponse, RequestConfig }

@@ -1,0 +1,718 @@
+/**
+ * MyQuant v10.0.0 - 统一组件样式
+ * 卡片、进度条、仪表盘、评分卡片、雷达图等
+ */
+
+/* ========================================
+   1. 卡片系统
+   ======================================== */
+
+/* 基础卡片 */
+.card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: var(--padding-card);
+}
+
+/* 悬停可交互卡片 */
+.card-interactive {
+  cursor: pointer;
+}
+
+.card-interactive:hover {
+  border-color: var(--accent-blue);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+/* 卡片头部 */
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--spacing-md);
+}
+
+.card-title {
+  font-size: var(--font-size-h5);
+  font-weight: var(--font-weight-bold);
+}
+
+.card-subtitle {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  margin-top: var(--spacing-xs);
+}
+
+/* 卡片内容 */
+.card-body {
+  color: var(--text-primary);
+}
+
+/* 卡片底部 */
+.card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-lg);
+  padding-top: var(--spacing-md);
+  border-top: 1px solid var(--border-color);
+}
+
+/* 卡片网格 */
+.card-grid {
+  display: grid;
+  gap: var(--spacing-lg);
+}
+
+.card-grid-2 {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+.card-grid-3 {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.card-grid-4 {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+.card-grid-auto {
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+}
+
+/* ========================================
+   2. 状态徽章
+   ======================================== */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  border-radius: var(--radius-sm);
+}
+
+.badge-primary {
+  background: var(--accent-blue-light);
+  color: var(--accent-blue);
+}
+
+.badge-success {
+  background: rgba(239, 83, 80, 0.2);
+  color: var(--accent-red);
+}
+
+.badge-warning {
+  background: rgba(255, 152, 0, 0.2);
+  color: var(--accent-orange);
+}
+
+.badge-error {
+  background: rgba(38, 166, 154, 0.2);
+  color: var(--accent-green);
+}
+
+.badge-info {
+  background: rgba(41, 182, 246, 0.2);
+  color: var(--accent-cyan);
+}
+
+/* ========================================
+   3. 进度条系统
+   ======================================== */
+.progress {
+  width: 100%;
+  height: 8px;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.progress-bar {
+  height: 100%;
+  border-radius: var(--radius-sm);
+  transition: width var(--transition-slow);
+}
+
+/* 进度条尺寸 */
+.progress-sm {
+  height: 4px;
+}
+
+.progress-lg {
+  height: 12px;
+}
+
+/* 带标签进度条 */
+.progress-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.progress-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.progress-label {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+.progress-value {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-primary);
+}
+
+/* 带渐变的进度条 */
+.progress-gradient {
+  background: linear-gradient(90deg, var(--accent-blue), var(--accent-green));
+}
+
+/* ========================================
+   4. 滑杆系统
+   ======================================== */
+.slider {
+  width: 100%;
+  padding: var(--spacing-sm) 0;
+}
+
+.slider-track {
+  position: relative;
+  height: 6px;
+  background: var(--bg-tertiary);
+  border-radius: 3px;
+}
+
+.slider-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  background: var(--accent-blue);
+  border-radius: 3px;
+}
+
+.slider-thumb {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 18px;
+  height: 18px;
+  background: white;
+  border: 3px solid var(--accent-blue);
+  border-radius: 50%;
+  cursor: grab;
+  transition: transform var(--transition-fast);
+}
+
+.slider-thumb:hover {
+  transform: translate(-50%, -50%) scale(1.1);
+}
+
+.slider-thumb:active {
+  cursor: grabbing;
+}
+
+.slider-labels {
+  display: flex;
+  justify-content: space-between;
+  margin-top: var(--spacing-xs);
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+}
+
+.slider-value {
+  text-align: center;
+  margin-top: var(--spacing-xs);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--accent-blue);
+}
+
+/* ========================================
+   5. 标签系统
+   ======================================== */
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  padding: 4px 8px;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+}
+
+.tag-close {
+  cursor: pointer;
+  opacity: 0.6;
+  transition: opacity var(--transition-fast);
+}
+
+.tag-close:hover {
+  opacity: 1;
+}
+
+/* ========================================
+   6. 评分卡片样式（参考因子分析）
+   ======================================== */
+.score-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-xl);
+  background: linear-gradient(135deg, rgba(41, 98, 255, 0.15) 0%, rgba(30, 34, 45, 0.9) 100%);
+  border: 1px solid rgba(41, 98, 255, 0.3);
+  border-radius: var(--radius-xl);
+  transition: all var(--transition-base);
+}
+
+.score-card:hover {
+  border-color: rgba(41, 98, 255, 0.5);
+  background: linear-gradient(135deg, rgba(41, 98, 255, 0.2) 0%, rgba(30, 34, 45, 0.95) 100%);
+}
+
+.score-card-header {
+  margin-bottom: var(--spacing-sm);
+}
+
+.score-card-label {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+}
+
+.score-card-value {
+  font-size: 36px;
+  font-weight: var(--font-weight-bold);
+  line-height: 1;
+}
+
+.score-card-rating {
+  display: flex;
+  gap: 2px;
+  margin-top: var(--spacing-sm);
+}
+
+.score-card-star {
+  width: 14px;
+  height: 14px;
+  color: inherit;
+}
+
+.score-card-bar {
+  width: 100%;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-top: var(--spacing-md);
+}
+
+.score-card-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width var(--transition-slow);
+}
+
+/* ========================================
+   7. 指标卡片（仪表盘）
+   ======================================== */
+.metric-card {
+  display: flex;
+  flex-direction: column;
+  padding: var(--spacing-lg);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+}
+
+.metric-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--spacing-sm);
+}
+
+.metric-card-icon {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent-blue-light);
+  border-radius: var(--radius-md);
+  color: var(--accent-blue);
+}
+
+.metric-card-trend {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  font-size: var(--font-size-sm);
+}
+
+.metric-card-trend.up {
+  color: var(--color-rise);
+}
+
+.metric-card-trend.down {
+  color: var(--color-fall);
+}
+
+.metric-card-value {
+  font-size: 28px;
+  font-weight: var(--font-weight-bold);
+  line-height: 1.2;
+}
+
+.metric-card-label {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  margin-top: var(--spacing-xs);
+}
+
+/* ========================================
+   8. 雷达图容器（参考因子分析）
+   ======================================== */
+.radar-container {
+  width: 100%;
+  height: 280px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.radar-chart {
+  width: 100%;
+  height: 100%;
+}
+
+/* ========================================
+   9. 表格系统
+   ======================================== */
+.table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.table th,
+.table td {
+  padding: var(--spacing-sm) var(--spacing-md);
+  text-align: left;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.table th {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-secondary);
+  background: var(--bg-tertiary);
+}
+
+.table tr:hover td {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.table .cell-positive {
+  color: var(--color-rise);
+}
+
+.table .cell-negative {
+  color: var(--color-fall);
+}
+
+.table .cell-neutral {
+  color: var(--text-secondary);
+}
+
+/* ========================================
+   10. 列表系统
+   ======================================== */
+.list {
+  display: flex;
+  flex-direction: column;
+}
+
+.list-item {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  padding: var(--spacing-md);
+  border-bottom: 1px solid var(--border-color);
+  transition: background var(--transition-base);
+}
+
+.list-item:last-child {
+  border-bottom: none;
+}
+
+.list-item:hover {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.list-item.active {
+  background: var(--accent-blue-light);
+}
+
+.list-item-icon {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-md);
+}
+
+.list-item-content {
+  flex: 1;
+}
+
+.list-item-title {
+  font-weight: var(--font-weight-medium);
+}
+
+.list-item-description {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+.list-item-action {
+  opacity: 0;
+  transition: opacity var(--transition-base);
+}
+
+.list-item:hover .list-item-action {
+  opacity: 1;
+}
+
+/* ========================================
+   11. 模态框
+   ======================================== */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
+  z-index: var(--z-modal-backdrop);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity var(--transition-base);
+}
+
+.modal-overlay.is-open {
+  opacity: 1;
+}
+
+.modal {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-xl);
+  width: 90%;
+  max-width: 500px;
+  max-height: 90vh;
+  overflow: hidden;
+  transform: scale(0.9);
+  transition: transform var(--transition-base);
+}
+
+.modal-overlay.is-open .modal {
+  transform: scale(1);
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--spacing-lg);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.modal-title {
+  font-size: var(--font-size-h5);
+  font-weight: var(--font-weight-bold);
+}
+
+.modal-close {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: all var(--transition-base);
+}
+
+.modal-close:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.modal-body {
+  padding: var(--spacing-lg);
+  overflow-y: auto;
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-lg);
+  border-top: 1px solid var(--border-color);
+}
+
+/* ========================================
+   12. 表单系统
+   ======================================== */
+.form-group {
+  margin-bottom: var(--spacing-lg);
+}
+
+.form-label {
+  display: block;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-secondary);
+  margin-bottom: var(--spacing-xs);
+}
+
+.form-help {
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  margin-top: var(--spacing-xs);
+}
+
+.form-error {
+  font-size: var(--font-size-xs);
+  color: var(--accent-red);
+  margin-top: var(--spacing-xs);
+}
+
+.form-row {
+  display: flex;
+  gap: var(--spacing-lg);
+}
+
+.form-row > * {
+  flex: 1;
+}
+
+/* ========================================
+   13. 计数器输入（左右+-）
+   ======================================== */
+.input-number {
+  display: inline-flex;
+  align-items: center;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.input-number-input {
+  width: 60px;
+  padding: var(--spacing-sm);
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  text-align: center;
+  font-family: inherit;
+  font-size: var(--font-size-base);
+}
+
+.input-number-input:focus {
+  outline: none;
+}
+
+.input-number-btn {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--transition-base);
+}
+
+.input-number-btn:hover {
+  background: var(--bg-elevated);
+  color: var(--accent-blue);
+}
+
+.input-number-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ========================================
+   14. 顶部功能入口按钮（三个工作流）
+   ======================================== */
+.feature-entry {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  padding: var(--spacing-md) var(--spacing-lg);
+  cursor: pointer;
+  transition: all var(--transition-base);
+}
+
+.feature-entry:hover {
+  transform: translateY(-2px);
+}
+
+.feature-entry:hover .feature-entry-title {
+  color: var(--accent-blue);
+}
+
+.feature-entry-icon {
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 32px;
+  color: var(--accent-blue);
+}
+
+.feature-entry-content {
+  flex: 1;
+}
+
+.feature-entry-title {
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-medium);
+  transition: color var(--transition-base);
+}
+
+.feature-entry-description {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+.feature-entry-arrow {
+  color: var(--text-secondary);
+  transition: transform var(--transition-base);
+}
+
+.feature-entry:hover .feature-entry-arrow {
+  transform: translateX(4px);
+  color: var(--accent-blue);
+}

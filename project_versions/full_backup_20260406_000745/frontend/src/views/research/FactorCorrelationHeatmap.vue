@@ -1,0 +1,796 @@
+<template>
+  <div class="factor-correlation-heatmap">
+    <!-- 相关性统计摘要 -->
+    <div class="summary-stats">
+      <div class="stat-item">
+        <div class="stat-icon">
+          <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="12" cy="12" r="10" stroke="#787b86" stroke-width="2" fill="none"/>
+            <path d="M12 6 L12 12 L16 14" stroke="#d1d4dc" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <div>
+          <div class="stat-label">{{ t.meanCorrelation }}</div>
+          <div class="stat-value">{{ formatNumber(correlationStats.meanCorrelation) }}</div>
+        </div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-icon positive">
+          <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 20 L12 4 M6 10 L12 4 L18 10" stroke="#ef5350" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <div>
+          <div class="stat-label">{{ t.maxPositive }}</div>
+          <div class="stat-value positive">{{ formatNumber(correlationStats.maxPositive) }}</div>
+        </div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-icon negative">
+          <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 4 L12 20 M6 14 L12 20 L18 14" stroke="#26a69a" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <div>
+          <div class="stat-label">{{ t.maxNegative }}</div>
+          <div class="stat-value negative">{{ formatNumber(correlationStats.maxNegative) }}</div>
+        </div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-icon">
+          <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="3" y="5" width="7" height="7" rx="1" fill="#ef5350" opacity="0.7"/>
+            <rect x="14" y="5" width="7" height="7" rx="1" fill="#26a69a" opacity="0.7"/>
+            <rect x="3" y="14" width="7" height="7" rx="1" fill="#787b86" opacity="0.5"/>
+            <rect x="14" y="14" width="7" height="7" rx="1" fill="#ef5350" opacity="0.8"/>
+          </svg>
+        </div>
+        <div>
+          <div class="stat-label">{{ t.highCorrPairs }}</div>
+          <div class="stat-value">{{ highCorrelationPairs.length }}</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 主要内容区域 -->
+    <div class="main-content">
+      <!-- 热图可视化 -->
+      <div class="heatmap-section">
+        <div class="section-header">
+          <h3 class="title-with-icon">
+            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <rect x="3" y="3" width="7" height="7" rx="1" fill="#ef5350" opacity="0.8"/>
+              <rect x="14" y="3" width="7" height="7" rx="1" fill="#26a69a" opacity="0.6"/>
+              <rect x="3" y="14" width="7" height="7" rx="1" fill="#787b86" opacity="0.6"/>
+              <rect x="14" y="14" width="7" height="7" rx="1" fill="#ef5350" opacity="0.9"/>
+            </svg>
+            {{ t.heatmapTitle }}
+          </h3>
+          <div class="controls">
+            <el-select v-model="localMethod" size="small" @change="loadCorrelationData">
+              <el-option label="Pearson" value="pearson"></el-option>
+              <el-option label="Spearman" value="spearman"></el-option>
+            </el-select>
+            <el-button type="primary" size="small" @click="loadCorrelationData" :loading="loading">
+              <el-icon><Refresh /></el-icon>
+              {{ t.refresh }}
+            </el-button>
+          </div>
+        </div>
+        <div ref="heatmapRef" class="heatmap" v-loading="loading"></div>
+      </div>
+
+      <!-- 高相关因子对列表 -->
+      <div class="high-correlation-panel">
+        <div class="section-header">
+          <h3 class="title-with-icon small-icon">
+            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <rect x="3" y="3" width="7" height="7" rx="1" fill="#ef5350" opacity="0.8"/>
+              <rect x="14" y="3" width="7" height="7" rx="1" fill="#26a69a" opacity="0.6"/>
+              <rect x="3" y="14" width="7" height="7" rx="1" fill="#787b86" opacity="0.6"/>
+              <rect x="14" y="14" width="7" height="7" rx="1" fill="#ef5350" opacity="0.9"/>
+            </svg>
+            {{ t.highCorrTitle }}
+          </h3>
+          <el-tag type="warning">{{ highCorrelationPairs.length }} {{ t.pairs }}</el-tag>
+        </div>
+        <div class="pairs-list">
+          <el-empty v-if="highCorrelationPairs.length === 0" :description="t.noHighCorr" />
+          <div
+            v-for="(pair, index) in highCorrelationPairs"
+            :key="index"
+            class="pair-item"
+            :class="{ positive: pair.correlation > 0, negative: pair.correlation < 0 }"
+          >
+            <div class="pair-factors">
+              <span class="factor-name">{{ pair.factor1 }}</span>
+              <el-icon><Right /></el-icon>
+              <span class="factor-name">{{ pair.factor2 }}</span>
+            </div>
+            <div class="pair-correlation">
+              <span class="correlation-value">{{ formatNumber(pair.correlation) }}</span>
+              <el-progress
+                :percentage="Math.abs(pair.correlation) * 100"
+                :color="pair.correlation > 0 ? '#ef5350' : '#26a69a'"
+                :show-text="false"
+                :stroke-width="6"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref, onMounted, onBeforeUnmount, watch, computed } from 'vue'
+import { ElMessage } from 'element-plus'
+import { Refresh, Right } from '@element-plus/icons-vue'
+import * as echarts from 'echarts'
+import axios from 'axios'
+
+// Props定义
+interface Props {
+  taskId: string
+  method?: 'pearson' | 'spearman'
+  isZh?: boolean
+}
+
+const props = withDefaults(defineProps<Props>(), {
+  method: 'pearson',
+  isZh: true
+})
+
+// 多语言文本
+const t = computed(() => ({
+  meanCorrelation: props.isZh ? '平均相关系数' : 'Mean Correlation',
+  maxPositive: props.isZh ? '最大正相关' : 'Max Positive',
+  maxNegative: props.isZh ? '最大负相关' : 'Max Negative',
+  highCorrPairs: props.isZh ? '高相关对数' : 'High Corr Pairs',
+  heatmapTitle: props.isZh ? '因子相关性热图' : 'Factor Correlation Heatmap',
+  refresh: props.isZh ? '刷新' : 'Refresh',
+  highCorrTitle: props.isZh ? '高相关因子对 (|r| > 0.7)' : 'High Correlation Pairs (|r| > 0.7)',
+  pairs: props.isZh ? '对' : 'pairs',
+  noHighCorr: props.isZh ? '无高相关因子对' : 'No high correlation pairs',
+  positiveCorr: props.isZh ? '正相关' : 'Positive',
+  negativeCorr: props.isZh ? '负相关' : 'Negative',
+  correlation: props.isZh ? '相关系数' : 'Correlation'
+}))
+
+// 响应式状态
+const loading = ref(false)
+const localMethod = ref<'pearson' | 'spearman'>(props.method)
+const heatmapRef = ref<HTMLElement>()
+
+let heatmapInstance: echarts.ECharts | null = null
+
+// 相关性统计
+const correlationStats = ref({
+  meanCorrelation: 0,
+  maxPositive: 0,
+  maxNegative: 0
+})
+
+// 相关性矩阵数据
+const correlationMatrix = ref({
+  factors: [] as string[],
+  matrix: [] as number[][]
+})
+
+// 高相关因子对
+const highCorrelationPairs = ref<Array<{
+  factor1: string
+  factor2: string
+  correlation: number
+}>>([])
+
+// 格式化数字
+const formatNumber = (num: number): string => {
+  return num.toFixed(4)
+}
+
+// 生成模拟数据
+const generateMockData = () => {
+  const factors = ['MA60_Cross', 'RSM60_Std', 'ROC20_Return', 'VOL30_Volume', 'Beta60_Price', 'MACD_Signal', 'RSI_14', 'BOLL_Pos']
+  const n = factors.length
+  const matrix: number[][] = []
+
+  // 先初始化所有行
+  for (let i = 0; i < n; i++) {
+    matrix[i] = new Array(n).fill(0)
+  }
+
+  // 生成相关性矩阵
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j < n; j++) {
+      if (i === j) {
+        matrix[i][j] = 1
+      } else if (j > i) {
+        // 生成随机相关性，偏向小值
+        matrix[i][j] = (Math.random() - 0.5) * 1.2
+        // 确保在-1到1之间
+        matrix[i][j] = Math.max(-1, Math.min(1, matrix[i][j]))
+        matrix[j][i] = matrix[i][j]
+      }
+    }
+  }
+
+  // 确保至少有几对高相关性（用于演示）
+  const highCorrIndices = [[0, 1], [2, 3], [4, 5]]
+  for (const [i, j] of highCorrIndices) {
+    if (i < n && j < n) {
+      const val = 0.75 + Math.random() * 0.2 // 0.75~0.95
+      matrix[i][j] = val
+      matrix[j][i] = val
+    }
+  }
+
+  // 生成高相关因子对
+  const pairs: Array<{ factor1: string; factor2: string; correlation: number }> = []
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      if (Math.abs(matrix[i][j]) > 0.7) {
+        pairs.push({
+          factor1: factors[i],
+          factor2: factors[j],
+          correlation: matrix[i][j]
+        })
+      }
+    }
+  }
+
+  return { factors, matrix, pairs }
+}
+
+// 加载相关性数据
+const loadCorrelationData = async () => {
+  if (!props.taskId) {
+    ElMessage.warning('请提供因子计算任务ID')
+    return
+  }
+
+  loading.value = true
+
+  try {
+    const response = await axios.post('/api/v1/research/factor/visualization/correlation', {
+      task_id: props.taskId,
+      method: localMethod.value
+    })
+
+    if (response.data.success) {
+      const data = response.data.data
+
+      // 更新相关性统计
+      correlationStats.value = {
+        meanCorrelation: data.statistics.mean_correlation || 0,
+        maxPositive: data.statistics.max_positive || 0,
+        maxNegative: data.statistics.max_negative || 0
+      }
+
+      // 更新相关性矩阵
+      correlationMatrix.value = {
+        factors: data.matrix.factors || [],
+        matrix: data.matrix.data || []
+      }
+
+      // 更新高相关因子对
+      highCorrelationPairs.value = data.high_correlation_pairs || []
+
+      // 渲染热图
+      renderHeatmap()
+    } else {
+      // 使用模拟数据
+      loadMockData()
+    }
+  } catch (error: any) {
+    console.warn('API调用失败，使用模拟数据:', error.message)
+    // 使用模拟数据
+    loadMockData()
+  } finally {
+    loading.value = false
+  }
+}
+
+// 加载模拟数据
+const loadMockData = () => {
+  const mockData = generateMockData()
+
+  correlationMatrix.value = {
+    factors: mockData.factors,
+    matrix: mockData.matrix
+  }
+
+  highCorrelationPairs.value = mockData.pairs
+
+  // 计算统计量
+  let sum = 0, max = -1, min = 1
+  const n = mockData.factors.length
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      const val = mockData.matrix[i][j]
+      sum += Math.abs(val)
+      if (val > max) max = val
+      if (val < min) min = val
+    }
+  }
+  const count = n * (n - 1) / 2
+
+  correlationStats.value = {
+    meanCorrelation: sum / count,
+    maxPositive: max,
+    maxNegative: min
+  }
+
+  renderHeatmap()
+}
+
+// 渲染热图
+const renderHeatmap = () => {
+  if (!heatmapRef.value) {
+    return
+  }
+
+  // 如果没有数据，加载模拟数据
+  if (!correlationMatrix.value.factors.length) {
+    loadMockData()
+    return
+  }
+
+  if (!heatmapInstance) {
+    heatmapInstance = echarts.init(heatmapRef.value, 'dark')
+  }
+
+  const factors = correlationMatrix.value.factors
+  const matrix = correlationMatrix.value.matrix
+
+  // 准备热图数据
+  const heatmapData: [number, number, number][] = []
+  for (let i = 0; i < factors.length; i++) {
+    for (let j = 0; j < factors.length; j++) {
+      heatmapData.push([j, i, matrix[i][j]])
+    }
+  }
+
+  // 深色主题配色 - 中国股市配色：红色正向，绿色负向
+  const darkTheme = {
+    background: '#1e222d',
+    text: '#d1d4dc',
+    textSecondary: '#787b86',
+    border: '#2a2e39',
+    up: '#ef5350',     // 红色代表正向
+    down: '#26a69a',   // 绿色代表负向
+    neutral: '#787b86'
+  }
+
+  const option: echarts.EChartsOption = {
+    backgroundColor: 'transparent',
+    tooltip: {
+      position: 'top',
+      backgroundColor: darkTheme.background,
+      borderColor: darkTheme.border,
+      textStyle: { color: darkTheme.text },
+      formatter: (params: any) => {
+        const factor1 = factors[params.value[1]]
+        const factor2 = factors[params.value[0]]
+        const correlation = params.value[2]
+        return `
+          <div style="padding: 8px;">
+            <div style="margin-bottom: 6px; font-weight: bold;">
+              ${factor1} × ${factor2}
+            </div>
+            <div>${t.value.correlation}: <strong>${formatNumber(correlation)}</strong></div>
+          </div>
+        `
+      }
+    },
+    grid: {
+      height: '80%',
+      top: '8%',
+      left: '12%',
+      right: '5%'
+    },
+    xAxis: {
+      type: 'category',
+      data: factors,
+      splitArea: { show: false },
+      axisLabel: {
+        interval: 0,
+        rotate: 45,
+        fontSize: 10,
+        color: darkTheme.textSecondary
+      },
+      axisLine: { lineStyle: { color: darkTheme.border } }
+    },
+    yAxis: {
+      type: 'category',
+      data: factors,
+      splitArea: { show: false },
+      axisLabel: {
+        interval: 0,
+        fontSize: 10,
+        color: darkTheme.textSecondary
+      },
+      axisLine: { lineStyle: { color: darkTheme.border } }
+    },
+    visualMap: {
+      min: -1,
+      max: 1,
+      calculable: false,
+      orient: 'horizontal',
+      left: 'center',
+      bottom: '2%',
+      inRange: {
+        color: [darkTheme.down, '#363a45', darkTheme.up]  // 绿色(负) -> 灰色 -> 红色(正)
+      },
+      text: [t.value.positiveCorr, t.value.negativeCorr],
+      textStyle: {
+        color: darkTheme.textSecondary,
+        fontSize: 11
+      }
+    },
+    series: [
+      {
+        name: t.value.correlation,
+        type: 'heatmap',
+        data: heatmapData,
+        label: {
+          show: false
+        },
+        emphasis: {
+          itemStyle: {
+            shadowBlur: 10,
+            shadowColor: 'rgba(0, 0, 0, 0.5)'
+          }
+        }
+      }
+    ]
+  }
+
+  heatmapInstance.setOption(option, true)
+}
+
+// 监听taskId变化
+watch(() => props.taskId, () => {
+  loadCorrelationData()
+})
+
+// 监听语言变化，重新渲染图表
+watch(() => props.isZh, () => {
+  // 销毁并重新创建图表实例以确保完全更新
+  if (heatmapInstance) {
+    heatmapInstance.dispose()
+    heatmapInstance = null
+  }
+  // 使用nextTick确保DOM更新后再渲染
+  setTimeout(() => {
+    renderHeatmap()
+  }, 0)
+})
+
+// 窗口大小变化时重绘图表
+const handleResize = () => {
+  if (heatmapInstance) {
+    heatmapInstance.resize()
+  }
+}
+
+// 生命周期钩子
+onMounted(() => {
+  loadCorrelationData()
+  window.addEventListener('resize', handleResize)
+})
+
+onBeforeUnmount(() => {
+  if (heatmapInstance) {
+    heatmapInstance.dispose()
+    heatmapInstance = null
+  }
+  window.removeEventListener('resize', handleResize)
+})
+
+// 暴露方法给父组件
+defineExpose({
+  refresh: loadCorrelationData
+})
+</script>
+
+<style scoped lang="scss">
+.factor-correlation-heatmap {
+  padding: 20px;
+  background: var(--bg-primary, #131722);
+  border-radius: 8px;
+
+  // 使用全局统一样式，el-select、el-input-number等已统一
+
+  :deep(.el-button--primary) {
+    background: var(--accent-blue, #2962ff);
+    border-color: var(--accent-blue, #2962ff);
+
+    &:hover {
+      background: #1e5fff;
+      border-color: #1e5fff;
+    }
+  }
+
+  :deep(.el-tag) {
+    background: var(--bg-secondary, #1e222d);
+    border-color: var(--border-color, #2a2e39);
+    color: var(--text-primary, #d1d4dc);
+  }
+
+  :deep(.el-progress) {
+    .el-progress-bar__outer {
+      background: var(--bg-primary, #131722);
+    }
+  }
+
+  :deep(.el-empty__description) {
+    color: var(--text-secondary, #787b86);
+  }
+}
+
+// 相关性统计摘要
+.summary-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+
+  .stat-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: var(--bg-secondary, #1e222d);
+    padding: 12px 16px;
+    border-radius: 8px;
+    border: 1px solid var(--border-color, #2a2e39);
+    transition: all 0.2s;
+
+    &:hover {
+      border-color: var(--accent-blue, #2962ff);
+    }
+
+    .stat-icon {
+      flex-shrink: 0;
+      width: 36px;
+      height: 36px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--bg-primary, #131722);
+      border-radius: 8px;
+
+      svg {
+        width: 18px;
+        height: 18px;
+      }
+
+      &.positive {
+        background: rgba(239, 83, 80, 0.15);
+      }
+
+      &.negative {
+        background: rgba(38, 166, 154, 0.15);
+      }
+    }
+
+    .stat-label {
+      font-size: 11px;
+      color: var(--text-primary, #d1d4dc);
+      margin-bottom: 6px;
+    }
+
+    .stat-value {
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--text-primary, #d1d4dc);
+
+      &.positive {
+        color: #ef5350;
+      }
+
+      &.negative {
+        color: #26a69a;
+      }
+    }
+  }
+}
+
+// 主要内容区域
+.main-content {
+  display: grid;
+  grid-template-columns: 1fr 300px;
+  gap: 16px;
+}
+
+// 热图区域
+.heatmap-section {
+  background: var(--bg-secondary, #1e222d);
+  padding: 16px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color, #2a2e39);
+
+  .section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+
+    h3 {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-primary, #d1d4dc);
+      margin: 0;
+    }
+
+    .title-with-icon {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+
+      svg {
+        width: 18px;
+        height: 18px;
+      }
+
+      &.small-icon svg {
+        width: 14px;
+        height: 14px;
+      }
+    }
+
+    .controls {
+      display: flex;
+      gap: 8px;
+    }
+  }
+
+  .heatmap {
+    width: 100%;
+    height: 500px;
+    background: var(--bg-primary, #131722);
+    border-radius: 4px;
+  }
+
+  .color-legend {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: 12px;
+    gap: 8px;
+
+    .legend-label {
+      font-size: 11px;
+      color: var(--text-secondary, #787b86);
+      font-weight: 500;
+    }
+
+    .legend-gradient {
+      width: 160px;
+      height: 10px;
+      background: linear-gradient(90deg, #26a69a 0%, #363a45 50%, #ef5350 100%);
+      border-radius: 5px;
+    }
+  }
+}
+
+// 高相关因子对面板
+.high-correlation-panel {
+  background: var(--bg-secondary, #1e222d);
+  padding: 16px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color, #2a2e39);
+  max-height: 620px;
+  display: flex;
+  flex-direction: column;
+
+  .section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border-color, #2a2e39);
+
+    h3 {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-primary, #d1d4dc);
+      margin: 0;
+    }
+
+    .title-with-icon {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+
+      svg {
+        width: 14px;
+        height: 14px;
+      }
+    }
+  }
+
+  .pairs-list {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+
+    .pair-item {
+      padding: 10px 12px;
+      border-radius: 6px;
+      background: var(--bg-primary, #131722);
+      border-left: 3px solid var(--text-secondary, #787b86);
+      transition: all 0.2s;
+
+      &:hover {
+        background: rgba(41, 98, 255, 0.1);
+        transform: translateX(2px);
+      }
+
+      &.positive {
+        border-left-color: #ef5350;  // 红色代表正相关
+      }
+
+      &.negative {
+        border-left-color: #26a69a;  // 绿色代表负相关
+      }
+
+      .pair-factors {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-bottom: 6px;
+
+        .factor-name {
+          font-size: 12px;
+          font-weight: 500;
+          color: var(--text-primary, #d1d4dc);
+        }
+
+        .el-icon {
+          color: var(--text-secondary, #787b86);
+          font-size: 12px;
+        }
+      }
+
+      .pair-correlation {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+
+        .correlation-value {
+          font-size: 13px;
+          font-weight: 600;
+          min-width: 50px;
+          color: var(--text-primary, #d1d4dc);
+        }
+
+        .el-progress {
+          flex: 1;
+        }
+      }
+    }
+  }
+}
+
+// 响应式设计
+@media (max-width: 1200px) {
+  .main-content {
+    grid-template-columns: 1fr;
+  }
+
+  .heatmap-section {
+    .heatmap {
+      height: 400px;
+    }
+  }
+
+  .high-correlation-panel {
+    max-height: 400px;
+  }
+}
+</style>

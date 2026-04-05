@@ -1,0 +1,33 @@
+import { IChartWidgetBase } from '../gui/chart-widget';
+import { CustomData, ICustomSeriesPaneView } from '../model/icustom-series';
+import { Pane } from '../model/pane';
+import { Series } from '../model/series';
+import { CustomSeriesOptions, CustomSeriesPartialOptions, SeriesPartialOptions, SeriesPartialOptionsMap, SeriesType } from '../model/series-options';
+import { SeriesDefinition } from '../model/series/series-def';
+import { IChartApiBase } from './ichart-api';
+import { IPaneApi } from './ipane-api';
+import { IPanePrimitive } from './ipane-primitive-api';
+import { IPriceScaleApi } from './iprice-scale-api';
+import { ISeriesApi } from './iseries-api';
+export declare class PaneApi<HorzScaleItem> implements IPaneApi<HorzScaleItem> {
+    protected readonly _chartApi: IChartApiBase<HorzScaleItem>;
+    private _chartWidget;
+    private _pane;
+    private readonly _seriesApiGetter;
+    constructor(chartWidget: IChartWidgetBase, seriesApiGetter: (series: Series<SeriesType>) => ISeriesApi<SeriesType, HorzScaleItem>, pane: Pane, chartApi: IChartApiBase<HorzScaleItem>);
+    getHeight(): number;
+    setHeight(height: number): void;
+    getStretchFactor(): number;
+    setStretchFactor(stretchFactor: number): void;
+    paneIndex(): number;
+    moveTo(paneIndex: number): void;
+    getSeries(): ISeriesApi<SeriesType, HorzScaleItem>[];
+    getHTMLElement(): HTMLElement | null;
+    attachPrimitive(primitive: IPanePrimitive<HorzScaleItem>): void;
+    detachPrimitive(primitive: IPanePrimitive<HorzScaleItem>): void;
+    priceScale(priceScaleId: string): IPriceScaleApi;
+    setPreserveEmptyPane(preserve: boolean): void;
+    preserveEmptyPane(): boolean;
+    addCustomSeries<TData extends CustomData<HorzScaleItem>, TOptions extends CustomSeriesOptions, TPartialOptions extends CustomSeriesPartialOptions = SeriesPartialOptions<TOptions>>(customPaneView: ICustomSeriesPaneView<HorzScaleItem, TData, TOptions>, options?: SeriesPartialOptions<TOptions>, paneIndex?: number): ISeriesApi<'Custom', HorzScaleItem, TData, TOptions, TPartialOptions>;
+    addSeries<T extends SeriesType>(definition: SeriesDefinition<T>, options?: SeriesPartialOptionsMap[T]): ISeriesApi<T, HorzScaleItem>;
+}

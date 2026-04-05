@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>数据源诊断</title>
+    <style>
+        body { font-family: monospace; padding: 20px; background: #1e1e1e; color: #d4d4d4; }
+        .section { background: #252526; padding: 15px; margin: 10px 0; border-radius: 5px; }
+        .success { color: #4ec9b0; }
+        .error { color: #f48771; }
+        .warning { color: #dcdcaa; }
+        h2 { color: #4ec9b0; }
+        pre { background: #1e1e1e; padding: 10px; overflow-x: auto; }
+    </style>
+</head>
+<body>
+    <h2>📊 实时行情数据源诊断</h2>
+
+    <div class="section">
+        <button onclick="testRealtimeAPI()">测试实时行情 API</button>
+        <pre id="result">点击按钮测试...</pre>
+    </div>
+
+    <div class="section">
+        <h3>❓ 为什么这些字段显示 --？</h3>
+        <p>以下字段需要<strong>通达信终端登录</strong>才能获取：</p>
+        <ul>
+            <li>换手率 (turnover_rate)</li>
+            <li>量比 (volume_ratio)</li>
+            <li>市盈率 (pe_ratio)</li>
+            <li>市净率 (pb_ratio)</li>
+            <li>股息率 (dy_ratio)</li>
+            <li>贝塔系数 (beta)</li>
+            <li>52周最高/最低 (his_high/his_low)</li>
+            <li>内盘/外盘 (inner_vol/outer_vol)</li>
+        </ul>
+    </div>
+
+    <div class="section">
+        <h3>🔧 解决方案</h3>
+        <ol>
+            <li><strong>确保通达信终端正在运行</strong>
+                <ul>
+                    <li>打开通达信终端（E:\new_tdx64）</li>
+                    <li>确保已经登录（菜单 → 帮助 → 关于，查看版本信息）</li>
+                </ul>
+            </li>
+            <li><strong>重启后端服务</strong>
+                <pre>cd E:/MyQuant_v11/backend
+python -m myquant.main</pre>
+            </li>
+            <li><strong>重新测试</strong>
+                <p>点击上面的"测试实时行情 API"按钮</p>
+            </li>
+        </ol>
+    </div>
+
+    <div class="section">
+        <h3>📋 当前系统状态</h3>
+        <p>以下字段<strong>无需通达信</strong>，XtQuant 可直接提供：</p>
+        <ul>
+            <li>✓ 价格（最新价、开盘价、最高价、最低价）</li>
+            <li>✓ 涨跌幅、涨跌额</li>
+            <li>✓ 成交量、成交额</li>
+            <li>✓ 买卖五档</li>
+            <li>✓ 涨停价、跌停价（计算得出）</li>
+            <li>✓ 振幅（计算得出）</li>
+        </ul>
+    </div>
+
+    <script>
+        async function testRealtimeAPI() {
+            const result = document.getElementById('result');
+            result.textContent = '正在测试...';
+
+            try {
+                const response = await fetch('http://localhost:8000/api/v1/market/quotes', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        codes: ['600519.SH']
+                    })
+                });
+
+                const data = await response.json();
+
+                let output = `数据源: ${data.data.data_source}\n\n`;
+
+                if (data.data.quotes && data.data.quotes['600519.SH']) {
+                    const quote = data.data.quotes['600519.SH'];
+
+                    output += `=== 600519.SH 实时行情 ===\n\n`;
+
+                    // 基础行情（总是有数据）
+                    output += `【基础行情】\n`;
+                    output += `  最新价: ${quote.price}\n`;
+                    output += `  涨跌幅: ${quote.change_pct}%\n`;
+                    output += `  成交量: ${quote.volume}\n`;
+
+                    // 需要通达信的字段
+                    output += `\n【需要通达信的字段】\n`;
+                    const tdxFields = {
+                        'turnover_rate': '换手率',
+                        'volume_ratio': '量比',
+                        'pe_ratio': '市盈率',
+                        'pb_ratio': '市净率',
+                        'dy_ratio': '股息率',
+                        'beta': '贝塔系数',
+                        'inner_vol': '内盘',
+                        'outer_vol': '外盘',
+                        'his_high': '52周最高',
+                        'his_low': '52周最低'
+                    };
+
+                    let missingCount = 0;
+                    for (const [key, name] of Object.entries(tdxFields)) {
+                        const value = quote[key];
+                        if (value === 0 || value === '0' || value === null || value === undefined) {
+                            output += `  ${name}: -- (缺失)\n`;
+                            missingCount++;
+                        } else {
+                            output += `  ${name}: ${value}\n`;
+                        }
+                    }
+
+                    output += `\n=== 结果 ===\n`;
+                    if (data.data.data_source === 'tdxquant') {
+                        output += `✅ 使用通达信数据源，所有字段应该都有数据`;
+                        result.innerHTML = `<span class="success">${output}</span>`;
+                    } else if (missingCount > 5) {
+                        output += `⚠️ 使用 ${data.data.data_source} 数据源，${missingCount} 个字段缺失`;
+                        output += `\n\n请确认：`;
+                        output += `\n1. 通达信终端是否正在运行？`;
+                        output += `\n2. 通达信是否已登录？`;
+                        output += `\n3. TPythClient.dll 路径是否正确？`;
+                        result.innerHTML = `<span class="warning">${output}</span>`;
+                    } else {
+                        output += `✅ 数据正常`;
+                        result.innerHTML = `<span class="success">${output}</span>`;
+                    }
+                } else {
+                    result.innerHTML = `<span class="error">未获取到数据</span>`;
+                }
+            } catch (error) {
+                result.innerHTML = `<span class="error">错误: ${error.message}</span>`;
+            }
+        }
+    </script>
+</body>
+</html>

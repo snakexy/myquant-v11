@@ -1,0 +1,257 @@
+// ============================================================================
+// Research Detail 共享样式
+// 研究分析详情页的CSS变量和常用样式
+// ============================================================================
+
+// CSS变量定义 - 在根元素上定义
+:root {
+  // 背景色
+  --bg-primary: #131722;
+  --bg-secondary: #1e222d;
+  --bg-tertiary: #2a2e39;
+
+  // 文字颜色
+  --text-primary: #d1d4dc;
+  --text-secondary: #787b86;
+
+  // 强调色
+  --accent-blue: #2962ff;
+  --accent-red: #ef5350;
+  --accent-green: #26a69a;
+  --accent-orange: #ff9800;
+
+  // A股颜色规则：红涨绿跌
+  --color-up: #ef5350;      // 红色 - 上涨/正面
+  --color-down: #26a69a;    // 绿色 - 下跌/负面
+
+  // 边框色
+  --border-color: #2a2e39;
+}
+
+// 通用mixin - 可被其他组件引用
+@mixin research-panel {
+  background: var(--bg-primary);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+@mixin research-panel-header {
+  background: var(--bg-secondary);
+  padding: 12px 16px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border-color);
+}
+
+@mixin research-btn {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+@mixin research-btn-primary {
+  @include research-btn;
+  background: var(--accent-blue);
+  color: white;
+
+  &:hover:not(:disabled) {
+    background: #2952cc;
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}
+
+@mixin research-btn-secondary {
+  @include research-btn;
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+
+  &:hover {
+    background: var(--bg-secondary);
+  }
+}
+
+@mixin research-input {
+  padding: 8px 12px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-size: 13px;
+
+  &:focus {
+    outline: none;
+    border-color: var(--accent-blue);
+  }
+}
+
+@mixin research-section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 12px;
+}
+
+// 图标样式
+@mixin icon-sm {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+@mixin icon-xs {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+}
+
+// 滚动条样式
+@mixin custom-scrollbar {
+  &::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: var(--bg-tertiary);
+    border-radius: 3px;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: #4a4e5a;
+    border-radius: 3px;
+
+    &:hover {
+      background: #5a5e6a;
+    }
+  }
+}
+
+// 状态徽章
+@mixin status-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 500;
+
+  &.pass, &.completed {
+    background: rgba(239, 83, 80, 0.2);
+    color: var(--accent-red);
+  }
+
+  &.fail, &.failed {
+    background: rgba(38, 166, 154, 0.2);
+    color: var(--accent-green);
+  }
+
+  &.pending {
+    background: rgba(255, 152, 0, 0.2);
+    color: var(--accent-orange);
+  }
+
+  &.running {
+    background: rgba(41, 98, 255, 0.2);
+    color: var(--accent-blue);
+  }
+}
+
+// 数据表格样式
+@mixin research-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+
+  thead {
+    background: var(--bg-tertiary);
+
+    th {
+      padding: 10px 12px;
+      text-align: left;
+      font-weight: 600;
+      color: var(--text-secondary);
+      border-bottom: 1px solid var(--border-color);
+    }
+  }
+
+  tbody {
+    tr {
+      border-bottom: 1px solid var(--border-color);
+
+      &:hover {
+        background: var(--bg-tertiary);
+      }
+
+      td {
+        padding: 10px 12px;
+        color: var(--text-primary);
+      }
+    }
+  }
+}
+
+// 因子颜色工具函数
+@function get-factor-quality-color($score) {
+  @if $score > 100 {
+    @return #8b5cf6;  // 紫色=卓越
+  } @else if $score >= 80 {
+    @return #ef5350;   // 红色=优秀
+  } @else if $score >= 60 {
+    @return #f97316;   // 橙红色=良好
+  } @else if $score >= 40 {
+    @return #2962ff;   // 蓝色=一般
+  } @else {
+    @return #26a69a;   // 绿色=差
+  }
+}
+
+// 通用类
+.research-section {
+  padding: 16px;
+  background: var(--bg-secondary);
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  margin-bottom: 16px;
+}
+
+.research-grid {
+  display: grid;
+  gap: 16px;
+}
+
+.research-flex {
+  display: flex;
+  gap: 16px;
+}
+
+.research-text-primary {
+  color: var(--text-primary);
+}
+
+.research-text-secondary {
+  color: var(--text-secondary);
+}
+
+.research-text-up {
+  color: var(--color-up);
+}
+
+.research-text-down {
+  color: var(--color-down);
+}

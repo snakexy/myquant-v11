@@ -1,0 +1,981 @@
+// 统一UI组件效果设计文件
+// 用于节点工作流页面的所有UI组件
+
+@use '@/assets/styles/variables.scss' as *;
+
+// ==================== 基础变量 ====================
+$primary-color: #2962ff;
+$primary-hover: #1565c0;
+$secondary-color: #3b82f6;
+$secondary-hover: #2563eb;
+$success-color: #10b981;
+$warning-color: #f59e0b;
+$error-color: #ef4444;
+$neutral-color: #6b7280;
+
+$border-radius-sm: 6px;
+$border-radius-md: 8px;
+$border-radius-lg: 12px;
+$border-radius-xl: 16px;
+
+$transition-fast: 0.2s ease;
+$transition-normal: 0.3s ease;
+$transition-slow: 0.5s ease;
+
+$shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.1);
+$shadow-md: 0 4px 16px rgba(0, 0, 0, 0.15);
+$shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.2);
+$shadow-xl: 0 12px 48px rgba(0, 0, 0, 0.25);
+
+// ==================== 按钮组件 ====================
+.ui-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 24px;
+  border: none;
+  border-radius: $border-radius-md;
+  font-size: 14px;
+  font-weight: 500;
+  font-family: var(--font-family-primary);
+  cursor: pointer;
+  transition: all $transition-normal;
+  position: relative;
+  overflow: hidden;
+  text-decoration: none;
+  user-select: none;
+  
+  // 按钮尺寸变体
+  &.ui-button-sm {
+    padding: 8px 16px;
+    font-size: 12px;
+  }
+  
+  &.ui-button-lg {
+    padding: 16px 32px;
+    font-size: 16px;
+  }
+  
+  &.ui-button-xl {
+    padding: 20px 40px;
+    font-size: 18px;
+  }
+  
+  // 按钮类型变体
+  &.ui-button-primary {
+    background: linear-gradient(135deg, $primary-color 0%, $primary-hover 100%);
+    color: white;
+    
+    &:hover {
+      transform: translateY(-2px);
+      box-shadow: $shadow-lg;
+    }
+    
+    &:active {
+      transform: translateY(0);
+    }
+  }
+  
+  &.ui-button-secondary {
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text-primary);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    
+    &:hover {
+      background: rgba(255, 255, 255, 0.1);
+      border-color: rgba(255, 255, 255, 0.2);
+      transform: translateY(-1px);
+    }
+  }
+  
+  &.ui-button-success {
+    background: linear-gradient(135deg, $success-color 0%, #059669 100%);
+    color: white;
+    
+    &:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 32px rgba(16, 185, 129, 0.3);
+    }
+  }
+  
+  &.ui-button-warning {
+    background: linear-gradient(135deg, $warning-color 0%, #d97706 100%);
+    color: white;
+    
+    &:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 32px rgba(245, 158, 11, 0.3);
+    }
+  }
+  
+  &.ui-button-error {
+    background: linear-gradient(135deg, $error-color 0%, #dc2626 100%);
+    color: white;
+    
+    &:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 32px rgba(239, 68, 68, 0.3);
+    }
+  }
+  
+  &.ui-button-ghost {
+    background: transparent;
+    color: var(--text-primary);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    
+    &:hover {
+      background: rgba(255, 255, 255, 0.05);
+      border-color: rgba(255, 255, 255, 0.2);
+    }
+  }
+  
+  // 按钮状态
+  &.ui-button-loading {
+    pointer-events: none;
+    opacity: 0.7;
+    
+    &::after {
+      content: '';
+      position: absolute;
+      width: 16px;
+      height: 16px;
+      border: 2px solid transparent;
+      border-top: 2px solid currentColor;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+  }
+  
+  &.ui-button-disabled {
+    pointer-events: none;
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  
+  // 按钮光效
+  &.ui-button-glow {
+    &::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: -100%;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+      transition: left $transition-slow;
+    }
+    
+    &:hover::before {
+      left: 100%;
+    }
+  }
+}
+
+// ==================== 输入框组件 ====================
+.ui-input {
+  width: 100%;
+  padding: 12px 16px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: $border-radius-md;
+  color: var(--text-primary);
+  font-size: 14px;
+  font-family: var(--font-family-primary);
+  transition: all $transition-normal;
+  
+  &:focus {
+    outline: none;
+    border-color: $primary-color;
+    background: rgba(255, 255, 255, 0.08);
+    box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1);
+  }
+  
+  &::placeholder {
+    color: var(--text-secondary);
+  }
+  
+  &.ui-input-error {
+    border-color: $error-color;
+    
+    &:focus {
+      box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1);
+    }
+  }
+  
+  &.ui-input-success {
+    border-color: $success-color;
+    
+    &:focus {
+      box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1);
+    }
+  }
+  
+  // 输入框尺寸变体
+  &.ui-input-sm {
+    padding: 8px 12px;
+    font-size: 12px;
+  }
+  
+  &.ui-input-lg {
+    padding: 16px 20px;
+    font-size: 16px;
+  }
+}
+
+// ==================== 下拉框组件 ====================
+.ui-select {
+  position: relative;
+  width: 100%;
+  
+  .ui-select-trigger {
+    width: 100%;
+    padding: 12px 16px;
+    padding-right: 40px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: $border-radius-md;
+    color: var(--text-primary);
+    font-size: 14px;
+    font-family: var(--font-family-primary);
+    cursor: pointer;
+    transition: all $transition-normal;
+    position: relative;
+    
+    &:hover {
+      background: rgba(255, 255, 255, 0.08);
+      border-color: rgba(255, 255, 255, 0.2);
+    }
+    
+    &::after {
+      content: '▼';
+      position: absolute;
+      right: 16px;
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: 12px;
+      color: var(--text-secondary);
+      transition: transform $transition-normal;
+    }
+    
+    &.ui-select-open::after {
+      transform: translateY(-50%) rotate(180deg);
+    }
+  }
+  
+  .ui-select-dropdown {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 0;
+    right: 0;
+    background: rgba(26, 26, 46, 0.95);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: $border-radius-md;
+    box-shadow: $shadow-lg;
+    z-index: 1000;
+    max-height: 300px;
+    overflow-y: auto;
+    
+    .ui-select-option {
+      padding: 12px 16px;
+      color: var(--text-primary);
+      font-size: 14px;
+      cursor: pointer;
+      transition: all $transition-fast;
+      
+      &:hover {
+        background: rgba(139, 92, 246, 0.1);
+      }
+      
+      &.ui-select-selected {
+        background: rgba(139, 92, 246, 0.2);
+        color: $primary-color;
+      }
+      
+      &.ui-select-disabled {
+        color: var(--text-secondary);
+        cursor: not-allowed;
+        pointer-events: none;
+      }
+    }
+  }
+}
+
+// ==================== 复选框组件 ====================
+.ui-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+  
+  .ui-checkbox-input {
+    position: relative;
+    width: 20px;
+    height: 20px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 2px solid rgba(255, 255, 255, 0.2);
+    border-radius: $border-radius-sm;
+    transition: all $transition-normal;
+    
+    &::after {
+      content: '';
+      position: absolute;
+      top: 2px;
+      left: 6px;
+      width: 6px;
+      height: 10px;
+      border: solid white;
+      border-width: 0 2px 2px 0;
+      transform: rotate(45deg) scale(0);
+      transition: transform $transition-fast;
+    }
+  }
+  
+  .ui-checkbox-label {
+    color: var(--text-primary);
+    font-size: 14px;
+    font-family: var(--font-family-primary);
+  }
+  
+  &:hover .ui-checkbox-input {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.3);
+  }
+  
+  &.ui-checkbox-checked .ui-checkbox-input {
+    background: $primary-color;
+    border-color: $primary-color;
+    
+    &::after {
+      transform: rotate(45deg) scale(1);
+    }
+  }
+  
+  &.ui-checkbox-disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    pointer-events: none;
+  }
+}
+
+// ==================== 单选框组件 ====================
+.ui-radio {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+  
+  .ui-radio-input {
+    position: relative;
+    width: 20px;
+    height: 20px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 2px solid rgba(255, 255, 255, 0.2);
+    border-radius: 50%;
+    transition: all $transition-normal;
+    
+    &::after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%) scale(0);
+      width: 8px;
+      height: 8px;
+      background: white;
+      border-radius: 50%;
+      transition: transform $transition-fast;
+    }
+  }
+  
+  .ui-radio-label {
+    color: var(--text-primary);
+    font-size: 14px;
+    font-family: var(--font-family-primary);
+  }
+  
+  &:hover .ui-radio-input {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.3);
+  }
+  
+  &.ui-radio-checked .ui-radio-input {
+    background: $primary-color;
+    border-color: $primary-color;
+    
+    &::after {
+      transform: translate(-50%, -50%) scale(1);
+    }
+  }
+  
+  &.ui-radio-disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    pointer-events: none;
+  }
+}
+
+// ==================== 滑杆组件 ====================
+.ui-slider {
+  width: 100%;
+  padding: 8px 0;
+  
+  .ui-slider-track {
+    width: 100%;
+    height: 6px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 3px;
+    position: relative;
+    cursor: pointer;
+    
+    .ui-slider-fill {
+      height: 100%;
+      background: linear-gradient(90deg, $primary-color, $primary-hover);
+      border-radius: 3px;
+      transition: width $transition-normal;
+    }
+    
+    .ui-slider-thumb {
+      position: absolute;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      width: 20px;
+      height: 20px;
+      background: white;
+      border: 3px solid $primary-color;
+      border-radius: 50%;
+      cursor: grab;
+      transition: all $transition-normal;
+      box-shadow: $shadow-md;
+      
+      &:hover {
+        transform: translate(-50%, -50%) scale(1.1);
+        box-shadow: $shadow-lg;
+      }
+      
+      &:active {
+        cursor: grabbing;
+        transform: translate(-50%, -50%) scale(0.95);
+      }
+    }
+  }
+  
+  .ui-slider-labels {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 8px;
+    
+    .ui-slider-label {
+      font-size: 12px;
+      color: var(--text-secondary);
+    }
+  }
+  
+  .ui-slider-value {
+    text-align: center;
+    margin-top: 4px;
+    font-size: 14px;
+    font-weight: 600;
+    color: $primary-color;
+  }
+}
+
+// ==================== 开关组件 ====================
+.ui-switch {
+  position: relative;
+  width: 48px;
+  height: 24px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all $transition-normal;
+  
+  .ui-switch-thumb {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 20px;
+    height: 20px;
+    background: white;
+    border-radius: 50%;
+    transition: all $transition-normal;
+    box-shadow: $shadow-sm;
+  }
+  
+  &.ui-switch-on {
+    background: $primary-color;
+    
+    .ui-switch-thumb {
+      transform: translateX(24px);
+    }
+  }
+  
+  &:hover {
+    background: rgba(255, 255, 255, 0.15);
+    
+    &.ui-switch-on {
+      background: $primary-hover;
+    }
+  }
+}
+
+// ==================== 进度条组件 ====================
+.ui-progress {
+  width: 100%;
+  
+  .ui-progress-bar {
+    width: 100%;
+    height: 8px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+    overflow: hidden;
+    
+    .ui-progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, $primary-color, $primary-hover);
+      border-radius: 4px;
+      transition: width $transition-normal;
+      position: relative;
+      
+      &::after {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+        animation: progress-shine 2s linear infinite;
+      }
+    }
+  }
+  
+  .ui-progress-text {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 8px;
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+}
+
+// ==================== 标签组件 ====================
+.ui-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: $border-radius-sm;
+  font-size: 12px;
+  font-weight: 500;
+  
+  &.ui-tag-primary {
+    background: rgba(139, 92, 246, 0.1);
+    color: $primary-color;
+  }
+  
+  &.ui-tag-success {
+    background: rgba(16, 185, 129, 0.1);
+    color: $success-color;
+  }
+  
+  &.ui-tag-warning {
+    background: rgba(245, 158, 11, 0.1);
+    color: $warning-color;
+  }
+  
+  &.ui-tag-error {
+    background: rgba(239, 68, 68, 0.1);
+    color: $error-color;
+  }
+  
+  &.ui-tag-neutral {
+    background: rgba(107, 114, 128, 0.1);
+    color: $neutral-color;
+  }
+  
+  .ui-tag-close {
+    cursor: pointer;
+    margin-left: 4px;
+    
+    &:hover {
+      opacity: 0.7;
+    }
+  }
+}
+
+// ==================== 徽章组件 ====================
+.ui-badge {
+  position: relative;
+  display: inline-block;
+  
+  .ui-badge-content {
+    position: absolute;
+    top: -8px;
+    right: -8px;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 6px;
+    background: $error-color;
+    color: white;
+    border-radius: 9px;
+    font-size: 10px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1;
+  }
+  
+  &.ui-badge-dot .ui-badge-content {
+    width: 8px;
+    height: 8px;
+    min-width: 8px;
+    padding: 0;
+    border-radius: 50%;
+  }
+}
+
+// ==================== 工具提示组件 ====================
+.ui-tooltip {
+  position: absolute;
+  z-index: 1000;
+  padding: 8px 12px;
+  background: rgba(26, 26, 46, 0.95);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: $border-radius-sm;
+  font-size: 12px;
+  color: var(--text-primary);
+  box-shadow: $shadow-md;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(-4px);
+  transition: all $transition-fast;
+  
+  &.ui-tooltip-show {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  
+  &::before {
+    content: '';
+    position: absolute;
+    width: 0;
+    height: 0;
+    border: 4px solid transparent;
+  }
+  
+  &.ui-tooltip-top::before {
+    bottom: -8px;
+    left: 50%;
+    transform: translateX(-50%);
+    border-top-color: rgba(26, 26, 46, 0.95);
+  }
+  
+  &.ui-tooltip-bottom::before {
+    top: -8px;
+    left: 50%;
+    transform: translateX(-50%);
+    border-bottom-color: rgba(26, 26, 46, 0.95);
+  }
+  
+  &.ui-tooltip-left::before {
+    right: -8px;
+    top: 50%;
+    transform: translateY(-50%);
+    border-left-color: rgba(26, 26, 46, 0.95);
+  }
+  
+  &.ui-tooltip-right::before {
+    left: -8px;
+    top: 50%;
+    transform: translateY(-50%);
+    border-right-color: rgba(26, 26, 46, 0.95);
+  }
+}
+
+// ==================== 卡片组件 ====================
+.ui-card {
+  background: rgba(255, 255, 255, 0.02);
+  backdrop-filter: blur(8px) saturate(120%);
+  -webkit-backdrop-filter: blur(8px) saturate(120%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: $border-radius-lg;
+  overflow: hidden;
+  transition: all $transition-normal;
+  
+  &:hover {
+    transform: translateY(-2px);
+    background: rgba(255, 255, 255, 0.04);
+    backdrop-filter: blur(12px) saturate(150%);
+    -webkit-backdrop-filter: blur(12px) saturate(150%);
+    box-shadow: $shadow-lg;
+  }
+  
+  .ui-card-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    
+    .ui-card-title {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+    
+    .ui-card-subtitle {
+      margin: 4px 0 0 0;
+      font-size: 14px;
+      color: var(--text-secondary);
+    }
+  }
+  
+  .ui-card-body {
+    padding: 20px;
+  }
+  
+  .ui-card-footer {
+    padding: 16px 20px;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+    background: rgba(255, 255, 255, 0.02);
+  }
+}
+
+// ==================== 模态框组件 ====================
+.ui-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity $transition-normal;
+  
+  &.ui-modal-show {
+    opacity: 1;
+  }
+  
+  .ui-modal-content {
+    background: rgba(26, 26, 46, 0.95);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: $border-radius-xl;
+    box-shadow: $shadow-xl;
+    max-width: 90vw;
+    max-height: 90vh;
+    overflow: hidden;
+    transform: scale(0.9);
+    transition: transform $transition-normal;
+    
+    .ui-modal-show & {
+      transform: scale(1);
+    }
+    
+    .ui-modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 20px 24px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      
+      .ui-modal-title {
+        margin: 0;
+        font-size: 20px;
+        font-weight: 600;
+        color: var(--text-primary);
+      }
+      
+      .ui-modal-close {
+        width: 32px;
+        height: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: $border-radius-sm;
+        color: var(--text-primary);
+        cursor: pointer;
+        transition: all $transition-fast;
+        
+        &:hover {
+          background: rgba(255, 255, 255, 0.1);
+          border-color: rgba(255, 255, 255, 0.2);
+        }
+      }
+    }
+    
+    .ui-modal-body {
+      padding: 24px;
+      max-height: calc(90vh - 140px);
+      overflow-y: auto;
+    }
+    
+    .ui-modal-footer {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 12px;
+      padding: 16px 24px;
+      border-top: 1px solid rgba(255, 255, 255, 0.1);
+      background: rgba(255, 255, 255, 0.02);
+    }
+  }
+}
+
+// ==================== 动画 ====================
+@keyframes spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes progress-shine {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+// ==================== 响应式工具类 ====================
+.ui-hidden {
+  display: none !important;
+}
+
+.ui-visible {
+  display: block !important;
+}
+
+.ui-invisible {
+  visibility: hidden !important;
+}
+
+.ui-text-center {
+  text-align: center !important;
+}
+
+.ui-text-left {
+  text-align: left !important;
+}
+
+.ui-text-right {
+  text-align: right !important;
+}
+
+.ui-flex {
+  display: flex !important;
+}
+
+.ui-flex-column {
+  flex-direction: column !important;
+}
+
+.ui-flex-center {
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+.ui-flex-between {
+  justify-content: space-between !important;
+}
+
+.ui-flex-around {
+  justify-content: space-around !important;
+}
+
+.ui-flex-1 {
+  flex: 1 !important;
+}
+
+// ==================== 间距工具类 ====================
+@for $i from 0 through 10 {
+  .ui-m-#{$i} {
+    margin: #{$i * 4}px !important;
+  }
+  
+  .ui-mt-#{$i} {
+    margin-top: #{$i * 4}px !important;
+  }
+  
+  .ui-mr-#{$i} {
+    margin-right: #{$i * 4}px !important;
+  }
+  
+  .ui-mb-#{$i} {
+    margin-bottom: #{$i * 4}px !important;
+  }
+  
+  .ui-ml-#{$i} {
+    margin-left: #{$i * 4}px !important;
+  }
+  
+  .ui-p-#{$i} {
+    padding: #{$i * 4}px !important;
+  }
+  
+  .ui-pt-#{$i} {
+    padding-top: #{$i * 4}px !important;
+  }
+  
+  .ui-pr-#{$i} {
+    padding-right: #{$i * 4}px !important;
+  }
+  
+  .ui-pb-#{$i} {
+    padding-bottom: #{$i * 4}px !important;
+  }
+  
+  .ui-pl-#{$i} {
+    padding-left: #{$i * 4}px !important;
+  }
+}

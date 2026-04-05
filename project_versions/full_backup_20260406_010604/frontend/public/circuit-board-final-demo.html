@@ -1,0 +1,772 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>完整总体架构电路板系统演示</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Courier New', monospace;
+            background: #0a0a0f;
+            color: #e0e0e0;
+            overflow: hidden;
+        }
+        
+        .demo-container {
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .demo-header {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            border-bottom: 2px solid #0f3460;
+            padding: 10px;
+            text-align: center;
+        }
+        
+        .demo-title {
+            color: #00ff88;
+            font-size: 20px;
+            margin-bottom: 5px;
+            text-shadow: 0 0 10px rgba(0, 255, 136, 0.5);
+        }
+        
+        .demo-content {
+            flex: 1;
+            position: relative;
+            overflow: auto;
+        }
+        
+        .circuit-board-full {
+            width: 1400px;
+            height: 1000px;
+            position: relative;
+            background: #0a0a0f;
+            margin: 0 auto;
+        }
+        
+        .full-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+        
+        .connections-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 5;
+        }
+        
+        .full-nodes {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 10;
+        }
+        
+        .full-node {
+            position: absolute;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            border: 2px solid #0f3460;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 8px;
+            min-width: 80px;
+            min-height: 60px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+            overflow: hidden;
+            font-size: 10px;
+            opacity: 0.9; /* 未激活节点稍微透明，但仍然可见 */
+        }
+        
+        .full-node:hover {
+            border-color: #00ff88;
+            box-shadow: 0 0 20px rgba(0, 255, 136, 0.4);
+            transform: scale(1.1);
+            z-index: 20;
+            opacity: 1; /* 悬停时完全不透明 */
+        }
+        
+        .full-node.active {
+            background: linear-gradient(135deg, #00ff88 0%, #00cc6a 100%);
+            border-color: #00ff88;
+            color: #0a0a0f;
+            box-shadow: 0 0 25px rgba(0, 255, 136, 0.6);
+            animation: nodeActivePulse 2s infinite;
+            opacity: 1; /* 激活节点完全不透明 */
+        }
+        
+        .full-node-icon {
+            font-size: 16px;
+            margin-bottom: 3px;
+            transition: all 0.3s ease;
+            opacity: 0.7; /* 未激活节点图标稍微透明，但仍然可见 */
+        }
+        
+        .full-node.active .full-node-icon {
+            opacity: 1; /* 激活节点图标完全不透明 */
+        }
+        
+        .full-node-label {
+            font-size: 8px;
+            text-align: center;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+            opacity: 0.8; /* 未激活节点标签稍微透明，但仍然可见 */
+        }
+        
+        .full-node.active .full-node-label {
+            opacity: 1; /* 激活节点标签完全不透明 */
+        }
+        
+        .preview-controls {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            border: 1px solid #0f3460;
+            border-radius: 8px;
+            padding: 15px;
+            min-width: 200px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+        }
+        
+        .preview-controls h3 {
+            color: #00ff88;
+            margin-bottom: 10px;
+            font-size: 14px;
+        }
+        
+        .control-button {
+            width: 100%;
+            background: linear-gradient(135deg, #0f3460 0%, #16213e 100%);
+            border: 1px solid #0f3460;
+            color: #e0e0e0;
+            padding: 8px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 12px;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        
+        .control-button:hover {
+            background: linear-gradient(135deg, #00ff88 0%, #00cc6a 100%);
+            color: #0a0a0f;
+            border-color: #00ff88;
+        }
+        
+        .control-button:last-child {
+            margin-bottom: 0;
+        }
+        
+        .demo-footer {
+            background: linear-gradient(135deg, #16213e 0%, #0f3460 100%);
+            border-top: 2px solid #0f3460;
+            padding: 8px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 11px;
+        }
+        
+        .status-info {
+            display: flex;
+            gap: 20px;
+        }
+        
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            color: #e0e0e0;
+        }
+        
+        .status-item i {
+            color: #00ff88;
+        }
+        
+        .layer-label {
+            position: absolute;
+            color: #00ff88;
+            font-size: 10px;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            opacity: 0.7;
+            z-index: 5;
+        }
+        
+        @keyframes nodeActivePulse {
+            0%, 100% {
+                box-shadow: 0 0 25px rgba(0, 255, 136, 0.6);
+            }
+            50% {
+                box-shadow: 0 0 35px rgba(0, 255, 136, 0.8);
+            }
+        }
+        
+        .connection-line {
+            stroke: #333366;
+            stroke-width: 2;
+            fill: none;
+            opacity: 0.6;
+            transition: all 0.3s ease;
+        }
+        
+        .connection-line.active {
+            stroke: #00ff88;
+            stroke-width: 3;
+            opacity: 1;
+            filter: drop-shadow(0 0 3px #00ff88);
+            animation: connectionPulse 2s infinite;
+        }
+        
+        @keyframes connectionPulse {
+            0%, 100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.7;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <div class="demo-container">
+            <div class="demo-header">
+                <h1 class="demo-title">🔌 完整总体架构电路板系统演示</h1>
+                <p style="color: #e0e0e0; font-size: 12px;">所有节点始终显示 • 根据需求激活相应节点 • 节点间电路连接图</p>
+            </div>
+            
+            <div class="demo-content">
+                <div class="circuit-board-full">
+                    <canvas class="full-canvas" ref="canvas"></canvas>
+                    
+                    <!-- 连接线层 -->
+                    <svg class="connections-layer" ref="connectionsSvg">
+                        <defs>
+                            <filter id="glow">
+                                <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+                                <feMerge>
+                                    <feMergeNode in="coloredBlur"/>
+                                    <feMergeNode in="SourceGraphic"/>
+                                </feMerge>
+                            </filter>
+                        </defs>
+                    </svg>
+                    
+                    <!-- 层级标签 -->
+                    <div class="layer-label" style="top: 30px; left: 10px;">数据中枢层</div>
+                    <div class="layer-label" style="top: 150px; left: 10px;">QLib核心层</div>
+                    <div class="layer-label" style="top: 270px; left: 10px;">业务逻辑层</div>
+                    <div class="layer-label" style="top: 390px; left: 10px;">AI策略层</div>
+                    <div class="layer-label" style="top: 510px; left: 10px;">实盘交易层</div>
+                    <div class="layer-label" style="top: 630px; left: 10px;">实验管理层</div>
+                    <div class="layer-label" style="top: 750px; left: 10px;">前端展示层</div>
+                    
+                    <!-- 完整节点 - 所有节点都始终显示 -->
+                    <div class="full-nodes">
+                        <div 
+                            v-for="node in allNodes" 
+                            :key="node.id"
+                            :class="['full-node', { active: node.active }]"
+                            :style="{
+                                left: node.x + 'px',
+                                top: node.y + 'px'
+                            }"
+                            @click="toggleNode(node)"
+                        >
+                            <div class="full-node-icon" :style="{ color: node.active ? '#0a0a0f' : node.iconColor }">
+                                <i :class="node.icon"></i>
+                            </div>
+                            <div class="full-node-label">{{ node.name }}</div>
+                        </div>
+                    </div>
+                    
+                    <!-- 控制面板 -->
+                    <div class="preview-controls">
+                        <h3>🎮 总体架构控制</h3>
+                        <button class="control-button" @click="activateWorkflow('ai-strategy')">
+                            <i class="fas fa-brain"></i> AI策略生成
+                        </button>
+                        <button class="control-button" @click="activateWorkflow('traditional')">
+                            <i class="fas fa-chart-line"></i> 传统策略执行
+                        </button>
+                        <button class="control-button" @click="activateWorkflow('model-training')">
+                            <i class="fas fa-graduation-cap"></i> 模型训练
+                        </button>
+                        <button class="control-button" @click="activateWorkflow('qlib-online')">
+                            <i class="fas fa-server"></i> QLib在线服务
+                        </button>
+                        <button class="control-button" @click="activateWorkflow('qlib-integration')">
+                            <i class="fas fa-project-diagram"></i> QLib集成管理
+                        </button>
+                        <button class="control-button" @click="deactivateAll">
+                            <i class="fas fa-stop"></i> 全部停用
+                        </button>
+                        <button class="control-button" @click="randomActivate">
+                            <i class="fas fa-random"></i> 随机激活
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="demo-footer">
+                <div class="status-info">
+                    <div class="status-item">
+                        <i class="fas fa-microchip"></i>
+                        总节点: {{ allNodes.length }}
+                    </div>
+                    <div class="status-item">
+                        <i class="fas fa-plug"></i>
+                        激活节点: {{ activeNodes }}
+                    </div>
+                    <div class="status-item">
+                        <i class="fas fa-bolt"></i>
+                        活跃连接: {{ activeConnections }}
+                    </div>
+                    <div class="status-item">
+                        <i class="fas fa-tachometer-alt"></i>
+                        系统负载: {{ systemLoad }}%
+                    </div>
+                </div>
+                <div>
+                    <span style="color: #00ff88;">⚡ MyQuant 完整总体架构电路板系统</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const { createApp } = Vue;
+        
+        createApp({
+            data() {
+                return {
+                    allNodes: [
+                        // 数据中枢层 (12个节点) - 所有节点都始终显示
+                        { id: 'DH1', name: '数据获取', icon: 'fas fa-database', iconColor: '#3498db', x: 150, y: 50, active: false },
+                        { id: 'DH2', name: '数据处理', icon: 'fas fa-cogs', iconColor: '#9b59b6', x: 250, y: 50, active: false },
+                        { id: 'DH3', name: '数据存储', icon: 'fas fa-hdd', iconColor: '#2ecc71', x: 350, y: 50, active: false },
+                        { id: 'DH4', name: '数据质量', icon: 'fas fa-check-circle', iconColor: '#e74c3c', x: 450, y: 50, active: false },
+                        { id: 'DH5', name: '数据同步', icon: 'fas fa-sync', iconColor: '#f39c12', x: 550, y: 50, active: false },
+                        { id: 'DH6', name: '数据备份', icon: 'fas fa-save', iconColor: '#1abc9c', x: 650, y: 50, active: false },
+                        { id: 'DH7', name: '数据清洗', icon: 'fas fa-broom', iconColor: '#e67e22', x: 750, y: 50, active: false },
+                        { id: 'DH8', name: '数据验证', icon: 'fas fa-clipboard-check', iconColor: '#34495e', x: 850, y: 50, active: false },
+                        { id: 'DP1', name: '数据预处理', icon: 'fas fa-filter', iconColor: '#16a085', x: 950, y: 50, active: false },
+                        { id: 'DP2', name: '特征工程', icon: 'fas fa-sliders-h', iconColor: '#27ae60', x: 1050, y: 50, active: false },
+                        { id: 'DP3', name: '数据变换', icon: 'fas fa-exchange-alt', iconColor: '#2980b9', x: 1150, y: 50, active: false },
+                        { id: 'DP4', name: '数据聚合', icon: 'fas fa-compress', iconColor: '#8e44ad', x: 1250, y: 50, active: false },
+                        
+                        // QLib核心接口层 (13个节点)
+                        { id: 'QL1', name: 'QLib核心', icon: 'fas fa-cube', iconColor: '#e74c3c', x: 150, y: 170, active: false },
+                        { id: 'QL2', name: '数据接口', icon: 'fas fa-plug', iconColor: '#3498db', x: 250, y: 170, active: false },
+                        { id: 'QL3', name: '策略引擎', icon: 'fas fa-rocket', iconColor: '#f39c12', x: 350, y: 170, active: false },
+                        { id: 'QL4', name: '回测系统', icon: 'fas fa-history', iconColor: '#2ecc71', x: 450, y: 170, active: false },
+                        { id: 'QL5', name: '风险管理', icon: 'fas fa-shield-alt', iconColor: '#e67e22', x: 550, y: 170, active: false },
+                        { id: 'QL6', name: '性能监控', icon: 'fas fa-tachometer-alt', iconColor: '#9b59b6', x: 650, y: 170, active: false },
+                        { id: 'QL7', name: '日志系统', icon: 'fas fa-file-alt', iconColor: '#34495e', x: 750, y: 170, active: false },
+                        { id: 'QL8', name: '配置管理', icon: 'fas fa-cog', iconColor: '#16a085', x: 850, y: 170, active: false },
+                        { id: 'QL9', name: '缓存系统', icon: 'fas fa-memory', iconColor: '#27ae60', x: 950, y: 170, active: false },
+                        { id: 'QL10', name: '消息队列', icon: 'fas fa-stream', iconColor: '#2980b9', x: 1050, y: 170, active: false },
+                        { id: 'AB1', name: '抽象层', icon: 'fas fa-layer-group', iconColor: '#8e44ad', x: 1150, y: 170, active: false },
+                        { id: 'BA1', name: '基础架构', icon: 'fas fa-building', iconColor: '#c0392b', x: 1250, y: 170, active: false },
+                        
+                        // 业务逻辑层 (12个节点)
+                        { id: 'BL1', name: '业务逻辑', icon: 'fas fa-sitemap', iconColor: '#e74c3c', x: 150, y: 290, active: false },
+                        { id: 'BL2', name: '数据分析', icon: 'fas fa-chart-bar', iconColor: '#3498db', x: 250, y: 290, active: false },
+                        { id: 'BL3', name: '报表生成', icon: 'fas fa-file-chart-line', iconColor: '#2ecc71', x: 350, y: 290, active: false },
+                        { id: 'BL4', name: '通知系统', icon: 'fas fa-bell', iconColor: '#f39c12', x: 450, y: 290, active: false },
+                        { id: 'BL5', name: '权限管理', icon: 'fas fa-key', iconColor: '#e67e22', x: 550, y: 290, active: false },
+                        { id: 'BL6', name: '用户管理', icon: 'fas fa-users', iconColor: '#9b59b6', x: 650, y: 290, active: false },
+                        { id: 'BL7', name: '任务调度', icon: 'fas fa-clock', iconColor: '#34495e', x: 750, y: 290, active: false },
+                        { id: 'BL8', name: '事件处理', icon: 'fas fa-bolt', iconColor: '#16a085', x: 850, y: 290, active: false },
+                        { id: 'AN1', name: '分析引擎', icon: 'fas fa-search', iconColor: '#27ae60', x: 950, y: 290, active: false },
+                        { id: 'AN2', name: '统计计算', icon: 'fas fa-calculator', iconColor: '#2980b9', x: 1050, y: 290, active: false },
+                        { id: 'AN3', name: '趋势分析', icon: 'fas fa-chart-line', iconColor: '#8e44ad', x: 1150, y: 290, active: false },
+                        { id: 'AN4', name: '异常检测', icon: 'fas fa-exclamation-triangle', iconColor: '#c0392b', x: 1250, y: 290, active: false },
+                        
+                        // AI智能策略层 (18个节点)
+                        { id: 'AI1', name: 'AI引擎', icon: 'fas fa-brain', iconColor: '#e74c3c', x: 150, y: 410, active: false },
+                        { id: 'AI2', name: '机器学习', icon: 'fas fa-robot', iconColor: '#3498db', x: 250, y: 410, active: false },
+                        { id: 'AI3', name: '深度学习', icon: 'fas fa-network-wired', iconColor: '#2ecc71', x: 350, y: 410, active: false },
+                        { id: 'AI4', name: '模型训练', icon: 'fas fa-graduation-cap', iconColor: '#f39c12', x: 450, y: 410, active: false },
+                        { id: 'AI5', name: '模型评估', icon: 'fas fa-clipboard-check', iconColor: '#e67e22', x: 550, y: 410, active: false },
+                        { id: 'AI6', name: '模型部署', icon: 'fas fa-upload', iconColor: '#9b59b6', x: 650, y: 410, active: false },
+                        { id: 'AI7', name: '预测引擎', icon: 'fas fa-crystal-ball', iconColor: '#34495e', x: 750, y: 410, active: false },
+                        { id: 'AI8', name: '推荐系统', icon: 'fas fa-lightbulb', iconColor: '#16a085', x: 850, y: 410, active: false },
+                        { id: 'AI9', name: '优化算法', icon: 'fas fa-sliders-h', iconColor: '#27ae60', x: 950, y: 410, active: false },
+                        { id: 'AI10', name: '特征选择', icon: 'fas fa-filter', iconColor: '#2980b9', x: 1050, y: 410, active: false },
+                        { id: 'AI11', name: '数据挖掘', icon: 'fas fa-gem', iconColor: '#8e44ad', x: 1150, y: 410, active: false },
+                        { id: 'AI12', name: '智能决策', icon: 'fas fa-chess', iconColor: '#c0392b', x: 1250, y: 410, active: false },
+                        { id: 'ML1', name: '模型管理', icon: 'fas fa-cube', iconColor: '#e74c3c', x: 150, y: 490, active: false },
+                        { id: 'ML2', name: '版本控制', icon: 'fas fa-code-branch', iconColor: '#3498db', x: 250, y: 490, active: false },
+                        { id: 'ML3', name: 'A/B测试', icon: 'fas fa-flask', iconColor: '#2ecc71', x: 350, y: 490, active: false },
+                        { id: 'OL1', name: '在线学习', icon: 'fas fa-sync-alt', iconColor: '#f39c12', x: 450, y: 490, active: false },
+                        { id: 'MI1', name: '模型监控', icon: 'fas fa-eye', iconColor: '#e67e22', x: 550, y: 490, active: false },
+                        { id: 'AA1', name: '自动调优', icon: 'fas fa-magic', iconColor: '#9b59b6', x: 650, y: 490, active: false },
+                        
+                        // 实盘交易层 (20个节点)
+                        { id: 'LT1', name: '交易执行', icon: 'fas fa-exchange-alt', iconColor: '#e74c3c', x: 150, y: 570, active: false },
+                        { id: 'LT2', name: '订单管理', icon: 'fas fa-clipboard-list', iconColor: '#3498db', x: 250, y: 570, active: false },
+                        { id: 'LT3', name: '风险控制', icon: 'fas fa-lock', iconColor: '#2ecc71', x: 350, y: 570, active: false },
+                        { id: 'LT4', name: '实时监控', icon: 'fas fa-eye', iconColor: '#f39c12', x: 450, y: 570, active: false },
+                        { id: 'LT5', name: '行情接收', icon: 'fas fa-satellite-dish', iconColor: '#e67e22', x: 550, y: 570, active: false },
+                        { id: 'LT6', name: '交易网关', icon: 'fas fa-door-open', iconColor: '#9b59b6', x: 650, y: 570, active: false },
+                        { id: 'LT7', name: '资金管理', icon: 'fas fa-wallet', iconColor: '#34495e', x: 750, y: 570, active: false },
+                        { id: 'LT8', name: '持仓管理', icon: 'fas fa-briefcase', iconColor: '#16a085', x: 850, y: 570, active: false },
+                        { id: 'LT9', name: '止损止盈', icon: 'fas fa-hand-paper', iconColor: '#27ae60', x: 950, y: 570, active: false },
+                        { id: 'LT10', name: '套利策略', icon: 'fas fa-balance-scale', iconColor: '#2980b9', x: 1050, y: 570, active: false },
+                        { id: 'LT11', name: '高频交易', icon: 'fas fa-bolt', iconColor: '#8e44ad', x: 1150, y: 570, active: false },
+                        { id: 'LT12', name: '算法交易', icon: 'fas fa-robot', iconColor: '#c0392b', x: 1250, y: 570, active: false },
+                        { id: 'LT13', name: '市场数据', icon: 'fas fa-chart-area', iconColor: '#e74c3c', x: 150, y: 650, active: false },
+                        { id: 'LT14', name: '交易日志', icon: 'fas fa-file-alt', iconColor: '#3498db', x: 250, y: 650, active: false },
+                        { id: 'LT15', name: '性能分析', icon: 'fas fa-tachometer-alt', iconColor: '#2ecc71', x: 350, y: 650, active: false },
+                        { id: 'LT16', name: '延迟监控', icon: 'fas fa-clock', iconColor: '#f39c12', x: 450, y: 650, active: false },
+                        { id: 'LT17', name: '吞吐量监控', icon: 'fas fa-exchange-alt', iconColor: '#e67e22', x: 550, y: 650, active: false },
+                        { id: 'LT18', name: '系统健康', icon: 'fas fa-heartbeat', iconColor: '#9b59b6', x: 650, y: 650, active: false },
+                        { id: 'LT19', name: '数据工具', icon: 'fas fa-tools', iconColor: '#34495e', x: 750, y: 650, active: false },
+                        { id: 'LT20', name: '时间工具', icon: 'fas fa-clock', iconColor: '#16a085', x: 850, y: 650, active: false },
+                        
+                        // 实验管理层 (9个节点)
+                        { id: 'EM1', name: '实验管理', icon: 'fas fa-flask', iconColor: '#e74c3c', x: 150, y: 730, active: false },
+                        { id: 'EM2', name: '版本控制', icon: 'fas fa-code-branch', iconColor: '#3498db', x: 250, y: 730, active: false },
+                        { id: 'EM3', name: '结果分析', icon: 'fas fa-chart-pie', iconColor: '#2ecc71', x: 350, y: 730, active: false },
+                        { id: 'EM4', name: '参数调优', icon: 'fas fa-sliders-h', iconColor: '#f39c12', x: 450, y: 730, active: false },
+                        { id: 'EM5', name: '模型比较', icon: 'fas fa-balance-scale', iconColor: '#e67e22', x: 550, y: 730, active: false },
+                        { id: 'EM6', name: '实验报告', icon: 'fas fa-file-alt', iconColor: '#9b59b6', x: 650, y: 730, active: false },
+                        { id: 'EM7', name: '数据集管理', icon: 'fas fa-database', iconColor: '#34495e', x: 750, y: 730, active: false },
+                        { id: 'EM8', name: '实验调度', icon: 'fas fa-calendar-alt', iconColor: '#16a085', x: 850, y: 730, active: false },
+                        { id: 'AU1', name: '审计系统', icon: 'fas fa-shield-alt', iconColor: '#27ae60', x: 950, y: 730, active: false },
+                        
+                        // 前端展示层 (15个节点)
+                        { id: 'UI1', name: '主界面', icon: 'fas fa-desktop', iconColor: '#e74c3c', x: 150, y: 810, active: false },
+                        { id: 'UI2', name: '图表组件', icon: 'fas fa-chart-bar', iconColor: '#3498db', x: 250, y: 810, active: false },
+                        { id: 'UI3', name: '数据表格', icon: 'fas fa-table', iconColor: '#2ecc71', x: 350, y: 810, active: false },
+                        { id: 'UI4', name: '控制面板', icon: 'fas fa-sliders-h', iconColor: '#f39c12', x: 450, y: 810, active: false },
+                        { id: 'UI5', name: '实时监控', icon: 'fas fa-eye', iconColor: '#e67e22', x: 550, y: 810, active: false },
+                        { id: 'UI6', name: '报告页面', icon: 'fas fa-file-alt', iconColor: '#9b59b6', x: 650, y: 810, active: false },
+                        { id: 'UI7', name: '设置页面', icon: 'fas fa-cog', iconColor: '#34495e', x: 750, y: 810, active: false },
+                        { id: 'UI8', name: '帮助系统', icon: 'fas fa-question-circle', iconColor: '#16a085', x: 850, y: 810, active: false },
+                        { id: 'SYS1', name: '系统监控', icon: 'fas fa-tachometer-alt', iconColor: '#27ae60', x: 950, y: 810, active: false },
+                        { id: 'SYS2', name: '性能监控', icon: 'fas fa-chart-line', iconColor: '#2980b9', x: 1050, y: 810, active: false },
+                        { id: 'SYS3', name: '日志查看', icon: 'fas fa-file-alt', iconColor: '#8e44ad', x: 1150, y: 810, active: false },
+                        { id: 'ME1', name: '消息引擎', icon: 'fas fa-envelope', iconColor: '#c0392b', x: 1250, y: 810, active: false },
+                        { id: 'PF1', name: '平台管理', icon: 'fas fa-cogs', iconColor: '#e74c3c', x: 150, y: 890, active: false },
+                        { id: 'UT1', name: '单元测试', icon: 'fas fa-vial', iconColor: '#3498db', x: 250, y: 890, active: false }
+                    ],
+                    connections: []
+                };
+            },
+            computed: {
+                activeNodes() {
+                    return this.allNodes.filter(n => n.active).length;
+                },
+                activeConnections() {
+                    return this.connections.filter(c => c.active).length;
+                },
+                systemLoad() {
+                    const total = this.allNodes.length;
+                    const active = this.activeNodes;
+                    return total > 0 ? Math.round((active / total) * 100) : 0;
+                }
+            },
+            mounted() {
+                this.drawCircuitBoardBackground();
+                this.generateConnections();
+                this.updateConnections();
+            },
+            methods: {
+                drawCircuitBoardBackground() {
+                    const canvas = this.$refs.canvas;
+                    if (!canvas) return;
+                    
+                    const ctx = canvas.getContext('2d');
+                    canvas.width = canvas.offsetWidth;
+                    canvas.height = canvas.offsetHeight;
+                    
+                    // 绘制网格背景
+                    ctx.fillStyle = '#0a0a0f';
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    
+                    // 主网格
+                    ctx.strokeStyle = '#1a1a2e';
+                    ctx.lineWidth = 0.5;
+                    
+                    const gridSize = 40;
+                    for (let x = 0; x < canvas.width; x += gridSize) {
+                        ctx.beginPath();
+                        ctx.moveTo(x, 0);
+                        ctx.lineTo(x, canvas.height);
+                        ctx.stroke();
+                    }
+                    
+                    for (let y = 0; y < canvas.height; y += gridSize) {
+                        ctx.beginPath();
+                        ctx.moveTo(0, y);
+                        ctx.lineTo(canvas.width, y);
+                        ctx.stroke();
+                    }
+                    
+                    // 细网格
+                    ctx.strokeStyle = '#0f1419';
+                    ctx.lineWidth = 0.3;
+                    
+                    const fineGridSize = 10;
+                    for (let x = 0; x < canvas.width; x += fineGridSize) {
+                        ctx.beginPath();
+                        ctx.moveTo(x, 0);
+                        ctx.lineTo(x, canvas.height);
+                        ctx.stroke();
+                    }
+                    
+                    for (let y = 0; y < canvas.height; y += fineGridSize) {
+                        ctx.beginPath();
+                        ctx.moveTo(0, y);
+                        ctx.lineTo(canvas.width, y);
+                        ctx.stroke();
+                    }
+                    
+                    // 绘制层级分隔线
+                    ctx.strokeStyle = '#0f3460';
+                    ctx.lineWidth = 2;
+                    ctx.setLineDash([10, 5]);
+                    
+                    const layerPositions = [120, 240, 360, 480, 600, 720, 840];
+                    layerPositions.forEach(y => {
+                        ctx.beginPath();
+                        ctx.moveTo(0, y);
+                        ctx.lineTo(canvas.width, y);
+                        ctx.stroke();
+                    });
+                    
+                    ctx.setLineDash([]);
+                    
+                    // 绘制装饰性连接点
+                    for (let i = 0; i < 100; i++) {
+                        const x = Math.random() * canvas.width;
+                        const y = Math.random() * canvas.height;
+                        
+                        ctx.fillStyle = '#1e2936';
+                        ctx.beginPath();
+                        ctx.arc(x, y, 3, 0, Math.PI * 2);
+                        ctx.fill();
+                        
+                        ctx.fillStyle = '#0f3460';
+                        ctx.beginPath();
+                        ctx.arc(x, y, 1.5, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                },
+                
+                generateConnections() {
+                    this.connections = [];
+                    
+                    // 生成层级内连接
+                    const layers = [
+                        { start: 0, end: 11 },   // 数据中枢层
+                        { start: 12, end: 24 },  // QLib核心层
+                        { start: 25, end: 36 },  // 业务逻辑层
+                        { start: 37, end: 54 },  // AI智能策略层
+                        { start: 55, end: 74 },  // 实盘交易层
+                        { start: 75, end: 83 },  // 实验管理层
+                        { start: 84, end: 98 }   // 前端展示层
+                    ];
+                    
+                    layers.forEach(layer => {
+                        for (let i = layer.start; i < layer.end; i++) {
+                            for (let j = i + 1; j < layer.end; j++) {
+                                if (Math.random() > 0.6) { // 40%概率创建连接
+                                    this.connections.push({
+                                        id: `conn-${i}-${j}`,
+                                        from: this.allNodes[i].id,
+                                        to: this.allNodes[j].id,
+                                        active: false
+                                    });
+                                }
+                            }
+                        }
+                    });
+                    
+                    // 生成跨层连接
+                    for (let i = 0; i < layers.length - 1; i++) {
+                        const currentLayer = layers[i];
+                        const nextLayer = layers[i + 1];
+                        
+                        for (let j = 0; j < 8; j++) { // 每层之间8个连接
+                            const fromIndex = currentLayer.start + Math.floor(Math.random() * (currentLayer.end - currentLayer.start));
+                            const toIndex = nextLayer.start + Math.floor(Math.random() * (nextLayer.end - nextLayer.start));
+                            
+                            this.connections.push({
+                                id: `cross-${i}-${j}`,
+                                from: this.allNodes[fromIndex].id,
+                                to: this.allNodes[toIndex].id,
+                                active: false
+                            });
+                        }
+                    }
+                },
+                
+                updateConnections() {
+                    const svg = this.$refs.connectionsSvg;
+                    if (!svg) return;
+                    
+                    // 清除现有连接线
+                    const existingLines = svg.querySelectorAll('path');
+                    existingLines.forEach(line => line.remove());
+                    
+                    // 绘制连接线
+                    this.connections.forEach(conn => {
+                        const fromNode = this.allNodes.find(n => n.id === conn.from);
+                        const toNode = this.allNodes.find(n => n.id === conn.to);
+                        
+                        if (fromNode && toNode) {
+                            const fromX = fromNode.x + 40;
+                            const fromY = fromNode.y + 30;
+                            const toX = toNode.x + 40;
+                            const toY = toNode.y + 30;
+                            
+                            // 检查连接是否活跃
+                            conn.active = fromNode.active && toNode.active;
+                            
+                            const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                            const midX = (fromX + toX) / 2;
+                            const midY = (fromY + toY) / 2;
+                            
+                            path.setAttribute('d', `M ${fromX} ${fromY} Q ${midX} ${fromY}, ${midX} ${midY} T ${toX} ${toY}`);
+                            path.setAttribute('class', `connection-line ${conn.active ? 'active' : ''}`);
+                            path.setAttribute('filter', conn.active ? 'url(#glow)' : '');
+                            
+                            svg.appendChild(path);
+                        }
+                    });
+                },
+                
+                toggleNode(node) {
+                    node.active = !node.active;
+                    this.updateConnections();
+                },
+                
+                activateWorkflow(workflow) {
+                    this.deactivateAll();
+                    
+                    const workflows = {
+                        'ai-strategy': [
+                            'DH1', 'DH2', 'DH3', 'DH4', 'DH5', 'DH6', 'DH7', 'DH8',
+                            'DP1', 'DP2', 'DP3', 'DP4',
+                            'QL1', 'QL2', 'QL8', 'QL9',
+                            'BL1', 'BL2', 'AN1', 'AN2', 'AN4',
+                            'AI1', 'AI2', 'AI3', 'AI4', 'AI5', 'AI6', 'AI7', 'AI8', 'AI9', 'AI10', 'AI11', 'AI12',
+                            'ML1', 'ML2', 'ML3', 'OL1', 'MI1', 'AA1'
+                        ],
+                        'traditional': [
+                            'DH1', 'DH2', 'DH4', 'DH5', 'DH7',
+                            'QL1', 'QL2', 'QL3', 'QL4', 'QL5', 'QL6', 'QL7', 'QL8', 'QL9', 'QL10',
+                            'AB1', 'BA1',
+                            'BL1', 'BL2', 'BL3', 'BL4', 'BL5', 'BL6', 'BL7', 'BL8',
+                            'AN1', 'AN2', 'AN3', 'AN4'
+                        ],
+                        'model-training': [
+                            'DH1', 'DH2', 'DH3', 'DH4', 'DH6', 'DH7',
+                            'DP1', 'DP2', 'DP3', 'DP4',
+                            'QL1', 'QL2', 'QL8', 'QL9',
+                            'BL1', 'BL2', 'AN1', 'AN4',
+                            'AI1', 'AI3', 'AI4', 'AI6', 'AI10', 'AI11', 'AI12',
+                            'ML1', 'ML2', 'ML3', 'MI1'
+                        ],
+                        'qlib-online': [
+                            'DH1', 'DH2', 'DH6',
+                            'QL1', 'QL2', 'QL6', 'QL8', 'QL9',
+                            'BL1', 'BL2',
+                            'EM1', 'EM2', 'EM3', 'EM4', 'EM5', 'EM6', 'EM7', 'EM8',
+                            'AU1',
+                            'AI2', 'AI8'
+                        ],
+                        'qlib-integration': [
+                            'DH1', 'DH2', 'DH3', 'DH4', 'DH5', 'DH6', 'DH7', 'DH8',
+                            'QL1', 'QL2', 'QL3', 'QL4', 'QL5', 'QL6', 'QL7', 'QL8', 'QL9', 'QL10',
+                            'AB1', 'BA1',
+                            'EM1', 'EM2', 'EM3', 'EM4', 'EM5', 'EM6', 'EM7', 'EM8',
+                            'AU1',
+                            'UI1', 'UI2', 'UI3', 'UI4', 'UI5', 'UI6', 'UI7', 'UI8',
+                            'SYS1', 'SYS2', 'SYS3', 'ME1', 'PF1', 'UT1'
+                        ]
+                    };
+                    
+                    const nodesToActivate = workflows[workflow] || [];
+                    
+                    // 逐个激活节点，创建动画效果
+                    nodesToActivate.forEach((nodeId, index) => {
+                        setTimeout(() => {
+                            const node = this.allNodes.find(n => n.id === nodeId);
+                            if (node) {
+                                node.active = true;
+                                this.updateConnections();
+                            }
+                        }, index * 100);
+                    });
+                },
+                
+                deactivateAll() {
+                    this.allNodes.forEach(node => {
+                        node.active = false;
+                    });
+                    this.updateConnections();
+                },
+                
+                randomActivate() {
+                    this.deactivateAll();
+                    const numToActivate = Math.floor(Math.random() * 20) + 10;
+                    const shuffled = [...this.allNodes].sort(() => 0.5 - Math.random());
+                    const selected = shuffled.slice(0, numToActivate);
+                    
+                    selected.forEach((node, index) => {
+                        setTimeout(() => {
+                            node.active = true;
+                            this.updateConnections();
+                        }, index * 50);
+                    });
+                }
+            },
+            watch: {
+                allNodes: {
+                    handler() {
+                        this.updateConnections();
+                    },
+                    deep: true
+                }
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>

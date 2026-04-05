@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>布局功能演示</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background: #f0f0f0;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 30px;
+        }
+        .buttons {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+        button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        button:hover {
+            transform: translateY(-2px);
+        }
+        .btn-save {
+            background: #22c55e;
+            color: white;
+        }
+        .btn-load {
+            background: #3b82f6;
+            color: white;
+        }
+        .btn-reset {
+            background: #ef4444;
+            color: white;
+        }
+        .info {
+            background: #f0f9ff;
+            border: 1px solid #0ea5e9;
+            padding: 15px;
+            border-radius: 5px;
+            margin-top: 20px;
+        }
+        .status {
+            margin-top: 20px;
+            padding: 10px;
+            background: #f9f9f9;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>节点工作流布局功能演示</h1>
+
+        <div class="buttons">
+            <button class="btn-save" onclick="saveLayout()">
+                💾 保存布局
+            </button>
+            <button class="btn-load" onclick="loadLayout()">
+                ⬆️ 加载布局
+            </button>
+            <button class="btn-reset" onclick="resetLayout()">
+                ↩️ 重置布局
+            </button>
+        </div>
+
+        <div class="info">
+            <h3>功能说明：</h3>
+            <ul>
+                <li><strong>保存布局</strong>：将当前的节点布局保存到本地存储，并自动下载JSON文件</li>
+                <li><strong>加载布局</strong>：从JSON文件加载之前保存的布局</li>
+                <li><strong>重置布局</strong>：清除所有保存的数据，恢复默认布局</li>
+            </ul>
+        </div>
+
+        <div class="status" id="status">
+            准备就绪...
+        </div>
+    </div>
+
+    <!-- 隐藏的文件输入 -->
+    <input type="file" id="fileInput" accept=".json" style="display: none" onchange="handleFileLoad(event)">
+
+    <script>
+        // 更新状态显示
+        function updateStatus(message, type = 'info') {
+            const statusDiv = document.getElementById('status');
+            statusDiv.innerHTML = `<strong>[${new Date().toLocaleTimeString()}]</strong> ${message}`;
+            statusDiv.style.color = type === 'error' ? '#ef4444' : type === 'success' ? '#22c55e' : '#333';
+        }
+
+        // 保存布局
+        function saveLayout() {
+            const layoutData = {
+                nodePositions: {
+                    'strategy-conception': { x: 100, y: 100 },
+                    'pattern-recognition': { x: 400, y: 100 },
+                    'model-training': { x: 250, y: 300 },
+                    'ai-assistant': { x: 250, y: 500 }
+                },
+                canvasOffset: { x: 0, y: 0 },
+                canvasScale: 1,
+                timestamp: new Date().toISOString()
+            };
+
+            // 保存到 localStorage
+            localStorage.setItem('node-workflow-layout', JSON.stringify(layoutData));
+            updateStatus('布局已保存到浏览器存储', 'success');
+
+            // 下载文件
+            const dataStr = JSON.stringify(layoutData, null, 2);
+            const dataBlob = new Blob([dataStr], { type: 'application/json' });
+            const url = URL.createObjectURL(dataBlob);
+
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `node-workflow-layout-${new Date().toISOString().slice(0, 10)}.json`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+
+            updateStatus('布局文件已下载', 'success');
+        }
+
+        // 加载布局
+        function loadLayout() {
+            document.getElementById('fileInput').click();
+        }
+
+        // 处理文件加载
+        function handleFileLoad(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const layoutData = JSON.parse(e.target.result);
+
+                    // 验证数据
+                    if (!layoutData.nodePositions || !layoutData.canvasOffset || layoutData.canvasScale === undefined) {
+                        throw new Error('无效的布局文件格式');
+                    }
+
+                    // 保存到 localStorage
+                    localStorage.setItem('node-workflow-layout', JSON.stringify(layoutData));
+
+                    updateStatus(`布局加载成功！保存时间：${new Date(layoutData.timestamp).toLocaleString()}`, 'success');
+                    console.log('加载的布局数据：', layoutData);
+                } catch (error) {
+                    updateStatus(`加载失败：${error.message}`, 'error');
+                }
+            };
+            reader.readAsText(file);
+
+            // 重置文件输入
+            event.target.value = '';
+        }
+
+        // 重置布局
+        function resetLayout() {
+            if (confirm('确定要重置布局吗？所有保存的数据将被清除。')) {
+                localStorage.removeItem('node-workflow-layout');
+                updateStatus('布局已重置', 'info');
+            }
+        }
+
+        // 页面加载时检查是否有保存的布局
+        window.onload = function() {
+            const savedLayout = localStorage.getItem('node-workflow-layout');
+            if (savedLayout) {
+                const layoutData = JSON.parse(savedLayout);
+                updateStatus(`发现保存的布局（时间：${new Date(layoutData.timestamp).toLocaleString()}）`, 'success');
+            }
+        };
+    </script>
+</body>
+</html>

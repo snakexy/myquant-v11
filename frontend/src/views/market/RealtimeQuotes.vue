@@ -47,6 +47,13 @@
               >
                 ✏️
               </button>
+              <div class="toolbar-divider-v"></div>
+              <!-- 指标选择器 -->
+              <IndicatorSelector
+                v-model:active="activeIndicators"
+                v-model:overlay="overlayIndicators"
+                @settings="openIndicatorSettings"
+              />
             </div>
           </div>
 
@@ -410,7 +417,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount, computed, nextTick, watch } from 'vue'
-import { createChart, CrosshairMode, CandlestickSeries, HistogramSeries } from 'lightweight-charts'
+import { createChart, CrosshairMode, CandlestickSeries, HistogramSeries, LineSeries } from 'lightweight-charts'
 import GlobalNavBar from '@/components/GlobalNavBar.vue'
 import WatchlistPanel from '@/components/watchlist/WatchlistPanel.vue'
 import { useAppStore } from '@/stores/core/AppStore'
@@ -432,6 +439,7 @@ import { useKlineBatch } from '@/composables/useKlineBatch'
 import { useMiniCharts, generateSparklinePoints } from '@/composables/useMiniCharts'
 import { useRealtimeQuote, type QuoteData } from '@/composables/useRealtimeQuote'
 import { UserPriceAlerts } from '@/components/charts/plugins'
+import IndicatorSelector from '@/components/charts/IndicatorSelector.vue'
 
 // 类型定义
 type ChartApi = any
@@ -514,6 +522,67 @@ let candleSeries: SeriesApi | null = null
 let volumeSeries: SeriesApi | null = null
 let statusTimer: number | null = null
 let chartResizeObserver: ResizeObserver | null = null
+
+// ========== 技术指标相关 ==========
+// 指标窗口显示状态
+const showIndicatorPanel = ref(false)
+const activeIndicators = ref<string[]>(['MACD'])  // 独立指标
+const overlayIndicators = ref<string[]>([])  // 主图叠加指标(MA/BOLL)
+
+// 监听指标变化，重新加载数据
+watch(activeIndicators, (newVal, oldVal) => {
+  // 找出被移除的指标
+  const removed = oldVal.filter(id => !newVal.includes(id))
+  // 找出新添加的指标
+  const added = newVal.filter(id => !oldVal.includes(id))
+
+  if (removed.length > 0 || added.length > 0) {
+    // 重新加载数据
+    loadKlineData()
+  }
+}, { deep: true })
+
+// 指标系列存储（用于更新数据）
+let indicatorSeries: {
+  macd?: SeriesApi | null
+  signal?: SeriesApi | null
+  histogram?: SeriesApi | null
+} = {}
+
+// 指标pane索引
+const MACD_PANE_INDEX = 1
+
+// 保存用户调整的MACD伸展因子
+let savedMacdStretchFactor = 1
+
+// 指标数据缓存
+const indicatorData = ref<{
+  macd?: number[]
+  signal?: number[]
+  histogram?: number[]
+  datetime?: string[]
+}>({})
+
+// ========== 通用指标Pane状态管理 ==========
+// 存储每个指标的pane状态（为后续多指标支持做准备）
+interface IndicatorPaneState {
+  paneIndex: number
+  stretchFactor: number
+  visible: boolean
+}
+const indicatorPaneStates = new Map<string, IndicatorPaneState>()
+let nextPaneIndex = 1
+
+// 注册指标pane
+function registerIndicatorPane(indicatorId: string): number {
+  if (indicatorPaneStates.has(indicatorId)) {
+    return indicatorPaneStates.get(indicatorId)!.paneIndex
+  }
+  const paneIndex = nextPaneIndex++
+  indicatorPaneStates.set(indicatorId, { paneIndex, stretchFactor: 1, visible: true })
+  console.log(`[指标管理] 注册 ${indicatorId} pane, 索引: ${paneIndex}`)
+  return paneIndex
+}
 
 // ========== 价格预警相关 ==========
 let userPriceAlerts: UserPriceAlerts | null = null
@@ -652,6 +721,7 @@ const initChart = () => {
     rightPriceScale: {
       borderColor: 'transparent',
       autoScale: false,
+      visible: true,
     },
     handleScroll: {
       mouseWheel: true,
@@ -672,7 +742,30 @@ const initChart = () => {
       minBarSpacing: 0.5,
       rightOffset: 10,
       fixLeftEdge: true,
-      fixRightEdge: false
+      fixRightEdge: false,
+      tickMarkFormatter: (timestamp: number, tickMarkType: number) => {
+        // 只在A股交易时间段显示时间标签
+        const date = new Date(timestamp * 1000)
+        const hours = date.getHours()
+        const minutes = date.getMinutes()
+        const timeValue = hours * 100 + minutes
+
+        // A股交易时间：9:30-11:30, 13:00-15:00
+        const isTradingTime = (timeValue >= 930 && timeValue <= 1130) ||
+                              (timeValue >= 1300 && timeValue <= 1500)
+
+        // 日线/周线不限制，分钟线只在交易时间显示标签
+        const isDaily = currentTimeframe.value === '1d' || currentTimeframe.value === '1w'
+        if (isDaily || isTradingTime) {
+          const month = String(date.getMonth() + 1).padStart(2, '0')
+          const day = String(date.getDate()).padStart(2, '0')
+          const h = String(hours).padStart(2, '0')
+          const m = String(minutes).padStart(2, '0')
+          return isDaily ? `${month}-${day}` : `${h}:${m}`
+        }
+        // 非交易时间返回空，不显示刻度标签
+        return ''
+      }
     },
     // 时间轴配置
     localization: {
@@ -719,6 +812,9 @@ const initChart = () => {
       bottom: 0
     }
   })
+
+  // 初始化MACD指标pane（创建但不显示，点击MACD按钮后才显示数据）
+  initMACDPane()
 
   // 从 chart-area 反算正确高度（避免 canvas 干扰 clientHeight 读取）
   let retries = 0
@@ -872,11 +968,11 @@ const initChart = () => {
     const volBar = param.seriesData.get(volumeSeries) as any
     if (bar) {
       const ts = Number(param.time) * 1000
-      const dt = new Date(ts + 8 * 3600 * 1000)
+      const dt = new Date(ts)
       const isDaily = currentTimeframe.value === '1d' || currentTimeframe.value === '1w'
       const timeStr = isDaily
-        ? `${dt.getUTCFullYear()}-${String(dt.getUTCMonth()+1).padStart(2,'0')}-${String(dt.getUTCDate()).padStart(2,'0')}`
-        : `${String(dt.getUTCMonth()+1).padStart(2,'0')}-${String(dt.getUTCDate()).padStart(2,'0')} ${String(dt.getUTCHours()).padStart(2,'0')}:${String(dt.getUTCMinutes()).padStart(2,'0')}`
+        ? `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`
+        : `${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')} ${String(dt.getHours()).padStart(2,'0')}:${String(dt.getMinutes()).padStart(2,'0')}`
       hoverBar.value = {
         time: timeStr,
         open: bar.open,
@@ -889,6 +985,187 @@ const initChart = () => {
       hoverBar.value = null
     }
   })
+}
+
+// ========== 技术指标功能 ==========
+
+/**
+ * 初始化MACD指标Pane
+ */
+const initMACDPane = () => {
+  if (!chart) return
+
+  try {
+    // 检查pane是否已存在
+    const panes = chart.panes()
+    console.log('[指标] 当前pane数量:', panes.length)
+
+    if (indicatorSeries.macd) {
+      // 已经初始化过
+      console.log('[指标] MACD series已存在')
+      return
+    }
+
+    // 确保pane 1存在
+    if (panes.length <= MACD_PANE_INDEX) {
+      console.log('[指标] 创建pane 1')
+      chart.addPane()
+    }
+
+    // 在pane 1创建MACD线
+    console.log('[指标] 创建MACD series...')
+    indicatorSeries.macd = chart.addSeries(LineSeries, {
+      color: '#FF6B6B',
+      lineWidth: 2,
+      title: 'MACD',
+      lastValueVisible: true,
+      priceLineVisible: false,
+    }, MACD_PANE_INDEX)
+
+    // 信号线
+    indicatorSeries.signal = chart.addSeries(LineSeries, {
+      color: '#26A69A',
+      lineWidth: 2,
+      title: 'Signal',
+      lastValueVisible: true,
+      priceLineVisible: false,
+    }, MACD_PANE_INDEX)
+
+    // 柱状图
+    indicatorSeries.histogram = chart.addSeries(HistogramSeries, {
+      priceFormat: { type: 'price', precision: 2 },
+      lastValueVisible: true,
+      priceLineVisible: false,
+    }, MACD_PANE_INDEX)
+
+    // 设置pane高度比例：主图占75%，MACD占25%
+    const mainPane = chart.panes()[0]
+    if (mainPane) {
+      mainPane.setStretchFactor(3)  // 3份
+    }
+    const macdPane = chart.panes()[MACD_PANE_INDEX]
+    if (macdPane) {
+      macdPane.setStretchFactor(1)  // 1份
+    }
+    // 配置MACD pane的right price scale
+    try {
+      chart?.priceScale('right', MACD_PANE_INDEX).applyOptions({
+        visible: true,
+        autoScale: true,
+        borderVisible: true,
+        borderColor: 'rgba(42, 46, 57, 0.8)',
+        scaleMargins: { top: 0.1, bottom: 0.1 }
+      })
+    } catch (e) {
+      console.log('[指标] init price scale配置失败:', e)
+    }
+
+    console.log('[指标] MACD pane初始化完成')
+    console.log('[指标] pane数量:', chart.panes().length)
+    console.log('[指标] indicatorSeries:', Object.keys(indicatorSeries))
+
+    // 注册MACD pane状态（为后续多指标支持做准备）
+    registerIndicatorPane('MACD')
+
+    // 触发一次resize确保pane正确显示
+    if (chartContainer.value) {
+      const rect = chartContainer.value.getBoundingClientRect()
+      chart.resize(rect.width, rect.height)
+    }
+  } catch (e) {
+    console.error('[指标] MACD pane初始化失败:', e)
+  }
+}
+
+/**
+ * 更新MACD指标数据
+ */
+const updateMACDData = (klineData: any[]) => {
+  if (!indicatorSeries.macd || !indicatorSeries.signal || !indicatorSeries.histogram) {
+    console.log('[指标] MACD系列未初始化')
+    return
+  }
+
+  if (!indicatorData.value.macd || indicatorData.value.macd.length === 0) {
+    console.log('[指标] 无MACD数据')
+    return
+  }
+
+  const { macd, signal, histogram, datetime } = indicatorData.value
+  if (!datetime || !macd || !signal || !histogram) return
+
+  // 构建时间戳映射（从K线数据）
+  const timeMap = new Map()
+  klineData.forEach((bar, index) => {
+    if (datetime[index]) {
+      // 将datetime字符串转为时间戳（与K线数据保持一致，不添加时区偏移）
+      const ts = new Date(datetime[index]).getTime() / 1000
+      timeMap.set(index, ts)
+    }
+  })
+
+  // 准备MACD线数据
+  const macdLineData: any[] = []
+  const signalLineData: any[] = []
+  const histogramData: any[] = []
+
+  for (let i = 0; i < macd.length; i++) {
+    const time = timeMap.get(i)
+    if (!time || isNaN(macd[i]) || macd[i] === null) continue
+
+    macdLineData.push({ time, value: macd[i] })
+    signalLineData.push({ time, value: signal[i] })
+    histogramData.push({
+      time,
+      value: histogram[i],
+      color: histogram[i] >= 0 ? '#ef4444' : '#10b981'
+    })
+  }
+
+  // 设置数据
+  console.log('[指标] 设置MACD数据:', macdLineData.length, signalLineData.length, histogramData.length)
+  console.log('[指标] series对象:', !!indicatorSeries.macd, !!indicatorSeries.signal, !!indicatorSeries.histogram)
+
+  indicatorSeries.macd?.setData(macdLineData)
+  indicatorSeries.signal?.setData(signalLineData)
+  indicatorSeries.histogram?.setData(histogramData)
+
+  // 确保MACD price scale可见（使用right price scale）
+  try {
+    chart?.priceScale('right', MACD_PANE_INDEX).applyOptions({
+      visible: true,
+      autoScale: true,
+      borderVisible: true,
+      borderColor: 'rgba(42, 46, 57, 0.8)',
+      scaleMargins: { top: 0.1, bottom: 0.1 }
+    })
+  } catch (e) {
+    console.log('[指标] price scale配置失败:', e)
+  }
+
+  console.log(`[指标] MACD数据更新完成`)
+}
+
+/**
+ * 切换指标显示
+ */
+const toggleIndicator = (indicator: string) => {
+  const index = activeIndicators.value.indexOf(indicator)
+  if (index > -1) {
+    activeIndicators.value.splice(index, 1)
+  } else {
+    activeIndicators.value.push(indicator)
+  }
+  // 重新加载数据以获取指标
+  loadKlineData()
+}
+
+/**
+ * 打开指标参数设置
+ */
+const openIndicatorSettings = (indicatorId: string) => {
+  console.log('[指标设置] 打开设置:', indicatorId)
+  // TODO: 实现参数设置弹窗
 }
 
 // ==================== 价格预警功能 ====================
@@ -1416,8 +1693,25 @@ const loadKlineData = async () => {
   let lastBarsCount = 0  // 记录本次加载的 bar 数量，供 setVisibleLogicalRange 使用
 
   try {
-    // 第一步：优先只加载K线数据（最核心的）
-    const klineRes = await fetchKline(selectedStock.value, currentTimeframe.value, 800, adjustType.value)
+    // 确定需要请求的指标
+    const indicatorsToFetch = activeIndicators.value.length > 0
+      ? activeIndicators.value
+      : undefined
+
+    // 第一步：优先只加载K线数据（最核心的）- 同时请求指标
+    const klineRes = await fetchKline(
+      selectedStock.value,
+      currentTimeframe.value,
+      800,
+      adjustType.value,
+      indicatorsToFetch
+    )
+
+    // 保存指标数据
+    if (klineRes.indicators) {
+      indicatorData.value = klineRes.indicators
+      console.log('[指标] 收到指标数据:', Object.keys(klineRes.indicators))
+    }
 
     // 处理K线数据
     if (klineRes.data && klineRes.data.length > 0) {
@@ -1439,10 +1733,13 @@ const loadKlineData = async () => {
         .filter((item): item is { time: number; open: number; high: number; low: number; close: number; volume: number } => item !== null)
 
       // 日线去重：同一天可能有本地(00:00 CST)和在线(15:00 CST)两条，保留后一条
+      // 按日期去重（去掉时间部分）
       const deduped = isDaily
         ? Array.from(
             klineDataWithSeconds.reduce((map, item) => {
-              map.set(item.time, item)  // 相同时间戳后面覆盖前面
+              // 将时间戳转换为当天的00:00:00作为key
+              const dayKey = Math.floor(item.time / 86400) * 86400
+              map.set(dayKey, item)  // 同一天后面覆盖前面
               return map
             }, new Map<number, typeof klineDataWithSeconds[0]>()).values()
           ).sort((a, b) => a.time - b.time)
@@ -1458,6 +1755,41 @@ const loadKlineData = async () => {
         color: d.close >= d.open ? '#ef535080' : '#26a69a80'
       }))
       volumeSeries?.setData(volumeData)
+
+      // 更新MACD指标数据
+      if (activeIndicators.value.includes('MACD')) {
+        // 确保指标数据已正确设置（后端返回格式: indicators.MACD.macd）
+        if (klineRes.indicators?.MACD) {
+          indicatorData.value = {
+            macd: klineRes.indicators.MACD.macd,
+            signal: klineRes.indicators.MACD.signal,
+            histogram: klineRes.indicators.MACD.histogram,
+            datetime: klineRes.indicators.MACD.datetime
+          }
+        }
+        // 确保MACD pane已初始化
+        initMACDPane()
+        updateMACDData(deduped)
+        // 恢复伸展因子（从状态管理获取）
+        const macdPane = chart?.panes()[MACD_PANE_INDEX]
+        const macdState = indicatorPaneStates.get('MACD')
+        if (macdPane && macdState) {
+          macdPane.setStretchFactor(macdState.stretchFactor)
+          macdState.visible = true
+        }
+      } else {
+        // MACD未被选中，保存伸展因子并隐藏
+        const macdPane = chart?.panes()[MACD_PANE_INDEX]
+        const macdState = indicatorPaneStates.get('MACD')
+        if (macdPane && indicatorSeries.macd && macdState) {
+          macdState.stretchFactor = 1
+          macdState.visible = false
+          indicatorSeries.macd.setData([])
+          indicatorSeries.signal?.setData([])
+          indicatorSeries.histogram?.setData([])
+          macdPane.setHeight(0)
+        }
+      }
 
       // K线加载完成，立即结束loading（提升用户体验）
       loading.value = false
@@ -1605,6 +1937,11 @@ watch(klineBars, (bars) => {
   }
 
   console.log('[RealtimeQuotes] useKlineData 更新图表:', bars.length, '根')
+
+  // 更新MACD指标（如果已启用）
+  if (activeIndicators.value.includes('MACD') && indicatorData.value.macd) {
+    updateMACDData(chartData)
+  }
 }, { deep: true })
 
 // ─────────────────────────────────────────────
@@ -2150,6 +2487,8 @@ onBeforeUnmount(() => {
   if (priceAlertRafId !== null) {
     cancelAnimationFrame(priceAlertRafId)
   }
+  // 清理指标系列
+  indicatorSeries = {}
   if (chart) chart.remove()
 })
 </script>

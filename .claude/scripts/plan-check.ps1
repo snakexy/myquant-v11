@@ -64,7 +64,8 @@ $planLines | ForEach-Object { Write-Host "  $_" -ForegroundColor Gray }
 
 Write-Host ""
 Write-Host "如果计划已执行完毕，请删除计划文件：" -ForegroundColor Yellow
-Write-Host "  rm .claude/plans/current-plan.md" -ForegroundColor Gray
+$cmd = "rm .claude/plans/current-plan.md"
+Write-Host "  $cmd" -ForegroundColor Gray
 Write-Host ""
 
 # 允许操作

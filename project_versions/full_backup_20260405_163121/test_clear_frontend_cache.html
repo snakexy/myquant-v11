@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>清除前端缓存</title>
+    <style>
+        body { font-family: monospace; padding: 20px; background: #1e1e1e; color: #d4d4d4; }
+        button { background: #0e639c; color: white; border: none; padding: 10px 20px; cursor: pointer; margin: 5px; }
+        button:hover { background: #1177bb; }
+        pre { background: #252526; padding: 10px; overflow-x: auto; }
+        .success { color: #4ec9b0; }
+        .error { color: #f48771; }
+        .warning { color: #dcdcaa; }
+    </style>
+</head>
+<body>
+    <h2>🧹 前端缓存清理工具</h2>
+
+    <div>
+        <button onclick="checkCache()">检查缓存</button>
+        <button onclick="clearAllCache()">清除所有缓存</button>
+        <button onclick="reloadPage()">刷新页面</button>
+    </div>
+
+    <pre id="output">点击按钮开始...</pre>
+
+    <script>
+        function checkCache() {
+            const output = document.getElementById('output');
+            let result = '';
+
+            // 检查 myquant_cache
+            const myquantCache = localStorage.getItem('myquant_cache');
+            if (myquantCache) {
+                try {
+                    const cache = JSON.parse(myquantCache);
+                    result += `✓ 找到 myquant_cache (${cache.length} 项)\n\n`;
+
+                    // 查找 K线相关缓存
+                    const klineKeys = cache.filter(([key]) => key.includes('kline'));
+                    if (klineKeys.length > 0) {
+                        result += `K线缓存项:\n`;
+                        klineKeys.forEach(([key, item]) => {
+                            const dataCount = item.data?.data?.length || 'N/A';
+                            const source = item.data?.metadata?.source || 'unknown';
+                            result += `  - ${key}\n`;
+                            result += `    数据: ${dataCount} 条, 来源: ${source}\n`;
+                        });
+                    } else {
+                        result += `没有 K线缓存项\n`;
+                    }
+                } catch (e) {
+                    result += `❌ 解析缓存失败: ${e.message}\n`;
+                }
+            } else {
+                result += `✓ 没有找到 myquant_cache\n`;
+            }
+
+            output.innerHTML = `<span class="success">${result}</span>`;
+        }
+
+        function clearAllCache() {
+            const output = document.getElementById('output');
+            let result = '';
+
+            // 清除 myquant_cache
+            const hadCache = localStorage.getItem('myquant_cache');
+            localStorage.removeItem('myquant_cache');
+
+            // 清除其他可能的缓存键
+            const keysToRemove = [];
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                if (key.includes('cache') || key.includes('kline')) {
+                    keysToRemove.push(key);
+                }
+            }
+            keysToRemove.forEach(key => localStorage.removeItem(key));
+
+            result += `✓ 已清除 myquant_cache\n`;
+            if (keysToRemove.length > 0) {
+                result += `✓ 已清除 ${keysToRemove.length} 个其他缓存项:\n`;
+                keysToRemove.forEach(key => result += `  - ${key}\n`);
+            }
+
+            result += `\n请点击"刷新页面"按钮重新加载！`;
+            output.innerHTML = `<span class="success">${result}</span>`;
+        }
+
+        function reloadPage() {
+            window.location.reload();
+        }
+    </script>
+</body>
+</html>

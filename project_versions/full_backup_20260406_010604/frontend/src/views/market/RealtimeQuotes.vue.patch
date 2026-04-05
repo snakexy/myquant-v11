@@ -1,0 +1,13 @@
+--- a/frontend/src/views/market/RealtimeQuotes.vue
++++ b/frontend/src/views/market/RealtimeQuotes.vue
+@@ -585,7 +585,9 @@ const {
+
+ // 指标数据 - 从 useKlineData 获取
+ const indicatorData = computed(() => {
+-  console.log('[indicatorData]', klineIndicators); return klineIndicators.value || {}
++  const val = klineIndicators?.value
++  console.log('[indicatorData] value:', val, 'MACD?', val?.MACD)
++  return val || {}
+ })
+ const containerWidth = ref(800)
+
