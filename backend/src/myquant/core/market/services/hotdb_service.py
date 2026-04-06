@@ -280,18 +280,25 @@ class HotdbService:
             }
 
     def _get_latest_trading_day_close(self) -> datetime:
-        """获取最近交易日收盘时间（简化版）"""
+        """获取最近交易日收盘时间（考虑节假日）"""
+        from myquant.core.market.utils.trading_time_detector import get_trading_time_detector_v2
+
+        detector = get_trading_time_detector_v2()
         now = datetime.now()
-        # 简化：如果是交易日下午3点后，返回今天收盘
-        # 否则返回昨天收盘
-        if now.weekday() < 5:  # 工作日
-            if now.hour >= 15:
-                return now.replace(hour=15, minute=0, second=0, microsecond=0)
-        # 回退到前一天
-        yesterday = now - timedelta(days=1)
-        while yesterday.weekday() >= 5:  # 跳过周末
-            yesterday -= timedelta(days=1)
-        return yesterday.replace(hour=15, minute=0, second=0, microsecond=0)
+
+        # 向前查找最近的交易日
+        check_date = now
+        max_days_back = 7  # 最多向前查7天
+
+        for _ in range(max_days_back):
+            if detector.is_trading_day(check_date):
+                # 找到最近的交易日，返回15:00收盘时间
+                return check_date.replace(hour=15, minute=0, second=0, microsecond=0)
+            # 向前一天
+            check_date -= timedelta(days=1)
+
+        # 如果7天都没找到交易日（极端情况），返回今天15:00
+        return now.replace(hour=15, minute=0, second=0, microsecond=0)
 
     def _calc_minutes_missing(
         self, latest: datetime, now: datetime, period: str
@@ -341,7 +348,7 @@ class HotdbService:
                 'reason': 'no_gap'
             }
 
-        # 2. 从 KlineService 获取数据（不直接调在线适配器）
+        # 2. 从在线源获取数据（跳过 HotDB/LocalDB，避免循环调用）
         try:
             kline_service = self._get_kline_service()
             if kline_service is None:
@@ -352,8 +359,9 @@ class HotdbService:
                     'error': 'KlineService unavailable'
                 }
 
-            # 获取数据
-            df = kline_service.get_historical_kline(
+            # 使用 get_online_kline() 而不是 get_historical_kline()
+            # 避免：get_historical_kline() → smart_update() → get_historical_kline() 循环
+            df = kline_service.get_online_kline(
                 symbol=symbol,
                 period=period,
                 count=500  # 获取足够多的数据

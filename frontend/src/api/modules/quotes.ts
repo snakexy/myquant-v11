@@ -12,9 +12,9 @@ const v5Api = axios.create({
   timeout: 60000
 })
 
-// quotes 专用实例（/api/v1/quotes，用于 snapshot/market_status）
+// quotes 专用实例（/api/v1/quotes 和 /api/market，用于 snapshot/market_status）
 export const rawApi = axios.create({
-  baseURL: `${_base}/api/v1`,
+  baseURL: `${_base}/api`,
   timeout: 60000
 })
 
@@ -174,13 +174,13 @@ export const fetchKlineIncremental = async (
 
 /** 获取单只股票快照 */
 export const fetchSnapshot = async (symbol: string): Promise<QuoteSnapshot> => {
-  const { data } = await rawApi.get<QuoteSnapshot>(`/quotes/snapshot/${symbol}`)
+  const { data } = await rawApi.get<QuoteSnapshot>(`/market/snapshot/${symbol}`)
   return data
 }
 
 /** 批量获取快照 */
 export const fetchSnapshotBatch = async (symbols: string[]): Promise<SnapshotResponse> => {
-  const { data } = await rawApi.get<SnapshotResponse>('/quotes/snapshot/', {
+  const { data } = await rawApi.get<SnapshotResponse>('/market/snapshot/', {
     params: { symbols: symbols.join(',') }
   })
   return data
@@ -188,6 +188,6 @@ export const fetchSnapshotBatch = async (symbols: string[]): Promise<SnapshotRes
 
 /** 获取市场状态 */
 export const fetchMarketStatus = async (): Promise<MarketStatus> => {
-  const { data } = await rawApi.get<{code: number, data: MarketStatus, message: string}>('/quotes/market/status')
+  const { data } = await rawApi.get<{code: number, data: MarketStatus, message: string}>('/market/status')
   return data.data
 }

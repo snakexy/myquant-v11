@@ -8,7 +8,7 @@
  * - 符合 V5 架构：组件只展示，数据由 composable 管理
  */
 
-import { ref, computed, type Ref } from 'vue'
+import { ref, computed, watch, type Ref } from 'vue'
 import { fetchSnapshot as fetchSnapshotAPI, type QuoteSnapshot } from '@/api/modules/quotes'
 
 export interface OrderBookLevel {
@@ -156,6 +156,13 @@ export function useRealtimeQuote(
    * 从快照数据更新当前行情和五档盘口
    */
   const updateFromSnapshot = (snapshot: QuoteSnapshot): void => {
+    console.log('[useRealtimeQuote] updateFromSnapshot called:', {
+      price: snapshot.price,
+      change: snapshot.change,
+      change_pct: snapshot.change_pct,
+      change_percent: snapshot.change_percent,
+      getChangePct: getChangePct(snapshot)
+    })
     const price = Number(snapshot.price) || 0
     const prevClose = Number(snapshot.pre_close ?? snapshot.prev_close ?? snapshot.last_close) || 0
     const changeAmt = Number(snapshot.change ?? (price - prevClose))
@@ -338,6 +345,17 @@ export function useRealtimeQuote(
     ]
 
     error.value = null
+  }
+
+  // ========== 监听 symbol 变化 ==========
+  // 当 symbol 变化时，自动获取快照数据
+  if (autoLoad) {
+    watch(symbol, (newSymbol, oldSymbol) => {
+      if (newSymbol && newSymbol !== oldSymbol) {
+        console.log(`[useRealtimeQuote] symbol 变化: ${oldSymbol} -> ${newSymbol}, 获取快照`)
+        fetchSnapshot(newSymbol)
+      }
+    })
   }
 
   return {

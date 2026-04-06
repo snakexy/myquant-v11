@@ -9,7 +9,7 @@
  */
 
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import type { Quote, KlineData, MarketOverview } from '@/types/market'
 
 // ========== 类型定义 ==========
@@ -1178,9 +1178,11 @@ export const useDataStore = defineStore('data', () => {
    */
   const saveWatchlistGroups = () => {
     try {
-      localStorage.setItem('myquant_watchlist_groups', JSON.stringify(watchlistGroups.value))
+      const data = JSON.stringify(watchlistGroups.value)
+      localStorage.setItem('myquant_watchlist_groups', data)
+      console.log('[DataStore] 💾 已保存分组数据:', watchlistGroups.value.length, '个分组,', data.length, '字节')
     } catch (e) {
-      console.error('保存分组失败:', e)
+      console.error('[DataStore] ❌ 保存分组失败:', e)
     }
   }
 
@@ -1190,9 +1192,12 @@ export const useDataStore = defineStore('data', () => {
   const loadWatchlistGroups = () => {
     try {
       const saved = localStorage.getItem('myquant_watchlist_groups')
+      console.log('[DataStore] loadWatchlistGroups - saved data exists:', !!saved)
       if (saved) {
         watchlistGroups.value = JSON.parse(saved)
+        console.log('[DataStore] ✅ 已加载分组数据:', watchlistGroups.value.length, '个分组')
       } else {
+        console.warn('[DataStore] ⚠️ 未找到保存的分组数据，创建默认分组')
         // 如果没有分组数据，创建默认分组并迁移旧数据
         const hasOldData = watchlist.value && watchlist.value.length > 0
         const defaultGroup: WatchlistGroup = {
@@ -1215,7 +1220,7 @@ export const useDataStore = defineStore('data', () => {
         console.log('[DataStore] ✅ 创建默认分组，示例股票:', defaultGroup.stocks.length)
       }
     } catch (e) {
-      console.error('加载分组失败:', e)
+      console.error('[DataStore] ❌ 加载分组失败:', e)
       // 出错时创建默认分组（带示例股票）
       const defaultGroup: WatchlistGroup = {
         id: 'group_default',
@@ -1319,6 +1324,12 @@ export const useDataStore = defineStore('data', () => {
 
   // 初始化时加载数据
   initializeData()
+
+  // 自动监听并保存分组数据的变化（确保任何修改都能被保存）
+  watch(watchlistGroups, (newGroups) => {
+    console.log('[DataStore] 🔄 检测到分组变化，自动保存')
+    saveWatchlistGroups()
+  }, { deep: true })
 
   // ==================== 导出 ====================
 

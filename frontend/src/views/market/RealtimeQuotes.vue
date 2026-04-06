@@ -2091,21 +2091,26 @@ const loadKlineData = async () => {
 
         // 批量更新所有自选股的价格到 DataStore
         if (batchRes.data && batchRes.data.length > 0) {
-          // 转换 QuoteSnapshot 到 Quote 格式
-          const quotes = batchRes.data.map((q: any) => ({
-            symbol: q.symbol || q.code,
-            name: q.name,
-            price: q.price,
-            change: q.change,
-            change_percent: q.change_percent,
-            open: q.open,
-            high: q.high,
-            low: q.low,
-            close: q.prev_close,
-            volume: q.volume,
-            amount: q.amount,
-            timestamp: q.timestamp || Date.now()
-          }))
+          // 转换 QuoteSnapshot 到 Quote 格式，处理后端 change_pct 字段
+          const quotes = batchRes.data.map((q: any) => {
+            const symbol = q.symbol || q.code
+            // 后端返回的字段是 change_pct，前端需要 change_percent
+            const changePercent = q.change_percent !== undefined ? q.change_percent : q.change_pct
+            return {
+              symbol: symbol,
+              name: q.name,
+              price: q.price,
+              change: q.change,
+              change_percent: changePercent,
+              open: q.open,
+              high: q.high,
+              low: q.low,
+              close: q.prev_close,
+              volume: q.volume,
+              amount: q.amount,
+              timestamp: q.timestamp || Date.now()
+            }
+          })
           console.log('[RealtimeQuotes] Updating DataStore quotes:', quotes)
           dataStore.updateQuotes(quotes)
           console.log('[RealtimeQuotes] After update, dataStore.quotes:', Object.keys(dataStore.quotes))
@@ -2673,20 +2678,25 @@ const startRealtimeUpdate = async () => {
       try {
         const batchRes = await fetchSnapshotBatch(stocks)
         if (batchRes.data && batchRes.data.length > 0) {
-          const quotes = batchRes.data.map((q: any) => ({
-            symbol: q.symbol || q.code,
-            name: q.name,
-            price: q.price,
-            change: q.change,
-            change_percent: q.change_percent,
-            open: q.open,
-            high: q.high,
-            low: q.low,
-            close: q.prev_close,
-            volume: q.volume,
-            amount: q.amount,
-            timestamp: q.timestamp || Date.now()
-          }))
+          // 处理后端 change_pct 字段
+          const quotes = batchRes.data.map((q: any) => {
+            const symbol = q.symbol || q.code
+            const changePercent = q.change_percent !== undefined ? q.change_percent : q.change_pct
+            return {
+              symbol: symbol,
+              name: q.name,
+              price: q.price,
+              change: q.change,
+              change_percent: changePercent,
+              open: q.open,
+              high: q.high,
+              low: q.low,
+              close: q.prev_close,
+              volume: q.volume,
+              amount: q.amount,
+              timestamp: q.timestamp || Date.now()
+            }
+          })
           dataStore.updateQuotes(quotes)
         }
       } catch (error) {
@@ -2755,20 +2765,25 @@ onMounted(() => {
         try {
           const batchRes = await fetchSnapshotBatch(symbols)
           if (batchRes.data && batchRes.data.length > 0) {
-            const quotes = batchRes.data.map((q: any) => ({
-              symbol: q.symbol || q.code,
-              name: q.name,
-              price: q.price,
-              change: q.change,
-              change_percent: q.change_percent,
-              open: q.open,
-              high: q.high,
-              low: q.low,
-              close: q.prev_close,
-              volume: q.volume,
-              amount: q.amount,
-              timestamp: q.timestamp || Date.now()
-            }))
+            // 处理后端 change_pct 字段
+            const quotes = batchRes.data.map((q: any) => {
+              const symbol = q.symbol || q.code
+              const changePercent = q.change_percent !== undefined ? q.change_percent : q.change_pct
+              return {
+                symbol: symbol,
+                name: q.name,
+                price: q.price,
+                change: q.change,
+                change_percent: changePercent,
+                open: q.open,
+                high: q.high,
+                low: q.low,
+                close: q.prev_close,
+                volume: q.volume,
+                amount: q.amount,
+                timestamp: q.timestamp || Date.now()
+              }
+            })
             dataStore.updateQuotes(quotes)
             console.log(`[RealtimeQuotes] 预热完成: ${symbols.length} 只股票`)
           }

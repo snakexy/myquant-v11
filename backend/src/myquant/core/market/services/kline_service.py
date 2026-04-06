@@ -121,6 +121,7 @@ class KlineService:
         count: int,
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
+        _skip_smart_update: bool = False,
     ) -> pd.DataFrame:
         """统一数据入口：获取历史 K 线数据
 
@@ -135,6 +136,7 @@ class KlineService:
             count: 数据条数
             start_date: 开始日期 (YYYYMMDD)
             end_date: 结束日期 (YYYYMMDD)
+            _skip_smart_update: 内部参数，跳过智能更新（避免循环调用）
 
         Returns:
             DataFrame with columns: [datetime, open, high, low, close, volume, amount, source]
@@ -142,6 +144,12 @@ class KlineService:
         # 第1层：HotDB（快速通道）- 使用 HotDBService 智能管理数据新鲜度
         hotdb_service = get_hotdb_service()
         hotdb = get_adapter('hotdb')
+
+        # 非交易时间或内部调用不触发智能更新
+        is_trading = is_trading_time()
+        skip_update = _skip_smart_update or not is_trading
+        if skip_update:
+            logger.debug(f"[KlineService] 跳过智能更新（_skip_smart_update={_skip_smart_update}, is_trading={is_trading}）")
 
         if hotdb and hotdb.is_available():
             try:
@@ -158,10 +166,22 @@ class KlineService:
                     result_len = len(df_dict[symbol])
                     logger.info(f"[KlineService] {symbol} {period} 从 HotDB 获取 {result_len} 条")
 
+                    # 非交易时间：直接返回本地数据，不检查缺口
+                    if not is_trading:
+                        df_dict[symbol]['source'] = 'hotdb'
+                        return df_dict[symbol]
+
+                    # 交易时间：检查数据量和缺口
                     # 检查数据量是否足够（80%阈值，且至少需要10条以上才检查）
                     if count <= 10 or result_len >= count * 0.8:
-                        # 数据足够，但还需检查是否新鲜（是否有缺口）
-                        # 使用 HotDBService 进行智能更新检测
+                        # 日线数据充足时（>=500条），直接返回，不触发智能更新
+                        # 原因：500条日线足以覆盖2年交易数据，稍微陈旧也不影响展示
+                        if period == '1d' and result_len >= 500:
+                            logger.info(f"[KlineService] {symbol} {period} 日线数据充足（{result_len}条），直接返回，跳过缺口检测")
+                            df_dict[symbol]['source'] = 'hotdb'
+                            return df_dict[symbol]
+
+                        # 数据不够多，检查是否新鲜（是否有缺口）
                         gap_info = hotdb_service._detect_gap(symbol, period)
 
                         if not gap_info['has_gap']:
@@ -190,23 +210,28 @@ class KlineService:
                     # 数据不足，记录日志后继续尝试下一层
                     logger.debug(f"[KlineService] HotDB 数据不足（{result_len}/{count}），继续尝试 LocalDB")
                 else:
-                    # HotDB 无数据，触发智能更新初始化
-                    logger.info(f"[KlineService] {symbol} {period} HotDB 无数据，触发智能更新初始化")
-                    update_result = hotdb_service.smart_update(symbol, period)
+                    # HotDB 无数据
+                    if not is_trading:
+                        # 非交易时间不触发智能更新，直接尝试下一层
+                        logger.debug(f"[KlineService] 非交易时间，HotDB 无数据，继续尝试 LocalDB")
+                    else:
+                        # 交易时间，触发智能更新初始化
+                        logger.info(f"[KlineService] {symbol} {period} HotDB 无数据，触发智能更新初始化")
+                        update_result = hotdb_service.smart_update(symbol, period)
 
-                    if update_result['success'] and update_result['records'] > 0:
-                        # 更新成功，重新从 HotDB 获取
-                        df_dict = hotdb.get_kline(
-                            symbols=[symbol],
-                            period=period,
-                            start_date=start_date,
-                            end_date=end_date,
-                            count=count
-                        )
-                        if symbol in df_dict and not df_dict[symbol].empty:
-                            df_dict[symbol]['source'] = 'hotdb'
-                            logger.info(f"[KlineService] {symbol} {period} 初始化后返回 {len(df_dict[symbol])} 条")
-                            return df_dict[symbol]
+                        if update_result['success'] and update_result['records'] > 0:
+                            # 更新成功，重新从 HotDB 获取
+                            df_dict = hotdb.get_kline(
+                                symbols=[symbol],
+                                period=period,
+                                start_date=start_date,
+                                end_date=end_date,
+                                count=count
+                            )
+                            if symbol in df_dict and not df_dict[symbol].empty:
+                                df_dict[symbol]['source'] = 'hotdb'
+                                logger.info(f"[KlineService] {symbol} {period} 初始化后返回 {len(df_dict[symbol])} 条")
+                                return df_dict[symbol]
 
             except Exception as e:
                 logger.debug(f"[KlineService] HotDB 获取失败: {e}")
@@ -236,6 +261,13 @@ class KlineService:
                 logger.debug(f"[KlineService] LocalDB 获取失败: {e}")
 
         # 第3层：在线源（V5双层路由）
+        # 非交易时间跳过在线源，避免卡顿
+        if not is_trading:
+            logger.info(f"[KlineService] {symbol} {period} 非交易时间，跳过在线源获取")
+            # 所有数据源都失败（或跳过）
+            logger.warning(f"[KlineService] {symbol} {period} 本地数据源无结果，非交易时间不尝试在线源")
+            return pd.DataFrame()
+
         dataset = self._dispatch_kline(symbol, period, count)
         if dataset is not None:
             df = dataset.df
@@ -321,6 +353,38 @@ class KlineService:
 
         logger.warning("[KlineService] {} {} 所有数据源均失败", symbol, period)
         return None
+
+    def get_online_kline(
+        self,
+        symbol: str,
+        period: str,
+        count: int,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+    ) -> pd.DataFrame:
+        """仅从在线源获取 K 线数据（供 HotDBService.smart_update 使用）
+
+        此方法跳过 HotDB 和 LocalDB，直接从在线源获取数据，避免循环调用。
+
+        Args:
+            symbol: 股票代码
+            period: 周期 (1m/5m/15m/30m/1h/1d/1w/1M)
+            count: 数据条数
+            start_date: 开始日期 (YYYYMMDD)
+            end_date: 结束日期 (YYYYMMDD)
+
+        Returns:
+            DataFrame with columns: [datetime, open, high, low, close, volume, amount, source]
+        """
+        dataset = self._dispatch_kline(symbol, period, count, start_date, end_date)
+        if dataset is not None:
+            df = dataset.df.copy()
+            df['source'] = dataset.adapter
+            logger.info(f"[KlineService] {symbol} {period} 从在线源 {dataset.adapter} 获取 {len(df)} 条")
+            return df
+
+        logger.warning(f"[KlineService] {symbol} {period} 在线源获取失败")
+        return pd.DataFrame()
 
     # ── 连接管理 ──────────────────────────────
 

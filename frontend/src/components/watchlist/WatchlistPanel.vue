@@ -122,7 +122,7 @@
       <div
         v-for="item in displayList"
         :key="item.symbol"
-        :class="['stock-item', { selected: selectedStock.value === item.symbol }]"
+        :class="['stock-item', { selected: props.selectedStock === item.symbol }]"
         @click="selectStock(item.symbol)"
         @dblclick="showStockDetail(item.symbol)"
         @contextmenu.prevent="showStockMenu($event, item.symbol)"
@@ -202,6 +202,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, nextTick, watch, toRefs } from 'vue'
 import { useDataStore } from '@/stores/core/DataStore'
+import { fetchSnapshot } from '@/api/modules/quotes'
 import StockSearchBox from './StockSearchBox.vue'
 import SchedulerMonitorPanel from '../monitor/SchedulerMonitorPanel.vue'
 import StockDetailDialog from '@/components/data-management/StockDetailDialog.vue'
@@ -216,8 +217,8 @@ const props = withDefaults(defineProps<Props>(), {
   miniChartsData: undefined
 })
 
-// 解构 props 以便在模板中直接使用
-const { selectedStock } = toRefs(props)
+// 直接使用 props.selectedStock 而不是 toRefs，确保响应式正常
+// const { selectedStock } = toRefs(props)
 // miniChartsData 直接使用 props，保持响应性
 
 const emit = defineEmits<{
@@ -417,7 +418,7 @@ const deleteGroup = () => {
 }
 
 // 添加股票（从搜索框）- 添加到当前激活分组
-const handleAddStock = (symbol: string, name: string) => {
+const handleAddStock = async (symbol: string, name: string) => {
   const currentGroup = dataStore.activeGroup
   if (currentGroup) {
     dataStore.addToGroup(currentGroup.id, symbol, name)
@@ -427,6 +428,31 @@ const handleAddStock = (symbol: string, name: string) => {
     dataStore.setActiveGroup(newGroup.id)
     dataStore.addToGroup(newGroup.id, symbol, name)
   }
+
+  // 立即获取该股票的行情快照数据，更新到列表
+  try {
+    const snapshot = await fetchSnapshot(symbol)
+    // 处理 change_pct 字段
+    const changePercent = snapshot.change_percent !== undefined ? snapshot.change_percent : snapshot.change_pct
+    dataStore.updateQuotes([{
+      symbol: snapshot.symbol || snapshot.code,
+      name: snapshot.name,
+      price: snapshot.price,
+      change: snapshot.change,
+      change_percent: changePercent,
+      open: snapshot.open,
+      high: snapshot.high,
+      low: snapshot.low,
+      close: snapshot.prev_close,
+      volume: snapshot.volume,
+      amount: snapshot.amount,
+      timestamp: snapshot.timestamp || Date.now()
+    }])
+    console.log('[WatchlistPanel] 已获取新股票行情:', symbol, snapshot.price, changePercent + '%')
+  } catch (e) {
+    console.error('[WatchlistPanel] 获取新股票行情失败:', symbol, e)
+  }
+
   // 自动选中新添加的股票
   selectStock(symbol)
 }
