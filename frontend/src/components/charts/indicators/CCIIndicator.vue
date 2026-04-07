@@ -56,45 +56,51 @@ const initChart = () => {
     }
   })
 
+  // 添加警戒线（使用独立的line series）
+  chart.addLineSeries({
+    priceLine: {
+      price: 200,
+      color: 'rgba(255, 77, 77, 0.5)',
+      lineWidth: 1,
+      lineStyle: 2,
+      axisLabelVisible: false
+    }
+  })
+
+  chart.addLineSeries({
+    priceLine: {
+      price: props.overbought,
+      color: 'rgba(239, 68, 68, 0.5)',
+      lineWidth: 1,
+      lineStyle: 2,
+      axisLabelVisible: false
+    }
+  })
+
+  chart.addLineSeries({
+    priceLine: {
+      price: props.oversold,
+      color: 'rgba(76, 175, 80, 0.5)',
+      lineWidth: 1,
+      lineStyle: 2,
+      axisLabelVisible: false
+    }
+  })
+
+  chart.addLineSeries({
+    priceLine: {
+      price: -200,
+      color: 'rgba(77, 255, 77, 0.5)',
+      lineWidth: 1,
+      lineStyle: 2,
+      axisLabelVisible: false
+    }
+  })
+
   // CCI 线
   cciSeries = chart.addLineSeries({
     color: props.color,
     lineWidth: 2
-  })
-
-  // 添加价格线（警戒线）
-  cciSeries.createPriceLine({
-    price: props.overbought,
-    color: 'rgba(239, 68, 68, 0.6)',
-    lineWidth: 1,
-    lineStyle: 2,
-    axisLabelVisible: false
-  })
-
-  cciSeries.createPriceLine({
-    price: props.oversold,
-    color: 'rgba(76, 175, 80, 0.6)',
-    lineWidth: 1,
-    lineStyle: 2,
-    axisLabelVisible: false
-  })
-
-  // +200 警戒线（极端超买）
-  cciSeries.createPriceLine({
-    price: 200,
-    color: 'rgba(255, 77, 77, 0.4)',
-    lineWidth: 1,
-    lineStyle: 2,
-    axisLabelVisible: false
-  })
-
-  // -200 警戒线（极端超卖）
-  cciSeries.createPriceLine({
-    price: -200,
-    color: 'rgba(77, 255, 77, 0.4)',
-    lineWidth: 1,
-    lineStyle: 2,
-    axisLabelVisible: false
   })
 
   updateChart()
