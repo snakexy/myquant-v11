@@ -148,6 +148,22 @@ export const INDICATOR_REGISTRY: Record<string, IndicatorConfig> = {
     paneHeight: 120
   },
 
+  // 独立指标 - TOPBOTTOM（顶底背离）
+  TOPBOTTOM: {
+    id: 'TOPBOTTOM',
+    name: '顶底背离',
+    nameEn: 'Top/Bottom Divergence',
+    type: 'oscillator',
+    defaultParams: { period: 34 },
+    series: [
+      { key: 'risk_value_34', label: '风险值', labelEn: 'Risk Value', color: '#2196F3', type: 'line', lineWidth: 2 },
+      { key: 'risk_value_170', label: '风险值5', labelEn: 'Risk 5', color: '#FF9800', type: 'line', lineWidth: 1 },
+      { key: 'buy_signal', label: '买入', labelEn: 'Buy', color: '#4CAF50', type: 'line', lineWidth: 0 },
+      { key: 'sell_signal', label: '卖出', labelEn: 'Sell', color: '#F44336', type: 'line', lineWidth: 0 }
+    ],
+    paneHeight: 150
+  },
+
   // 主图叠加 - MA
   MA: {
     id: 'MA',
