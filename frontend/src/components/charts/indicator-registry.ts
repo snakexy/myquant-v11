@@ -8,6 +8,7 @@ export type IndicatorType = 'oscillator' | 'overlay' | 'volume';
 export interface SeriesConfig {
   key: string;
   label: string;
+  labelEn?: string;
   color: string;
   lineWidth?: number;
   type: 'line' | 'histogram' | 'area';
@@ -16,6 +17,7 @@ export interface SeriesConfig {
 export interface IndicatorConfig {
   id: string;
   name: string;
+  nameEn: string;
   type: IndicatorType;
   defaultParams: Record<string, number | number[]>;
   series: SeriesConfig[];
@@ -27,12 +29,13 @@ export const INDICATOR_REGISTRY: Record<string, IndicatorConfig> = {
   MACD: {
     id: 'MACD',
     name: 'MACD',
+    nameEn: 'MACD',
     type: 'oscillator',
     defaultParams: { fast: 12, slow: 26, signal: 9 },
     series: [
-      { key: 'macd', label: 'MACD', color: '#FF6B6B', type: 'line', lineWidth: 2 },
-      { key: 'signal', label: 'Signal', color: '#26A69A', type: 'line', lineWidth: 2 },
-      { key: 'histogram', label: 'Hist', color: '#2196F3', type: 'histogram' }
+      { key: 'macd', label: 'MACD', labelEn: 'MACD', color: '#FF6B6B', type: 'line', lineWidth: 2 },
+      { key: 'signal', label: 'Signal', labelEn: 'Signal', color: '#26A69A', type: 'line', lineWidth: 2 },
+      { key: 'histogram', label: 'Hist', labelEn: 'Hist', color: '#2196F3', type: 'histogram' }
     ],
     paneHeight: 120
   },
@@ -41,12 +44,13 @@ export const INDICATOR_REGISTRY: Record<string, IndicatorConfig> = {
   KDJ: {
     id: 'KDJ',
     name: 'KDJ',
+    nameEn: 'KDJ',
     type: 'oscillator',
     defaultParams: { kPeriod: 9, dPeriod: 3, jPeriod: 3 },
     series: [
-      { key: 'k', label: 'K', color: '#FF6B6B', type: 'line', lineWidth: 2 },
-      { key: 'd', label: 'D', color: '#26A69A', type: 'line', lineWidth: 2 },
-      { key: 'j', label: 'J', color: '#2196F3', type: 'line', lineWidth: 2 }
+      { key: 'k', label: 'K', labelEn: 'K', color: '#FF6B6B', type: 'line', lineWidth: 2 },
+      { key: 'd', label: 'D', labelEn: 'D', color: '#26A69A', type: 'line', lineWidth: 2 },
+      { key: 'j', label: 'J', labelEn: 'J', color: '#2196F3', type: 'line', lineWidth: 2 }
     ],
     paneHeight: 120
   },
@@ -55,11 +59,12 @@ export const INDICATOR_REGISTRY: Record<string, IndicatorConfig> = {
   SKDJ: {
     id: 'SKDJ',
     name: 'SKDJ',
+    nameEn: 'SKDJ',
     type: 'oscillator',
     defaultParams: { fastk_period: 9, slowk_period: 3, slowd_period: 3 },
     series: [
-      { key: 'sk', label: 'SK', color: '#FF6B6B', type: 'line', lineWidth: 2 },
-      { key: 'sd', label: 'SD', color: '#26A69A', type: 'line', lineWidth: 2 }
+      { key: 'sk', label: 'SK', labelEn: 'SK', color: '#FF6B6B', type: 'line', lineWidth: 2 },
+      { key: 'sd', label: 'SD', labelEn: 'SD', color: '#26A69A', type: 'line', lineWidth: 2 }
     ],
     paneHeight: 120
   },
@@ -68,10 +73,11 @@ export const INDICATOR_REGISTRY: Record<string, IndicatorConfig> = {
   RSI: {
     id: 'RSI',
     name: 'RSI',
+    nameEn: 'RSI',
     type: 'oscillator',
     defaultParams: { period: 14 },
     series: [
-      { key: 'rsi', label: 'RSI', color: '#2196F3', type: 'line', lineWidth: 2 }
+      { key: 'rsi', label: 'RSI', labelEn: 'RSI', color: '#2196F3', type: 'line', lineWidth: 2 }
     ],
     paneHeight: 120
   },
@@ -80,10 +86,11 @@ export const INDICATOR_REGISTRY: Record<string, IndicatorConfig> = {
   CCI: {
     id: 'CCI',
     name: 'CCI',
+    nameEn: 'CCI',
     type: 'oscillator',
     defaultParams: { period: 14 },
     series: [
-      { key: 'cci', label: 'CCI', color: '#FF9800', type: 'line', lineWidth: 2 }
+      { key: 'cci', label: 'CCI', labelEn: 'CCI', color: '#FF9800', type: 'line', lineWidth: 2 }
     ],
     paneHeight: 120
   },
@@ -92,11 +99,12 @@ export const INDICATOR_REGISTRY: Record<string, IndicatorConfig> = {
   OBV: {
     id: 'OBV',
     name: 'OBV',
+    nameEn: 'OBV',
     type: 'volume',
     defaultParams: { period: 12 },
     series: [
-      { key: 'obv', label: 'OBV', color: '#9C27B0', type: 'line', lineWidth: 2 },
-      { key: 'maobv', label: 'MAOBV', color: '#FFD700', type: 'line', lineWidth: 1 }
+      { key: 'obv', label: 'OBV', labelEn: 'OBV', color: '#9C27B0', type: 'line', lineWidth: 2 },
+      { key: 'maobv', label: 'MAOBV', labelEn: 'MAOBV', color: '#FFD700', type: 'line', lineWidth: 1 }
     ],
     paneHeight: 120
   },
@@ -105,10 +113,11 @@ export const INDICATOR_REGISTRY: Record<string, IndicatorConfig> = {
   WR: {
     id: 'WR',
     name: 'WR',
+    nameEn: 'WR',
     type: 'oscillator',
     defaultParams: { period: 14 },
     series: [
-      { key: 'wr', label: 'WR', color: '#E91E63', type: 'line', lineWidth: 2 }
+      { key: 'wr', label: 'WR', labelEn: 'WR', color: '#E91E63', type: 'line', lineWidth: 2 }
     ],
     paneHeight: 120
   },
@@ -117,10 +126,11 @@ export const INDICATOR_REGISTRY: Record<string, IndicatorConfig> = {
   ATR: {
     id: 'ATR',
     name: 'ATR',
+    nameEn: 'ATR',
     type: 'oscillator',
     defaultParams: { period: 14 },
     series: [
-      { key: 'atr', label: 'ATR', color: '#FF9800', type: 'line', lineWidth: 2 }
+      { key: 'atr', label: 'ATR', labelEn: 'ATR', color: '#FF9800', type: 'line', lineWidth: 2 }
     ],
     paneHeight: 120
   },
@@ -129,10 +139,11 @@ export const INDICATOR_REGISTRY: Record<string, IndicatorConfig> = {
   BIAS: {
     id: 'BIAS',
     name: 'BIAS',
+    nameEn: 'BIAS',
     type: 'oscillator',
     defaultParams: { period: 6 },
     series: [
-      { key: 'bias', label: 'BIAS', color: '#00BCD4', type: 'line', lineWidth: 2 }
+      { key: 'bias', label: 'BIAS', labelEn: 'BIAS', color: '#00BCD4', type: 'line', lineWidth: 2 }
     ],
     paneHeight: 120
   },
@@ -141,14 +152,15 @@ export const INDICATOR_REGISTRY: Record<string, IndicatorConfig> = {
   MA: {
     id: 'MA',
     name: 'MA',
+    nameEn: 'MA',
     type: 'overlay',
     defaultParams: { periods: [5, 10, 20, 30, 60] },
     series: [
-      { key: 'ma5', label: 'MA5', color: '#FFFFFF', type: 'line', lineWidth: 1 },
-      { key: 'ma10', label: 'MA10', color: '#FFFF00', type: 'line', lineWidth: 1 },
-      { key: 'ma20', label: 'MA20', color: '#FF00FF', type: 'line', lineWidth: 1 },
-      { key: 'ma30', label: 'MA30', color: '#00FFFF', type: 'line', lineWidth: 1 },
-      { key: 'ma60', label: 'MA60', color: '#00FF00', type: 'line', lineWidth: 1 }
+      { key: 'ma5', label: 'MA5', labelEn: 'MA5', color: '#FFFFFF', type: 'line', lineWidth: 1 },
+      { key: 'ma10', label: 'MA10', labelEn: 'MA10', color: '#FFFF00', type: 'line', lineWidth: 1 },
+      { key: 'ma20', label: 'MA20', labelEn: 'MA20', color: '#FF00FF', type: 'line', lineWidth: 1 },
+      { key: 'ma30', label: 'MA30', labelEn: 'MA30', color: '#00FFFF', type: 'line', lineWidth: 1 },
+      { key: 'ma60', label: 'MA60', labelEn: 'MA60', color: '#00FF00', type: 'line', lineWidth: 1 }
     ]
   },
 
@@ -156,12 +168,13 @@ export const INDICATOR_REGISTRY: Record<string, IndicatorConfig> = {
   BOLL: {
     id: 'BOLL',
     name: '布林带',
+    nameEn: 'Bollinger Bands',
     type: 'overlay',
     defaultParams: { period: 20, stdDev: 2 },
     series: [
-      { key: 'upper', label: 'UP', color: '#FF6B6B', type: 'line', lineWidth: 1 },
-      { key: 'middle', label: 'MID', color: '#26A69A', type: 'line', lineWidth: 1 },
-      { key: 'lower', label: 'LOW', color: '#FF6B6B', type: 'line', lineWidth: 1 }
+      { key: 'upper', label: 'UP', labelEn: 'UP', color: '#FF6B6B', type: 'line', lineWidth: 1 },
+      { key: 'middle', label: 'MID', labelEn: 'MID', color: '#26A69A', type: 'line', lineWidth: 1 },
+      { key: 'lower', label: 'LOW', labelEn: 'LOW', color: '#FF6B6B', type: 'line', lineWidth: 1 }
     ]
   },
 
@@ -169,6 +182,7 @@ export const INDICATOR_REGISTRY: Record<string, IndicatorConfig> = {
   SMC: {
     id: 'SMC',
     name: 'SMC V2',
+    nameEn: 'SMC V2',
     type: 'overlay',
     defaultParams: {
       swing_length: 5,
@@ -205,8 +219,8 @@ export const INDICATOR_REGISTRY: Record<string, IndicatorConfig> = {
       fvg_opacity: 12,
     },
     series: [
-      { key: 'swing_highs', label: 'SwingH', color: '#00D9FF', type: 'line', lineWidth: 2 },
-      { key: 'swing_lows', label: 'SwingL', color: '#FF61D2', type: 'line', lineWidth: 2 }
+      { key: 'swing_highs', label: 'SwingH', labelEn: 'SwingH', color: '#00D9FF', type: 'line', lineWidth: 2 },
+      { key: 'swing_lows', label: 'SwingL', labelEn: 'SwingL', color: '#FF61D2', type: 'line', lineWidth: 2 }
     ]
   }
 };

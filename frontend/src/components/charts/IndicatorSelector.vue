@@ -6,19 +6,19 @@
         <text x="5" y="12" fill="currentColor" font-size="7" font-family="Arial" font-weight="bold">f</text>
         <text x="9" y="12" fill="currentColor" font-size="6" font-family="Arial">(x)</text>
       </svg>
-      <span class="tv-indicator-text">指标</span>
+      <span class="tv-indicator-text">{{ t('indicators.button') }}</span>
     </button>
 
     <!-- 指标菜单 -->
     <div v-if="showMenu" class="indicator-menu" :style="menuStyle">
       <div class="indicator-menu-header">
-        <span>技术指标</span>
+        <span>{{ t('indicators.title') }}</span>
         <button class="close-btn" @click="closeMenu">✕</button>
       </div>
       <div class="indicator-menu-content">
         <!-- 独立指标 -->
         <div class="indicator-group">
-          <div class="indicator-group-label">独立指标</div>
+          <div class="indicator-group-label">{{ t('indicators.oscillator') }}</div>
           <div
             v-for="ind in oscillators"
             :key="ind.id"
@@ -31,7 +31,7 @@
                 @change="toggleOscillator(ind.id)"
               />
               <span class="checkmark"></span>
-              <span class="indicator-name">{{ ind.name }}</span>
+              <span class="indicator-name">{{ currentLanguage === 'en' ? ind.nameEn : ind.name }}</span>
             </label>
             <button class="settings-btn" @click="openSettings(ind.id, $event)">⚙️</button>
           </div>
@@ -42,7 +42,7 @@
 
         <!-- 主图叠加 -->
         <div class="indicator-group">
-          <div class="indicator-group-label">主图叠加</div>
+          <div class="indicator-group-label">{{ t('indicators.overlay') }}</div>
           <div
             v-for="ind in overlays"
             :key="ind.id"
@@ -55,7 +55,7 @@
                 @change="toggleOverlay(ind.id)"
               />
               <span class="checkmark"></span>
-              <span class="indicator-name">{{ ind.name }}</span>
+              <span class="indicator-name">{{ currentLanguage === 'en' ? ind.nameEn : ind.name }}</span>
             </label>
             <button class="settings-btn" @click="openSettings(ind.id, $event)">⚙️</button>
           </div>
@@ -76,6 +76,7 @@ import {
   getOverlayIndicators,
   type IndicatorId
 } from './indicator-registry'
+import { useI18n } from '@/composables/useI18n'
 
 interface Props {
   active?: string[]
@@ -93,6 +94,7 @@ const emit = defineEmits<{
   'settings': [indicatorId: string]
 }>()
 
+const { t, currentLanguage } = useI18n()
 const showMenu = ref(false)
 const menuStyle = ref({})
 
