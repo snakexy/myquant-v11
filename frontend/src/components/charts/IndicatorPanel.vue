@@ -44,6 +44,14 @@
           :height="indicator.height"
         />
 
+        <!-- SKDJ 指标（使用KDJ组件显示） -->
+        <KDJIndicator
+          v-else-if="indicator.id === 'SKDJ'"
+          :data="indicatorData[indicator.id]"
+          :width="containerWidth"
+          :height="indicator.height"
+        />
+
         <!-- RSI 指标 -->
         <RSIIndicator
           v-else-if="indicator.id === 'RSI'"

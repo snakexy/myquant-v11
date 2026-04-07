@@ -83,25 +83,29 @@ export interface UnifiedDataResponse<T = any> {
   }
 }
 
+/**
+ * Seamless K线请求（对应后端 SeamlessKlineRequest）
+ */
+export interface SeamlessKlineRequest {
+  symbols: string[]
+  period: string
+  count: number
+  end_date?: string
+  start_date?: string
+  adjust_type?: 'none' | 'front' | 'back'
+}
+
 // ==================== K线数据API ====================
 
 /**
  * 获取K线数据（统一接口）
  *
- * ⭐ 推荐使用：通过UnifiedDataManager自动选择最优数据源
- *
- * 后端处理流程:
- * 1. 接收请求
- * 2. UnifiedDataManager根据规则选择数据源:
- *    - 检查本地缓存（L0-L2）
- *    - XtQuant下载+读取（优先）
- *    - 在线获取（备用）
- * 3. 应用数据格式规则（time字段格式、复权类型等）
- * 4. 返回统一格式数据
+ * ⭐ 调用后端 /api/v5/kline/seamless 接口
  *
  * @param symbol 股票代码（如 "600519.SH"）
- * @param period K线周期
- * @param count 数据条数（默认500，最大10000）
+ * @param period K线周期 (1min/5min/15min/30min/60min/day/week/month)
+ * @param count 数据条数（默认500，最大1000）
+ * @param end_date 结束日期 YYYY-MM-DD（获取该日期之前的数据，用于加载更多）
  * @param use_cache 是否使用缓存（默认true）
  * @returns K线数据
  *
@@ -110,28 +114,61 @@ export interface UnifiedDataResponse<T = any> {
  * const data = await getUnifiedKline('600519.SH', 'day', 250)
  *
  * @example
- * // 获取5分钟K线
- * const data = await getUnifiedKline('600519.SH', '5min', 500)
+ * // 获取2024-01-01之前的日K线（加载更多）
+ * const data = await getUnifiedKline('600519.SH', 'day', 250, '2024-01-01')
  */
 export const getUnifiedKline = async (
   symbol: string,
   period: KlinePeriod,
   count: number = 500,
+  end_date?: string,
   use_cache: boolean = true
 ): Promise<UnifiedDataResponse<KlineDataItem[]>> => {
-  const request: UnifiedDataRequest = {
-    data_type: 'kline',
+  // 映射周期格式：前端 period -> 后端 period
+  const periodMap: Record<string, string> = {
+    '1min': '1m',
+    '5min': '5m',
+    '15min': '15m',
+    '30min': '30m',
+    '60min': '1h',
+    'day': '1d',
+    'week': '1w',
+    'month': '1mon'
+  }
+  const apiPeriod = periodMap[period] || period
+
+  // 构建请求体（符合后端 SeamlessKlineRequest 格式）
+  const request: SeamlessKlineRequest = {
     symbols: [symbol],
-    params: {
-      period,
-      count,
-      dividend_type: 'front'  // 前复权（遵守数据格式规则）
-    },
-    use_cache: use_cache
+    period: apiPeriod,
+    count: Math.min(count, 1000),  // 后端最大1000
+    end_date: end_date,
+    adjust_type: 'front'  // 前复权
   }
 
-  return http.post<UnifiedDataResponse<KlineDataItem[]>>('/api/v1/data/unified', request)
-    .then(response => response.data)
+  // 调用后端 seamless API
+  return http.post<UnifiedDataResponse<KlineDataItem[]>>('/api/v5/kline/seamless', request)
+    .then(response => {
+      // 后端返回格式: { code: 0, data: { symbol: { data: [...] }, message: "success" }
+      if (response.code === 0 && response.data && response.data[symbol]) {
+        const symbolData = response.data[symbol]
+        return {
+          code: 200,
+          data: symbolData.data || [],
+          message: response.message,
+          metadata: {
+            source: symbolData.source || 'seamless',
+            elapsed_ms: 0,
+            timestamp: new Date().toISOString()
+          }
+        }
+      }
+      return {
+        code: response.code || 500,
+        data: [],
+        message: response.message || 'No data'
+      }
+    })
 }
 
 /**

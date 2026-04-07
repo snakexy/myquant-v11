@@ -324,7 +324,7 @@ class ResearchStockService:
         # 实现技术指标计算
         # 使用已有的indicator_service
         try:
-            from .indicator_service import get_indicator_service
+            from .indicators import get_indicator_service
             indicator_svc = get_indicator_service()
 
             # 获取K线数据

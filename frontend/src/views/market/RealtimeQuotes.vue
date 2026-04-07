@@ -425,7 +425,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount, computed, nextTick, watch } from 'vue'
-import { createChart, CrosshairMode, CandlestickSeries, HistogramSeries, LineSeries, AreaSeries } from 'lightweight-charts'
+import { createChart, CrosshairMode, CandlestickSeries, HistogramSeries, LineSeries, AreaSeries, BaselineSeries } from 'lightweight-charts'
 import GlobalNavBar from '@/components/GlobalNavBar.vue'
 import WatchlistPanel from '@/components/watchlist/WatchlistPanel.vue'
 import { useAppStore } from '@/stores/core/AppStore'
@@ -1245,7 +1245,7 @@ const updateIndicatorData = (indicatorId: string, klineData: any[]) => {
 
   const indicatorData = indicatorDataCache.value[indicatorId]
   if (!indicatorData) {
-    console.log(`[指标] 无${indicatorId}数据`)
+    console.log(`[指标] 无${indicatorId}数据，缓存keys:`, Object.keys(indicatorDataCache.value))
     return
   }
 
@@ -1409,6 +1409,131 @@ const updateIndicatorData = (indicatorId: string, klineData: any[]) => {
       }
     } catch (e) {
       console.error('[指标] RSI 警戒线处理失败:', e)
+    }
+  }
+
+  // SKDJ 特殊处理：创建/更新警戒线（80超买、20超卖）和区域填充
+  if (indicatorId === 'SKDJ') {
+    try {
+      const times = Array.from(timeMap.values()).filter(t => t && t > 0)
+      if (times.length >= 2) {
+        const firstTime = times[0]
+        const lastTime = times[times.length - 1]
+        const paneIndex = getIndicatorPaneIndex(indicatorId)
+
+        // 获取保存的设置
+        const savedParams = indicatorParams.value[indicatorId] || {}
+        const overboughtColor = savedParams.area_overbought_color || '#F44336'
+        const oversoldColor = savedParams.area_oversold_color || '#4CAF50'
+        const overboughtOpacity = savedParams.area_overbought_opacity || 50
+        const oversoldOpacity = savedParams.area_oversold_opacity || 50
+        const showAlertLines = savedParams.show_alert_lines !== false
+
+        // 转换颜色为 rgba
+        const hexToRgba = (hex: string, opacity: number) => {
+          const r = parseInt(hex.slice(1, 3), 16)
+          const g = parseInt(hex.slice(3, 5), 16)
+          const b = parseInt(hex.slice(5, 7), 16)
+          return `rgba(${r}, ${g}, ${b}, ${opacity / 100})`
+        }
+
+        let alertLines = indicatorAlertLinesMap.get(indicatorId)
+
+        if (!alertLines) {
+          console.log('[指标] SKDJ 首次创建警戒线和区域填充')
+
+          // 创建80超买警戒线（如果启用）
+          const overboughtLine = showAlertLines ? chart.addSeries(LineSeries, {
+            color: hexToRgba(overboughtColor, 50),
+            lineWidth: 1,
+            lineStyle: 2,
+            priceLineVisible: false,
+            lastValueVisible: false,
+            crosshairMarkerVisible: false,
+          }, paneIndex) : null
+
+          // 创建20超卖警戒线（如果启用）
+          const oversoldLine = showAlertLines ? chart.addSeries(LineSeries, {
+            color: hexToRgba(oversoldColor, 50),
+            lineWidth: 1,
+            lineStyle: 2,
+            priceLineVisible: false,
+            lastValueVisible: false,
+            crosshairMarkerVisible: false,
+          }, paneIndex) : null
+
+          // 创建顶部区域（Baseline，baseValue=80）
+          // 只在值 > 80 时显示填充（从80向上填充到值）
+          const topAreaSeries = chart.addSeries(BaselineSeries, {
+            baseValue: { type: 'price', price: 80 },
+            topLineColor: 'transparent',
+            topFillColor1: hexToRgba(overboughtColor, overboughtOpacity),
+            topFillColor2: hexToRgba(overboughtColor, Math.max(10, overboughtOpacity - 30)),
+            bottomLineColor: 'transparent',
+            bottomFillColor1: 'transparent',
+            bottomFillColor2: 'transparent',
+            priceLineVisible: false,
+            lastValueVisible: false,
+            crosshairMarkerVisible: false,
+          }, paneIndex)
+
+          // 创建底部区域（Baseline，baseValue=20，从20开始向下填充）
+          const bottomAreaSeries = chart.addSeries(BaselineSeries, {
+            baseValue: { type: 'price', price: 20 },
+            topLineColor: 'transparent',
+            topFillColor1: 'transparent',
+            topFillColor2: 'transparent',
+            bottomLineColor: 'transparent',
+            bottomFillColor1: hexToRgba(oversoldColor, oversoldOpacity),
+            bottomFillColor2: hexToRgba(oversoldColor, Math.max(10, oversoldOpacity - 30)),
+            priceLineVisible: false,
+            lastValueVisible: false,
+            crosshairMarkerVisible: false,
+          }, paneIndex)
+
+          alertLines = [overboughtLine, oversoldLine, topAreaSeries, bottomAreaSeries]
+          indicatorAlertLinesMap.set(indicatorId, alertLines)
+        }
+
+        // 更新警戒线（如果启用）
+        if (showAlertLines) {
+          alertLines[0]?.setData([
+            { time: firstTime, value: 80 },
+            { time: lastTime, value: 80 }
+          ])
+
+          alertLines[1]?.setData([
+            { time: firstTime, value: 20 },
+            { time: lastTime, value: 20 }
+          ])
+        }
+
+        // 更新区域填充 - 修复：确保数据连续，在阈值内时使用基线值
+        const skData = indicatorData?.sk || []
+        const topAreaData: any[] = []
+        const bottomAreaData: any[] = []
+
+        skData.forEach((val: number, i: number) => {
+          const time = timeMap.get(i)
+          if (time && val !== null && !isNaN(val)) {
+            // 顶部区域：所有点都传入，但在 <= 80 时使用基线值 80
+            topAreaData.push({ time, value: val > 80 ? val : 80 })
+            // 底部区域：所有点都传入，但在 >= 20 时使用基线值 20
+            bottomAreaData.push({ time, value: val < 20 ? val : 20 })
+          }
+        })
+
+        alertLines[2]?.setData(topAreaData)
+        alertLines[3]?.setData(bottomAreaData)
+        console.log('[指标] SKDJ 警戒线和区域填充已更新:', {
+          topAreaTotal: topAreaData.length,
+          bottomAreaTotal: bottomAreaData.length
+        })
+      } else {
+        console.log('[指标] SKDJ 时间数据不足:', times.length)
+      }
+    } catch (e) {
+      console.error('[指标] SKDJ 警戒线和区域填充处理失败:', e)
     }
   }
 
@@ -1610,63 +1735,6 @@ const updateIndicatorData = (indicatorId: string, klineData: any[]) => {
       }
     } catch (e) {
       console.error('[指标] BIAS 警戒线处理失败:', e)
-    }
-  }
-
-  // TOPBOTTOM 顶底背离指标特殊处理
-  if (indicatorId === 'TOPBOTTOM') {
-    try {
-      const times = Array.from(timeMap.values()).filter(t => t && t > 0)
-      if (times.length >= 2) {
-        const firstTime = times[0]
-        const lastTime = times[times.length - 1]
-        const paneIndex = getIndicatorPaneIndex(indicatorId)
-
-        let alertLines = indicatorAlertLinesMap.get(indicatorId)
-
-        if (!alertLines) {
-          console.log('[指标] TOPBOTTOM 首次创建警戒线')
-
-          // 创建80超买警戒线
-          const overboughtLine = chart.addSeries(LineSeries, {
-            color: 'rgba(244, 67, 54, 0.6)',
-            lineWidth: 1,
-            lineStyle: 2,
-            priceLineVisible: false,
-            lastValueVisible: false,
-            crosshairMarkerVisible: false,
-          }, paneIndex)
-
-          // 创建20超卖警戒线
-          const oversoldLine = chart.addSeries(LineSeries, {
-            color: 'rgba(76, 175, 80, 0.6)',
-            lineWidth: 1,
-            lineStyle: 2,
-            priceLineVisible: false,
-            lastValueVisible: false,
-            crosshairMarkerVisible: false,
-          }, paneIndex)
-
-          alertLines = [overboughtLine, oversoldLine]
-          indicatorAlertLinesMap.set(indicatorId, alertLines)
-        }
-
-        alertLines[0]?.setData([
-          { time: firstTime, value: 80 },
-          { time: lastTime, value: 80 }
-        ])
-
-        alertLines[1]?.setData([
-          { time: firstTime, value: 20 },
-          { time: lastTime, value: 20 }
-        ])
-
-        console.log('[指标] TOPBOTTOM 警戒线已更新:', firstTime, '-', lastTime)
-      } else {
-        console.log('[指标] TOPBOTTOM 时间数据不足:', times.length)
-      }
-    } catch (e) {
-      console.error('[指标] TOPBOTTOM 警戒线处理失败:', e)
     }
   }
 }
@@ -3102,18 +3170,6 @@ const loadKlineData = async () => {
           reference_period: indParams.reference_period ?? 34
         }
       }
-      // TOPBOTTOM 参数映射
-      else if (indId === 'TOPBOTTOM') {
-        indicatorParamsConfig['TOPBOTTOM'] = {
-          fastk_period: indParams.fastk_period ?? 9,
-          slowk_period: indParams.slowk_period ?? 3,
-          slowd_period: indParams.slowd_period ?? 3,
-          rsi_period: indParams.rsi_period ?? 14,
-          macd_fast: indParams.macd_fast ?? 12,
-          macd_slow: indParams.macd_slow ?? 26,
-          macd_signal: indParams.macd_signal ?? 9
-        }
-      }
     }
 
     console.log('[指标] 传递参数配置:', indicatorParamsConfig)
@@ -3139,8 +3195,7 @@ const loadKlineData = async () => {
         'SKDJ': ['sk', 'sd'],  // 通达信SKDJ没有SJ
         'KDJ': ['k', 'd', 'j'],
         'MACD': ['macd', 'signal', 'histogram'],
-        'BOLL': ['upper', 'middle', 'lower'],
-        'TOPBOTTOM': ['risk_value_34', 'risk_value_170', 'buy_signal', 'sell_signal']
+        'BOLL': ['upper', 'middle', 'lower']
       }
 
       // 检查是否为扁平结构（包含sk/sd/sj等键）
@@ -3229,6 +3284,9 @@ const loadKlineData = async () => {
         // 保存指标数据
         if (klineRes.indicators?.[indicatorId]) {
           indicatorDataCache.value[indicatorId] = klineRes.indicators[indicatorId]
+          console.log(`[缓存] ${indicatorId} 已缓存，keys:`, Object.keys(klineRes.indicators[indicatorId]))
+        } else {
+          console.warn(`[缓存] ${indicatorId} 未在 klineRes.indicators 中找到！可用keys:`, klineRes.indicators ? Object.keys(klineRes.indicators) : 'no indicators')
         }
 
         // 初始化pane并更新数据

@@ -283,6 +283,62 @@ class IndicatorService:
             'j': pd.Series(j, index=close.index)
         }
 
+    def calculate_skdj(
+        self,
+        high: pd.Series,
+        low: pd.Series,
+        close: pd.Series,
+        fastk_period: int = 9,
+        slowk_period: int = 3,
+        slowd_period: int = 3,
+        smooth_period: int = 3
+    ) -> Dict[str, pd.Series]:
+        """
+        计算SKDJ指标（慢速随机指标 Slow KDJ）
+
+        SKDJ 是对 KDJ 的 K、D 值再做一次平滑，更稳定、信号更少
+
+        Args:
+            high: 最高价序列
+            low: 最低价序列
+            close: 收盘价序列
+            fastk_period: K值周期
+            slowk_period: K值平滑周期
+            slowd_period: D值周期
+            smooth_period: SKDJ额外平滑周期
+
+        Returns:
+            {
+                'sk': SK值（慢速K）,
+                'sd': SD值（慢速D）,
+                'sj': SJ值（慢速J）
+            }
+        """
+        # 先计算普通 KDJ
+        kdj_result = self.calculate_kdj(
+            high, low, close,
+            fastk_period=fastk_period,
+            slowk_period=slowk_period,
+            slowd_period=slowd_period
+        )
+
+        if not self.available:
+            # 简化实现：对 K、D 再做 EMA 平滑
+            sk = kdj_result['k'].ewm(alpha=1/smooth_period, adjust=False).mean()
+            sd = kdj_result['d'].ewm(alpha=1/smooth_period, adjust=False).mean()
+        else:
+            # 使用 talib SMA 平滑
+            sk = talib.SMA(kdj_result['k'].values, timeperiod=smooth_period)
+            sd = talib.SMA(kdj_result['d'].values, timeperiod=smooth_period)
+
+        sj = 3 * sk - 2 * sd
+
+        return {
+            'sk': pd.Series(sk, index=close.index),
+            'sd': pd.Series(sd, index=close.index),
+            'sj': pd.Series(sj, index=close.index)
+        }
+
     # ==================== BOLL布林带 ====================
 
     def calculate_boll(
@@ -558,6 +614,11 @@ class IndicatorService:
         if 'kdj' in indicators:
             kdj_result = self.calculate_kdj(df['high'], df['low'], df['close'])
             result.update(kdj_result)
+
+        # SKDJ（慢速随机指标）
+        if 'skdj' in indicators:
+            skdj_result = self.calculate_skdj(df['high'], df['low'], df['close'])
+            result.update(skdj_result)
 
         # BOLL
         if 'boll' in indicators:

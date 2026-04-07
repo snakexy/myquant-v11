@@ -36,7 +36,7 @@ from .data_cleaning_service import (
     DataQualityReport
 )
 
-from .indicator_service import (
+from .indicators import (
     IndicatorService,
     get_indicator_service,
     IndicatorResult,

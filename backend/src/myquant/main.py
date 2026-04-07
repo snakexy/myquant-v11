@@ -17,6 +17,7 @@ from myquant.api.dataget import (
     market_router,
     hotdb_manage,
     indicators,
+    settings,
 )
 from myquant.api.dataget.kline_ws import router as ws_kline_router
 
@@ -55,6 +56,7 @@ app.include_router(incremental_router, prefix="/api/incremental", tags=["增量�
 app.include_router(conversion_router,  prefix="/api/conversion",  tags=["数据转换"])
 app.include_router(hotdb_manage.router, prefix="/api/dataget",    tags=["HotDB管理"])
 app.include_router(indicators.router,  prefix="/api/dataget",    tags=["技术指标"])
+app.include_router(settings.router,    prefix="/api/dataget",    tags=["用户配置"])
 
 # 前端兼容路由别名
 app.include_router(quotes_router,      prefix="/api/v5",          tags=["行情(v5别名)"])

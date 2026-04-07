@@ -394,6 +394,7 @@ def _calculate_indicators(indicator_service, df: pd.DataFrame, indicator_list: L
                     'risk_value_34': clean_values(topbottom_signals['risk_value_34'].tolist()),
                     'risk_value_170': clean_values(topbottom_signals['risk_value_170'].tolist()),
                     'risk_value_1020': clean_values(topbottom_signals['risk_value_1020'].tolist()),
+                    'a02': clean_values(topbottom_signals['a02'].tolist()),
                     'buy_signal': clean_values(topbottom_signals['buy_signal'].tolist()),
                     'sell_signal': clean_values(topbottom_signals['sell_signal'].tolist()),
                     'macd_div_top': clean_values(topbottom_signals['macd_div_top'].tolist()),

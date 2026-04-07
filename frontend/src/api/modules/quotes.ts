@@ -137,13 +137,28 @@ export const fetchKline = async (
 	period: string = '1d',
 	count: number = 800,
 	adjustType: string = 'qfq',
-	indicators?: string[]  // 新增：技术指标列表
+	indicators?: string[],  // 技术指标列表
+	indicatorParams?: Record<string, any>  // 技术指标参数配置
 ): Promise<KlineResponse> => {
 	const params: Record<string, any> = { period, count, adjust_type: adjustType }
 	if (indicators && indicators.length > 0) {
 		params.indicators = indicators.join(',')
 	}
+	if (indicatorParams && Object.keys(indicatorParams).length > 0) {
+		params.indicator_params = JSON.stringify(indicatorParams)
+		console.log('[API] 传递 indicator_params:', params.indicator_params)
+	}
+	console.log('[API] fetchKline 参数:', { symbol, period, indicators, indicatorParams })
+	console.log('[API] fetchKline indicators详情:', JSON.stringify(indicators))
 	const { data } = await v5Api.get<KlineResponse>(`/kline/realtime/${symbol}`, { params })
+	console.log('[API] fetchKline 返回 indicators:', data.indicators ? Object.keys(data.indicators) : '无')
+	if (data.indicators?.SMC) {
+		console.log('[API] SMC 数据 keys:', Object.keys(data.indicators.SMC))
+		console.log('[API] SMC 参考线:', {
+			reference_high: data.indicators.SMC.reference_high,
+			reference_low: data.indicators.SMC.reference_low
+		})
+	}
 	return data
 }
 
@@ -168,7 +183,7 @@ export const fetchKlineIncremental = async (
   if (indicators && indicators.length > 0) {
     params.indicators = indicators.join(',')
   }
-  const { data } = await v5Api.get<KlineResponse>(`/kline/realtime/${symbol}`, { params })
+  const { data } = await v5Api.get<KlineResponse>(`/realtime/${symbol}`, { params })
   return { ...data, incremental: true }
 }
 

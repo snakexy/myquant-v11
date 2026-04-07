@@ -28,7 +28,7 @@ export interface IndicatorConfig {
 const MAIN_OVERLAY_INDICATORS = ['MA', 'BOLL', 'EMA', 'SMA', 'VWAP', 'SAR']
 
 // 副图指标类型
-const SUB_INDICATORS = ['MACD', 'KDJ', 'RSI', 'CCI', 'OBV', 'ATR', 'STOCH', 'STOCHRSI']
+const SUB_INDICATORS = ['MACD', 'KDJ', 'SKDJ', 'RSI', 'CCI', 'OBV', 'ATR', 'STOCH', 'STOCHRSI']
 
 // 默认指标参数
 const DEFAULT_INDICATOR_PARAMS = {
@@ -36,6 +36,7 @@ const DEFAULT_INDICATOR_PARAMS = {
   BOLL: { period: 20, stdDev: 2, upperColor: 'rgba(250, 173, 20, 0.3)', lowerColor: 'rgba(250, 173, 20, 0.3)' },
   MACD: { fastPeriod: 12, slowPeriod: 26, signalPeriod: 9, histogramColor: '#26A69A' },
   KDJ: { fastKPeriod: 9, slowKPeriod: 3, slowDPeriod: 3, overbought: 80, oversold: 20 },
+  SKDJ: { fastKPeriod: 9, slowKPeriod: 3, slowDPeriod: 3, smoothPeriod: 3, overbought: 80, oversold: 20 },
   RSI: { period: 14, overbought: 70, oversold: 30 },
   CCI: { period: 14, overbought: 100, oversold: -100 },
   OBV: {},
@@ -105,6 +106,14 @@ export function useIndicatorWindows(
       height: 100,
       visible: false,
       params: { ...DEFAULT_INDICATOR_PARAMS.KDJ }
+    },
+    {
+      id: 'SKDJ',
+      name: 'SKDJ',
+      type: 'sub',
+      height: 100,
+      visible: false,
+      params: { ...DEFAULT_INDICATOR_PARAMS.SKDJ }
     },
     {
       id: 'RSI',

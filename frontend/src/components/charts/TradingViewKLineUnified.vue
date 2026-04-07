@@ -324,6 +324,8 @@ const activeIndicators = ref<Set<string>>(new Set())
 const realtimePrice = ref<RealtimePrice | null>(null)
 const currentData = ref<KLineDataItem | null>(null)
 const isLoadingMore = ref(false)  // 是否正在加载更多数据
+const hasMoreData = ref(true)     // 是否还有更多历史数据
+const earliestDataTime = ref<number | null>(null)  // 最早数据时间
 
 // 指标窗格
 const indicatorPaneRefs = ref<Map<string, HTMLElement>>(new Map())
@@ -423,12 +425,22 @@ const initChart = () => {
     }
   })
 
-  // 监听可见范围变化（数据缩放）
+  // 监听可见范围变化（拖动加载更多）
   chartApi.timeScale().subscribeVisibleLogicalRangeChange((range) => {
-    if (range) {
-      const start = range.from / chartApi!.timeScale().getVisibleLogicalRange()!.to
-      const end = range.to / chartApi!.timeScale().getVisibleLogicalRange()!.to
-      emit('dataZoom', start, end)
+    if (range && chartApi) {
+      const totalBars = chartData.value.length
+      const visibleRange = chartApi.timeScale().getVisibleLogicalRange()
+
+      if (visibleRange) {
+        const start = range.from / visibleRange.to
+        const end = range.to / visibleRange.to
+        emit('dataZoom', start, end)
+
+        // 检测是否拖动到左边缘（from < 5 表示接近最左边）
+        if (range.from < 5 && !isLoadingMore.value && totalBars > 0) {
+          loadMoreData()
+        }
+      }
     }
   })
 
@@ -514,6 +526,113 @@ const loadData = async (period: string) => {
       chartData.value = props.initialData
       await updateChart()
     }
+  }
+}
+
+/**
+ * 加载更多历史数据（拖动到边缘时触发）
+ */
+const loadMoreData = async () => {
+  if (isLoadingMore.value || !hasMoreData.value || chartData.value.length === 0) {
+    return
+  }
+
+  isLoadingMore.value = true
+  console.log('[TradingViewKLine] Loading more historical data...')
+
+  try {
+    // 获取当前最早的数据日期
+    const oldestData = chartData.value[0]
+    if (!oldestData) {
+      isLoadingMore.value = false
+      return
+    }
+
+    // 将时间戳转换为日期字符串 (YYYY-MM-DD)
+    const oldestDate = new Date(oldestData.time * 1000)
+    const endDateStr = oldestDate.toISOString().slice(0, 10)
+
+    // 映射周期格式
+    const apiPeriod = mapPeriodToApi(selectedPeriod.value)
+
+    // 请求更早的数据（当前最早日期之前的数据）
+    const response = await getUnifiedKline(props.symbol, apiPeriod as any, 500, endDateStr)
+
+    if (response.code === 200 && response.data && response.data.length > 0) {
+      const newMappedData = transformUnifiedKlineData(response.data)
+        .filter((item: KLineDataItem) => {
+          const isValid = item.volume > 0 ||
+            (item.open !== item.high || item.high !== item.low || item.low !== item.close)
+          return isValid
+        })
+
+      if (newMappedData.length === 0) {
+        hasMoreData.value = false
+        console.log('[TradingViewKLine] No more historical data available')
+        isLoadingMore.value = false
+        return
+      }
+
+      // 去重：排除已有的数据（按时间戳去重）
+      const existingTimes = new Set(chartData.value.map(d => d.time))
+      const uniqueNewData = newMappedData.filter((item: KLineDataItem) => !existingTimes.has(item.time))
+
+      if (uniqueNewData.length === 0) {
+        hasMoreData.value = false
+        console.log('[TradingViewKLine] All data already loaded')
+        isLoadingMore.value = false
+        return
+      }
+
+      console.log(`[TradingViewKLine] Loaded ${uniqueNewData.length} more candles`)
+
+      // 记录当前可见范围（用于加载后恢复位置）
+      const currentRange = chartApi?.timeScale().getVisibleLogicalRange()
+
+      // 将新数据前置到现有数据（按时间升序）
+      const combinedData = [...uniqueNewData, ...chartData.value].sort((a, b) => a.time - b.time)
+      chartData.value = combinedData
+
+      // 更新图表数据（不调用fitContent，保持当前位置）
+      if (candlestickSeries) {
+        candlestickSeries.setData(chartData.value)
+      }
+
+      // 更新成交量
+      if (volumeSeries) {
+        const volumeData = chartData.value.map(d => ({
+          time: d.time,
+          value: d.volume,
+          color: d.close >= d.open
+            ? DEFAULT_COLORS[props.theme].volumeUpColor
+            : DEFAULT_COLORS[props.theme].volumeDownColor
+        }))
+        volumeSeries.setData(volumeData)
+      }
+
+      // 恢复可见范围（保持用户当前查看的位置）
+      if (chartApi && currentRange) {
+        // 计算新增数据的偏移量
+        const offset = uniqueNewData.length
+        chartApi.timeScale().setVisibleLogicalRange({
+          from: currentRange.from + offset,
+          to: currentRange.to + offset
+        })
+      }
+
+      // 更新指标
+      await updateIndicators()
+
+      emit('dataUpdate', chartData.value)
+    } else {
+      // 没有更多数据了
+      hasMoreData.value = false
+      console.log('[TradingViewKLine] Reached end of historical data')
+    }
+  } catch (error) {
+    console.error('[TradingViewKLine] Failed to load more data:', error)
+  } finally {
+    isLoadingMore.value = false
   }
 }
 

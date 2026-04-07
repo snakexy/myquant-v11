@@ -269,6 +269,15 @@ class IndicatorService:
         if 'obv' in indicators_lower:
             result[get_original_name('obv')] = self.calculate_obv(df['close'], df['volume'])
 
+        # TOPBOTTOM（顶底背离指标）
+        if 'topbottom' in indicators_lower:
+            topbottom_result = self.top_bottom.calculate_signals(
+                df['high'], df['low'], df['close'],
+                fastk_period=9, slowk_period=3, slowd_period=3,
+                rsi_period=14, macd_fast=12, macd_slow=26, macd_signal=9
+            )
+            result[get_original_name('topbottom')] = topbottom_result
+
         logger.info(f"✅ 已计算{len(result)}个技术指标")
         return result
 

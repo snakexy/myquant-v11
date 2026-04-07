@@ -9,7 +9,7 @@ import type { IndicatorRequest, IndicatorParamsRequest } from '@/types/indicator
  * 计算技术指标（默认参数）
  */
 export async function calculateIndicators(request: IndicatorRequest) {
-  const { data } = await rawApi.post<any>('/indicators/calculate', request)
+  const { data } = await rawApi.post<any>('/dataget/indicators/calculate', request)
   return data
 }
 
@@ -17,7 +17,7 @@ export async function calculateIndicators(request: IndicatorRequest) {
  * 计算技术指标（自定义参数）
  */
 export async function calculateIndicatorsWithParams(request: IndicatorParamsRequest) {
-  const { data } = await rawApi.post<any>('/indicators/calculate_with_params', request)
+  const { data } = await rawApi.post<any>('/dataget/indicators/calculate_with_params', request)
   return data
 }
 
@@ -25,7 +25,7 @@ export async function calculateIndicatorsWithParams(request: IndicatorParamsRequ
  * 获取支持的指标列表
  */
 export async function getIndicatorsList() {
-  const { data } = await rawApi.get<any>('/indicators/list')
+  const { data } = await rawApi.get<any>('/dataget/indicators/list')
   return data
 }
 
