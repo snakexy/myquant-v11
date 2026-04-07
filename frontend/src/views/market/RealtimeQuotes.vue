@@ -1412,7 +1412,7 @@ const updateIndicatorData = (indicatorId: string, klineData: any[]) => {
     }
   }
 
-  // CCI 特殊处理：创建/更新警戒线（+100超买、-100超卖）
+  // CCI 特殊处理：创建/更新警戒线（+200极端超买、+100超买、-100超卖、-200极端超卖）
   if (indicatorId === 'CCI') {
     try {
       const times = Array.from(timeMap.values()).filter(t => t && t > 0)
@@ -1425,6 +1425,16 @@ const updateIndicatorData = (indicatorId: string, klineData: any[]) => {
 
         if (!alertLines) {
           console.log('[指标] CCI 首次创建警戒线')
+
+          // 创建+200警戒线（极端超买）
+          const extremeOverboughtLine = chart.addSeries(LineSeries, {
+            color: '#FFD700',
+            lineWidth: 1,
+            lineStyle: 2,
+            priceLineVisible: false,
+            lastValueVisible: false,
+            crosshairMarkerVisible: false,
+          }, paneIndex)
 
           // 创建+100警戒线（超买）
           const overboughtLine = chart.addSeries(LineSeries, {
@@ -1446,18 +1456,38 @@ const updateIndicatorData = (indicatorId: string, klineData: any[]) => {
             crosshairMarkerVisible: false,
           }, paneIndex)
 
-          alertLines = [overboughtLine, oversoldLine]
+          // 创建-200警戒线（极端超卖）
+          const extremeOversoldLine = chart.addSeries(LineSeries, {
+            color: '#4CAF50',
+            lineWidth: 1,
+            lineStyle: 2,
+            priceLineVisible: false,
+            lastValueVisible: false,
+            crosshairMarkerVisible: false,
+          }, paneIndex)
+
+          alertLines = [extremeOverboughtLine, overboughtLine, oversoldLine, extremeOversoldLine]
           indicatorAlertLinesMap.set(indicatorId, alertLines)
         }
 
         alertLines[0]?.setData([
+          { time: firstTime, value: 200 },
+          { time: lastTime, value: 200 }
+        ])
+
+        alertLines[1]?.setData([
           { time: firstTime, value: 100 },
           { time: lastTime, value: 100 }
         ])
 
-        alertLines[1]?.setData([
+        alertLines[2]?.setData([
           { time: firstTime, value: -100 },
           { time: lastTime, value: -100 }
+        ])
+
+        alertLines[3]?.setData([
+          { time: firstTime, value: -200 },
+          { time: lastTime, value: -200 }
         ])
 
         console.log('[指标] CCI 警戒线已更新:', firstTime, '-', lastTime)
