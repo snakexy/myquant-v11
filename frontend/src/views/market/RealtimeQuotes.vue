@@ -1612,6 +1612,63 @@ const updateIndicatorData = (indicatorId: string, klineData: any[]) => {
       console.error('[指标] BIAS 警戒线处理失败:', e)
     }
   }
+
+  // TOPBOTTOM 顶底背离指标特殊处理
+  if (indicatorId === 'TOPBOTTOM') {
+    try {
+      const times = Array.from(timeMap.values()).filter(t => t && t > 0)
+      if (times.length >= 2) {
+        const firstTime = times[0]
+        const lastTime = times[times.length - 1]
+        const paneIndex = getIndicatorPaneIndex(indicatorId)
+
+        let alertLines = indicatorAlertLinesMap.get(indicatorId)
+
+        if (!alertLines) {
+          console.log('[指标] TOPBOTTOM 首次创建警戒线')
+
+          // 创建80超买警戒线
+          const overboughtLine = chart.addSeries(LineSeries, {
+            color: 'rgba(244, 67, 54, 0.6)',
+            lineWidth: 1,
+            lineStyle: 2,
+            priceLineVisible: false,
+            lastValueVisible: false,
+            crosshairMarkerVisible: false,
+          }, paneIndex)
+
+          // 创建20超卖警戒线
+          const oversoldLine = chart.addSeries(LineSeries, {
+            color: 'rgba(76, 175, 80, 0.6)',
+            lineWidth: 1,
+            lineStyle: 2,
+            priceLineVisible: false,
+            lastValueVisible: false,
+            crosshairMarkerVisible: false,
+          }, paneIndex)
+
+          alertLines = [overboughtLine, oversoldLine]
+          indicatorAlertLinesMap.set(indicatorId, alertLines)
+        }
+
+        alertLines[0]?.setData([
+          { time: firstTime, value: 80 },
+          { time: lastTime, value: 80 }
+        ])
+
+        alertLines[1]?.setData([
+          { time: firstTime, value: 20 },
+          { time: lastTime, value: 20 }
+        ])
+
+        console.log('[指标] TOPBOTTOM 警戒线已更新:', firstTime, '-', lastTime)
+      } else {
+        console.log('[指标] TOPBOTTOM 时间数据不足:', times.length)
+      }
+    } catch (e) {
+      console.error('[指标] TOPBOTTOM 警戒线处理失败:', e)
+    }
+  }
 }
 
 // ========== 主图叠加指标 ==========
@@ -3045,6 +3102,18 @@ const loadKlineData = async () => {
           reference_period: indParams.reference_period ?? 34
         }
       }
+      // TOPBOTTOM 参数映射
+      else if (indId === 'TOPBOTTOM') {
+        indicatorParamsConfig['TOPBOTTOM'] = {
+          fastk_period: indParams.fastk_period ?? 9,
+          slowk_period: indParams.slowk_period ?? 3,
+          slowd_period: indParams.slowd_period ?? 3,
+          rsi_period: indParams.rsi_period ?? 14,
+          macd_fast: indParams.macd_fast ?? 12,
+          macd_slow: indParams.macd_slow ?? 26,
+          macd_signal: indParams.macd_signal ?? 9
+        }
+      }
     }
 
     console.log('[指标] 传递参数配置:', indicatorParamsConfig)
@@ -3070,7 +3139,8 @@ const loadKlineData = async () => {
         'SKDJ': ['sk', 'sd'],  // 通达信SKDJ没有SJ
         'KDJ': ['k', 'd', 'j'],
         'MACD': ['macd', 'signal', 'histogram'],
-        'BOLL': ['upper', 'middle', 'lower']
+        'BOLL': ['upper', 'middle', 'lower'],
+        'TOPBOTTOM': ['risk_value_34', 'risk_value_170', 'buy_signal', 'sell_signal']
       }
 
       // 检查是否为扁平结构（包含sk/sd/sj等键）

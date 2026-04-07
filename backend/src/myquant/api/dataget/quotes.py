@@ -367,6 +367,44 @@ def _calculate_indicators(indicator_service, df: pd.DataFrame, indicator_list: L
                 except Exception as e:
                     logger.error(f"[SMC] 计算失败: {e}", exc_info=True)
 
+            elif ind_upper == 'TOPBOTTOM':
+                # 顶底背离指标
+                logger.info(f"[V5] 开始计算 TOPBOTTOM 指标")
+                topbottom_params = indicator_params.get('TOPBOTTOM', {}) if isinstance(indicator_params, dict) else {}
+                fastk_period = int(topbottom_params.get('fastk_period', 9) or 9)
+                slowk_period = int(topbottom_params.get('slowk_period', 3) or 3)
+                slowd_period = int(topbottom_params.get('slowd_period', 3) or 3)
+                rsi_period = int(topbottom_params.get('rsi_period', 14) or 14)
+                macd_fast = int(topbottom_params.get('macd_fast', 12) or 12)
+                macd_slow = int(topbottom_params.get('macd_slow', 26) or 26)
+                macd_signal = int(topbottom_params.get('macd_signal', 9) or 9)
+
+                topbottom_signals = indicator_service.calculate_top_bottom_signals(
+                    high, low, close,
+                    fastk_period=fastk_period,
+                    slowk_period=slowk_period,
+                    slowd_period=slowd_period,
+                    rsi_period=rsi_period,
+                    macd_fast=macd_fast,
+                    macd_slow=macd_slow,
+                    macd_signal=macd_signal
+                )
+
+                result['TOPBOTTOM'] = {
+                    'risk_value_34': clean_values(topbottom_signals['risk_value_34'].tolist()),
+                    'risk_value_170': clean_values(topbottom_signals['risk_value_170'].tolist()),
+                    'risk_value_1020': clean_values(topbottom_signals['risk_value_1020'].tolist()),
+                    'buy_signal': clean_values(topbottom_signals['buy_signal'].tolist()),
+                    'sell_signal': clean_values(topbottom_signals['sell_signal'].tolist()),
+                    'macd_div_top': clean_values(topbottom_signals['macd_div_top'].tolist()),
+                    'macd_div_bottom': clean_values(topbottom_signals['macd_div_bottom'].tolist()),
+                    'kdj_div_top': clean_values(topbottom_signals['kdj_div_top'].tolist()),
+                    'kdj_div_bottom': clean_values(topbottom_signals['kdj_div_bottom'].tolist()),
+                    'rsi_div_top': clean_values(topbottom_signals['rsi_div_top'].tolist()),
+                    'rsi_div_bottom': clean_values(topbottom_signals['rsi_div_bottom'].tolist())
+                }
+                logger.info(f"[V5] TOPBOTTOM 指标计算完成")
+
             # 为每个指标添加 datetime
             if ind_upper in result:
                 result[ind_upper]['datetime'] = datetime_list
