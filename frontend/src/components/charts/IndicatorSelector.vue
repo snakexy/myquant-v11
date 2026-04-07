@@ -1,10 +1,25 @@
 <template>
   <div class="indicator-selector">
     <button class="tv-indicator-btn" @click="toggleMenu">
-      <svg class="tv-indicator-icon" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <rect x="2" y="2" width="14" height="14" rx="2" stroke="currentColor" stroke-width="1.2"/>
-        <text x="5" y="12" fill="currentColor" font-size="7" font-family="Arial" font-weight="bold">f</text>
-        <text x="9" y="12" fill="currentColor" font-size="6" font-family="Arial">(x)</text>
+      <svg class="tv-indicator-icon" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <!-- 背景圆 -->
+        <circle cx="14" cy="14" r="14" fill="currentColor" opacity="0.1"/>
+        <!-- 折线图标 -->
+        <polyline
+          points="6,18 10,14 14,16 18,10 22,12"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          opacity="0.9"
+        />
+        <!-- 数据点 -->
+        <circle cx="6" cy="18" r="1.5" fill="currentColor" opacity="0.6"/>
+        <circle cx="10" cy="14" r="1.5" fill="currentColor" opacity="0.6"/>
+        <circle cx="14" cy="16" r="1.5" fill="currentColor" opacity="0.6"/>
+        <circle cx="18" cy="10" r="1.5" fill="currentColor" opacity="0.6"/>
+        <circle cx="22" cy="12" r="1.5" fill="currentColor" opacity="0.6"/>
       </svg>
       <span class="tv-indicator-text">{{ t('indicators.button') }}</span>
     </button>
@@ -174,8 +189,8 @@ function openSettings(id: string, e: Event) {
 }
 
 .tv-indicator-icon {
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   opacity: 0.9;
   flex-shrink: 0;
 }
