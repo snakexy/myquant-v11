@@ -425,7 +425,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount, computed, nextTick, watch } from 'vue'
-import { createChart, CrosshairMode, CandlestickSeries, HistogramSeries, LineSeries } from 'lightweight-charts'
+import { createChart, CrosshairMode, CandlestickSeries, HistogramSeries, LineSeries, AreaSeries } from 'lightweight-charts'
 import GlobalNavBar from '@/components/GlobalNavBar.vue'
 import WatchlistPanel from '@/components/watchlist/WatchlistPanel.vue'
 import { useAppStore } from '@/stores/core/AppStore'
@@ -449,6 +449,7 @@ import { useRealtimeQuote, type QuoteData } from '@/composables/useRealtimeQuote
 import { UserPriceAlerts } from '@/components/charts/plugins'
 import IndicatorSelector from '@/components/charts/IndicatorSelector.vue'
 import IndicatorSettings from '@/components/charts/IndicatorSettings.vue'
+	import { getIndicatorSettings, saveIndicatorSettings as saveIndicatorSettingsApi } from '@/api/modules/settings'
 
 // 类型定义
 type ChartApi = any
@@ -592,6 +593,14 @@ watch([activeIndicators, overlayIndicators, indicatorParams, indicatorPaneHeight
 // 主图叠加指标series存储
 const overlaySeriesMap = new Map<string, Record<string, SeriesApi>>()
 
+// SMC 专用 Canvas 叠加层
+let smcCanvas: HTMLCanvasElement | null = null
+let smcCtx: CanvasRenderingContext2D | null = null
+let smcLastDpr: number = 0  // 记录上次设备像素比
+const smcDataRef = ref<any>(null)  // 缓存 SMC 数据用于重绘
+const smcSeriesRef = ref<SeriesApi[]>([])  // SMC LineSeries 引用
+const chartDataRef = ref<any[]>([])  // K线数据缓存，用于 Canvas 重绘
+
 // ========== 多指标管理 ==========
 import {
   INDICATOR_REGISTRY,
@@ -604,6 +613,9 @@ import {
 // 指标系列存储（每个指标的多个series）
 const indicatorSeriesMap = new Map<string, Record<string, SeriesApi>>()
 
+// 指标警戒线存储（KDJ等指标的水平警戒线）
+const indicatorAlertLinesMap = new Map<string, SeriesApi[]>()
+
 // 指标数据缓存（后端返回的原始数据）
 const indicatorDataCache = ref<Record<string, any>>({})
 
@@ -614,6 +626,19 @@ let currentIndicatorPaneCount = 0
  * 清除所有指标pane和series
  */
 const clearAllIndicatorPanes = () => {
+  // 清除 SMC Canvas
+  destroySMCCanvas()
+
+  // 清除所有警戒线
+  indicatorAlertLinesMap.forEach(lines => {
+    lines.forEach(line => {
+      try {
+        line.setData([])
+      } catch (e) {}
+    })
+  })
+  indicatorAlertLinesMap.clear()
+
   // 清除所有series数据
   indicatorSeriesMap.forEach(seriesMap => {
     Object.values(seriesMap).forEach(series => {
@@ -780,12 +805,26 @@ const initChart = () => {
       horzLines: { color: 'rgba(42, 46, 57, 0.5)' }
     },
     crosshair: {
-      mode: CrosshairMode.Normal
+      mode: CrosshairMode.Normal,
+      vertLine: {
+        width: 1,
+        color: '#758696',
+        style: 2, // 虚线
+      },
+      horzLine: {
+        width: 1,
+        color: '#758696',
+        style: 2, // 虚线
+      },
     },
     rightPriceScale: {
       borderColor: 'transparent',
       autoScale: false,
       visible: true,
+    },
+    leftPriceScale: {
+      borderColor: 'transparent',
+      visible: false,
     },
     handleScroll: {
       mouseWheel: true,
@@ -800,7 +839,7 @@ const initChart = () => {
       },
     },
     timeScale: {
-      borderColor: 'rgba(42, 46, 57, 0.8)',
+      borderColor: 'rgba(42, 46, 57, 0.25)',
       timeVisible: true,
       secondsVisible: false,
       minBarSpacing: 0.5,
@@ -857,8 +896,8 @@ const initChart = () => {
     borderVisible: false,
     wickUpColor: '#ef5350',    // 上影线红色
     wickDownColor: '#26a69a',   // 下影线绿色
-    // 使用自定义颜色对象，根据API返回的color字段设置每根K线的颜色
-    // 注意：需要将数据格式转换为lightweight-charts支持的格式
+    crosshairMarkerRadius: 2,  // 缩小十字光标标记点（默认6）
+    crosshairMarkerBorderWidth: 1,  // 缩小标记点边框（默认2）
   })
 
   // 创建成交量系列
@@ -867,6 +906,7 @@ const initChart = () => {
     priceFormat: {
       type: 'volume'
     },
+    crosshairMarkerRadius: 3,  // 缩小十字光标标记点
     priceScaleId: 'volume'
   })
 
@@ -1091,6 +1131,20 @@ const initIndicatorPane = (indicatorId: string): number => {
       chart.addPane()
     }
 
+    // 设置pane边框颜色（更灰）
+    try {
+      const pane = chart.panes()[paneIndex]
+      if (pane) {
+        // 通过DOM操作设置边框颜色
+        setTimeout(() => {
+          const paneElements = document.querySelectorAll('.pane')
+          if (paneElements[paneIndex]) {
+            (paneElements[paneIndex] as HTMLElement).style.borderTop = '1px solid rgba(60, 65, 75, 0.4)'
+          }
+        }, 0)
+      }
+    } catch (e) {}
+
     console.log(`[指标] 初始化 ${indicatorId}, pane: ${paneIndex}`)
 
     // 获取用户自定义参数
@@ -1110,6 +1164,24 @@ const initIndicatorPane = (indicatorId: string): number => {
         title: s.label,
         lastValueVisible: true,
         priceLineVisible: false,
+        crosshairMarkerRadius: 2,  // 缩小十字光标标记点（默认6）
+    crosshairMarkerBorderWidth: 1,  // 缩小标记点边框（默认2）（默认6）
+      }
+
+      // OBV 特殊处理：使用大数值格式（M表示百万）
+      if (indicatorId === 'OBV') {
+        seriesOptions.priceFormat = {
+          type: 'custom',
+          minMove: 0.01,
+          formatter: (price: number) => {
+            if (Math.abs(price) >= 1000000) {
+              return (price / 1000000).toFixed(2) + 'M'
+            } else if (Math.abs(price) >= 1000) {
+              return (price / 1000).toFixed(1) + 'K'
+            }
+            return price.toFixed(0)
+          }
+        }
       }
 
       if (s.type === 'histogram') {
@@ -1142,7 +1214,7 @@ const initIndicatorPane = (indicatorId: string): number => {
         visible: true,
         autoScale: true,
         borderVisible: true,
-        borderColor: 'rgba(42, 46, 57, 0.8)',
+        borderColor: 'rgba(42, 46, 57, 0.25)',
         scaleMargins: { top: 0.1, bottom: 0.1 }
       })
     } catch (e) {
@@ -1222,6 +1294,294 @@ const updateIndicatorData = (indicatorId: string, klineData: any[]) => {
       autoScale: true
     })
   } catch (e) {}
+
+  // KDJ 特殊处理：创建/更新警戒线（80超买、10超卖）
+  if (indicatorId === 'KDJ') {
+    try {
+      const times = Array.from(timeMap.values()).filter(t => t && t > 0)
+      if (times.length >= 2) {
+        const firstTime = times[0]
+        const lastTime = times[times.length - 1]
+        const paneIndex = getIndicatorPaneIndex(indicatorId)
+
+        // 检查警戒线是否已存在
+        let alertLines = indicatorAlertLinesMap.get(indicatorId)
+
+        if (!alertLines) {
+          // 首次创建警戒线
+          console.log('[指标] KDJ 首次创建警戒线')
+
+          // 创建80警戒线（超买）
+          const overboughtLine = chart.addSeries(LineSeries, {
+            color: '#FF6B6B',
+            lineWidth: 1,
+            lineStyle: 1, // 虚线
+            priceLineVisible: false,
+            lastValueVisible: false,
+            crosshairMarkerVisible: false,  // 隐藏十字光标标记点
+          }, paneIndex)
+
+          // 创建10警戒线（超卖）
+          const oversoldLine = chart.addSeries(LineSeries, {
+            color: '#26A69A',
+            lineWidth: 1,
+            lineStyle: 1, // 虚线
+            priceLineVisible: false,
+            lastValueVisible: false,
+            crosshairMarkerVisible: false,  // 隐藏十字光标标记点
+          }, paneIndex)
+
+          alertLines = [overboughtLine, oversoldLine]
+          indicatorAlertLinesMap.set(indicatorId, alertLines)
+        }
+
+        // 更新警戒线数据
+        alertLines[0]?.setData([
+          { time: firstTime, value: 80 },
+          { time: lastTime, value: 80 }
+        ])
+
+        alertLines[1]?.setData([
+          { time: firstTime, value: 10 },
+          { time: lastTime, value: 10 }
+        ])
+
+        console.log('[指标] KDJ 警戒线已更新:', firstTime, '-', lastTime)
+      } else {
+        console.log('[指标] KDJ 时间数据不足:', times.length)
+      }
+    } catch (e) {
+      console.error('[指标] KDJ 警戒线处理失败:', e)
+    }
+  }
+
+  // RSI 特殊处理：创建/更新警戒线（70超买、30超卖）
+  if (indicatorId === 'RSI') {
+    try {
+      const times = Array.from(timeMap.values()).filter(t => t && t > 0)
+      if (times.length >= 2) {
+        const firstTime = times[0]
+        const lastTime = times[times.length - 1]
+        const paneIndex = getIndicatorPaneIndex(indicatorId)
+
+        let alertLines = indicatorAlertLinesMap.get(indicatorId)
+
+        if (!alertLines) {
+          console.log('[指标] RSI 首次创建警戒线')
+
+          // 创建70警戒线（超买）
+          const overboughtLine = chart.addSeries(LineSeries, {
+            color: '#FF6B6B',
+            lineWidth: 1,
+            lineStyle: 1,
+            priceLineVisible: false,
+            lastValueVisible: false,
+            crosshairMarkerVisible: false,
+          }, paneIndex)
+
+          // 创建30警戒线（超卖）
+          const oversoldLine = chart.addSeries(LineSeries, {
+            color: '#26A69A',
+            lineWidth: 1,
+            lineStyle: 1,
+            priceLineVisible: false,
+            lastValueVisible: false,
+            crosshairMarkerVisible: false,
+          }, paneIndex)
+
+          alertLines = [overboughtLine, oversoldLine]
+          indicatorAlertLinesMap.set(indicatorId, alertLines)
+        }
+
+        alertLines[0]?.setData([
+          { time: firstTime, value: 70 },
+          { time: lastTime, value: 70 }
+        ])
+
+        alertLines[1]?.setData([
+          { time: firstTime, value: 30 },
+          { time: lastTime, value: 30 }
+        ])
+
+        console.log('[指标] RSI 警戒线已更新:', firstTime, '-', lastTime)
+      } else {
+        console.log('[指标] RSI 时间数据不足:', times.length)
+      }
+    } catch (e) {
+      console.error('[指标] RSI 警戒线处理失败:', e)
+    }
+  }
+
+  // CCI 特殊处理：创建/更新警戒线（+100超买、-100超卖）
+  if (indicatorId === 'CCI') {
+    try {
+      const times = Array.from(timeMap.values()).filter(t => t && t > 0)
+      if (times.length >= 2) {
+        const firstTime = times[0]
+        const lastTime = times[times.length - 1]
+        const paneIndex = getIndicatorPaneIndex(indicatorId)
+
+        let alertLines = indicatorAlertLinesMap.get(indicatorId)
+
+        if (!alertLines) {
+          console.log('[指标] CCI 首次创建警戒线')
+
+          // 创建+100警戒线（超买）
+          const overboughtLine = chart.addSeries(LineSeries, {
+            color: '#FF6B6B',
+            lineWidth: 1,
+            lineStyle: 1,
+            priceLineVisible: false,
+            lastValueVisible: false,
+            crosshairMarkerVisible: false,
+          }, paneIndex)
+
+          // 创建-100警戒线（超卖）
+          const oversoldLine = chart.addSeries(LineSeries, {
+            color: '#26A69A',
+            lineWidth: 1,
+            lineStyle: 1,
+            priceLineVisible: false,
+            lastValueVisible: false,
+            crosshairMarkerVisible: false,
+          }, paneIndex)
+
+          alertLines = [overboughtLine, oversoldLine]
+          indicatorAlertLinesMap.set(indicatorId, alertLines)
+        }
+
+        alertLines[0]?.setData([
+          { time: firstTime, value: 100 },
+          { time: lastTime, value: 100 }
+        ])
+
+        alertLines[1]?.setData([
+          { time: firstTime, value: -100 },
+          { time: lastTime, value: -100 }
+        ])
+
+        console.log('[指标] CCI 警戒线已更新:', firstTime, '-', lastTime)
+      } else {
+        console.log('[指标] CCI 时间数据不足:', times.length)
+      }
+    } catch (e) {
+      console.error('[指标] CCI 警戒线处理失败:', e)
+    }
+  }
+
+  // WR 特殊处理：创建/更新警戒线（80超买、20超卖）
+  if (indicatorId === 'WR') {
+    try {
+      const times = Array.from(timeMap.values()).filter(t => t && t > 0)
+      if (times.length >= 2) {
+        const firstTime = times[0]
+        const lastTime = times[times.length - 1]
+        const paneIndex = getIndicatorPaneIndex(indicatorId)
+
+        let alertLines = indicatorAlertLinesMap.get(indicatorId)
+
+        if (!alertLines) {
+          console.log('[指标] WR 首次创建警戒线')
+
+          // 创建80警戒线（超买）
+          const overboughtLine = chart.addSeries(LineSeries, {
+            color: '#FF6B6B',
+            lineWidth: 1,
+            lineStyle: 1,
+            priceLineVisible: false,
+            lastValueVisible: false,
+            crosshairMarkerVisible: false,
+          }, paneIndex)
+
+          // 创建20警戒线（超卖）
+          const oversoldLine = chart.addSeries(LineSeries, {
+            color: '#26A69A',
+            lineWidth: 1,
+            lineStyle: 1,
+            priceLineVisible: false,
+            lastValueVisible: false,
+            crosshairMarkerVisible: false,
+          }, paneIndex)
+
+          alertLines = [overboughtLine, oversoldLine]
+          indicatorAlertLinesMap.set(indicatorId, alertLines)
+        }
+
+        alertLines[0]?.setData([
+          { time: firstTime, value: 80 },
+          { time: lastTime, value: 80 }
+        ])
+
+        alertLines[1]?.setData([
+          { time: firstTime, value: 20 },
+          { time: lastTime, value: 20 }
+        ])
+
+        console.log('[指标] WR 警戒线已更新:', firstTime, '-', lastTime)
+      } else {
+        console.log('[指标] WR 时间数据不足:', times.length)
+      }
+    } catch (e) {
+      console.error('[指标] WR 警戒线处理失败:', e)
+    }
+  }
+
+  // BIAS 特殊处理：创建/更新警戒线（3超买、-3超卖）
+  if (indicatorId === 'BIAS') {
+    try {
+      const times = Array.from(timeMap.values()).filter(t => t && t > 0)
+      if (times.length >= 2) {
+        const firstTime = times[0]
+        const lastTime = times[times.length - 1]
+        const paneIndex = getIndicatorPaneIndex(indicatorId)
+
+        let alertLines = indicatorAlertLinesMap.get(indicatorId)
+
+        if (!alertLines) {
+          console.log('[指标] BIAS 首次创建警戒线')
+
+          // 创建3警戒线（超买）
+          const overboughtLine = chart.addSeries(LineSeries, {
+            color: '#FF6B6B',
+            lineWidth: 1,
+            lineStyle: 1,
+            priceLineVisible: false,
+            lastValueVisible: false,
+            crosshairMarkerVisible: false,
+          }, paneIndex)
+
+          // 创建-3警戒线（超卖）
+          const oversoldLine = chart.addSeries(LineSeries, {
+            color: '#26A69A',
+            lineWidth: 1,
+            lineStyle: 1,
+            priceLineVisible: false,
+            lastValueVisible: false,
+            crosshairMarkerVisible: false,
+          }, paneIndex)
+
+          alertLines = [overboughtLine, oversoldLine]
+          indicatorAlertLinesMap.set(indicatorId, alertLines)
+        }
+
+        alertLines[0]?.setData([
+          { time: firstTime, value: 3 },
+          { time: lastTime, value: 3 }
+        ])
+
+        alertLines[1]?.setData([
+          { time: firstTime, value: -3 },
+          { time: lastTime, value: -3 }
+        ])
+
+        console.log('[指标] BIAS 警戒线已更新:', firstTime, '-', lastTime)
+      } else {
+        console.log('[指标] BIAS 时间数据不足:', times.length)
+      }
+    } catch (e) {
+      console.error('[指标] BIAS 警戒线处理失败:', e)
+    }
+  }
 }
 
 // ========== 主图叠加指标 ==========
@@ -1250,10 +1610,10 @@ const initOverlayIndicator = (indicatorId: string) => {
   const seriesMap: Record<string, SeriesApi> = {}
 
   config.series.forEach(s => {
-    // MA指标：检查是否在可见列表中
-    if (indicatorId === 'MA' && customParams.visibleLines) {
+    // MA/BOLL指标：检查是否在可见列表中
+    if (customParams.visibleLines) {
       if (!customParams.visibleLines.includes(s.key)) {
-        console.log(`[叠加指标] MA ${s.key} 未勾选，跳过`)
+        console.log(`[叠加指标] ${indicatorId} ${s.key} 未勾选，跳过`)
         return
       }
     }
@@ -1271,6 +1631,8 @@ const initOverlayIndicator = (indicatorId: string) => {
       title: s.label,
       lastValueVisible: true,
       priceLineVisible: false,
+      crosshairMarkerRadius: 2,  // 缩小十字光标标记点（默认6）
+    crosshairMarkerBorderWidth: 1,  // 缩小标记点边框（默认2）
     }
 
     console.log(`[叠加指标] ${indicatorId}.${s.key} 选项:`, { color: lineColor, lineWidth, lineStyle })
@@ -1287,6 +1649,10 @@ const initOverlayIndicator = (indicatorId: string) => {
  */
 const updateOverlayData = (indicatorId: string, klineData: any[]) => {
   const seriesMap = overlaySeriesMap.get(indicatorId)
+  console.log(`[叠加指标] updateOverlayData: ${indicatorId}`, {
+    hasSeriesMap: !!seriesMap,
+    cachedKeys: indicatorDataCache.value[indicatorId] ? Object.keys(indicatorDataCache.value[indicatorId]) : '无缓存'
+  })
   if (!seriesMap) return
 
   const indicatorData = indicatorDataCache.value[indicatorId]
@@ -1298,6 +1664,12 @@ const updateOverlayData = (indicatorId: string, klineData: any[]) => {
 
   const config = getIndicatorConfig(indicatorId)
   if (!config) return
+
+  // SMC 指标特殊处理
+  if (indicatorId === 'SMC') {
+    updateSMCIndicator(indicatorData, klineData)
+    return
+  }
 
   // 构建时间戳映射
   const timeMap = new Map<number, number>()
@@ -1321,6 +1693,660 @@ const updateOverlayData = (indicatorId: string, klineData: any[]) => {
     seriesMap[s.key]?.setData(data)
     console.log(`[叠加指标] ${indicatorId}.${s.key} 设置 ${data.length} 条数据`)
   })
+}
+
+/**
+ * 创建 SMC Canvas 叠加层
+ */
+const createSMCCanvas = () => {
+  console.log('[SMC Canvas] createSMCCanvas 调用', { hasChart: !!chart, hasCanvas: !!smcCanvas })
+  if (!chart || smcCanvas) return
+
+  // 使用 chartElement() - 这是图表的内部容器，坐标系统与它对齐
+  const chartElement = chart.chartElement()
+  console.log('[SMC Canvas] chartElement:', chartElement)
+  if (!chartElement) {
+    console.log('[SMC Canvas] chartElement 不存在，尝试使用 container')
+    // 备选方案：使用 container
+    const container = chartContainer.value
+    if (!container) {
+      console.log('[SMC Canvas] container 也不存在，退出')
+      return
+    }
+  }
+
+  const targetElement = chartElement || chartContainer.value
+  if (!targetElement) return
+
+  // 确保父元素有 relative 定位
+  const parentStyle = window.getComputedStyle(targetElement)
+  if (parentStyle.position === 'static') {
+    (targetElement as HTMLElement).style.position = 'relative'
+  }
+
+  // 检查是否已存在
+  const existing = document.getElementById('smc-overlay-canvas')
+  if (existing) {
+    console.log('[SMC Canvas] Canvas 已存在，复用')
+    smcCanvas = existing as HTMLCanvasElement
+    smcCtx = smcCanvas.getContext('2d')
+    return
+  }
+
+  smcCanvas = document.createElement('canvas')
+  smcCanvas.id = 'smc-overlay-canvas'
+  smcCanvas.style.position = 'absolute'
+  smcCanvas.style.top = '0'
+  smcCanvas.style.left = '0'
+  smcCanvas.style.pointerEvents = 'none'
+  smcCanvas.style.zIndex = '100'  // 高 z-index 确保可见
+  targetElement.appendChild(smcCanvas)
+
+  smcCtx = smcCanvas.getContext('2d')
+
+  console.log('[SMC Canvas] Canvas 创建完成', {
+    parentTag: targetElement.tagName,
+    parentRect: targetElement.getBoundingClientRect(),
+    canvasRect: smcCanvas.getBoundingClientRect()
+  })
+
+  // 监听图表大小变化
+  chart.timeScale().subscribeVisibleLogicalRangeChange(() => {
+    requestAnimationFrame(drawSMCCanvas)
+  })
+  chart.subscribeCrosshairMove(() => {
+    // 十字光标移动时不需要重绘
+  })
+}
+
+/**
+ * 销毁 SMC Canvas
+ */
+const destroySMCCanvas = () => {
+  if (smcCanvas) {
+    smcCanvas.remove()
+    smcCanvas = null
+    smcCtx = null
+  }
+}
+
+// 线条样式转换为 Canvas lineDash
+const getLineDash = (style: number): number[] => {
+  switch (style) {
+    case 0: return []          // 实线
+    case 1: return [6, 4]      // 虚线
+    case 2: return [2, 2]      // 点线
+    case 3: return [4, 2, 1, 2] // 点虚线
+    default: return [6, 4]
+  }
+}
+
+/**
+ * 绘制 SMC V2 Canvas (改进版，更接近 TradingView 效果)
+ *
+ * V2 改进:
+ * 1. BMS/CHoCH 使用方框+文字标签
+ * 2. 摆动点使用圆角矩形背景
+ * 3. 供需区域使用渐变填充
+ * 4. 整体配色更接近 TradingView
+ */
+const drawSMCCanvas = () => {
+  if (!chart || !smcCanvas || !smcCtx || !candleSeries) return
+
+  const smcData = smcDataRef.value
+  const klineData = chartDataRef.value || []
+
+  if (!smcData || klineData.length === 0) return
+
+  const chartElement = chart.chartElement()
+  const rect = chartElement ? chartElement.getBoundingClientRect() : smcCanvas.getBoundingClientRect()
+
+  // 更新 canvas 大小
+  const dpr = window.devicePixelRatio || 1
+  const canvasWidth = Math.floor(rect.width * dpr)
+  const canvasHeight = Math.floor(rect.height * dpr)
+
+  if (smcCanvas.width !== canvasWidth || smcCanvas.height !== canvasHeight || smcLastDpr !== dpr) {
+    smcCanvas.width = canvasWidth
+    smcCanvas.height = canvasHeight
+    smcCanvas.style.width = rect.width + 'px'
+    smcCanvas.style.height = rect.height + 'px'
+    smcCtx!.setTransform(dpr, 0, 0, dpr, 0, 0)
+    smcLastDpr = dpr
+  }
+
+  // 清除画布
+  smcCtx.clearRect(0, 0, rect.width, rect.height)
+
+  const timeScale = chart.timeScale()
+  const lastTime = klineData[klineData.length - 1].time
+  const params = indicatorParams.value['SMC'] || {}
+
+  // ==================== 从设置读取颜色配置 ====================
+  const hexToRgba = (hex: string, opacity: number): string => {
+    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex)
+    if (!result) return `rgba(128, 128, 128, ${opacity / 100})`
+    return `rgba(${parseInt(result[1], 16)}, ${parseInt(result[2], 16)}, ${parseInt(result[3], 16)}, ${opacity / 100})`
+  }
+
+  // 从 params 读取颜色，使用默认值作为回退
+  const colors = {
+    // 摆动点
+    swingHigh: params.swing_high_color || '#00D9FF',
+    swingLow: params.swing_low_color || '#FF61D2',
+
+    // BMS (Break of Market Structure)
+    bms: params.bms_color || '#FFD700',
+
+    // CHoCH
+    choch: params.choch_color || '#9C27B0',
+
+    // Order Blocks - 从设置读取颜色和透明度
+    obBullish: hexToRgba(params.ob_bullish || '#00D9FF', params.ob_opacity || 15),
+    obBearish: hexToRgba(params.ob_bearish || '#FF61D2', params.ob_opacity || 15),
+    obBorderBullish: params.ob_bullish || '#00D9FF',
+    obBorderBearish: params.ob_bearish || '#FF61D2',
+
+    // FVG - 从设置读取颜色和透明度
+    fvgBullish: hexToRgba(params.fvg_bullish || '#4CAF50', params.fvg_opacity || 12),
+    fvgBearish: hexToRgba(params.fvg_bearish || '#F44336', params.fvg_opacity || 12),
+    fvgBorderBullish: params.fvg_bullish || '#4CAF50',
+    fvgBorderBearish: params.fvg_bearish || '#F44336',
+  }
+
+  // 辅助函数：绘制圆角矩形
+  const drawRoundedRect = (x: number, y: number, width: number, height: number, radius: number) => {
+    smcCtx!.beginPath()
+    smcCtx!.moveTo(x + radius, y)
+    smcCtx!.lineTo(x + width - radius, y)
+    smcCtx!.quadraticCurveTo(x + width, y, x + width, y + radius)
+    smcCtx!.lineTo(x + width, y + height - radius)
+    smcCtx!.quadraticCurveTo(x + width, y + height, x + width - radius, y + height)
+    smcCtx!.lineTo(x + radius, y + height)
+    smcCtx!.quadraticCurveTo(x, y + height, x, y + height - radius)
+    smcCtx!.lineTo(x, y + radius)
+    smcCtx!.quadraticCurveTo(x, y, x + radius, y)
+    smcCtx!.closePath()
+  }
+
+  // 辅助函数：绘制线条（支持多种样式）
+  // lineStyle: 0=实线, 1=虚线, 2=点线, 3=点虚线
+  const drawStyledLine = (
+    x1: number, y1: number, x2: number, y2: number,
+    color: string, width: number = 1, lineStyle: number = 1, opacity: number = 100
+  ) => {
+    smcCtx!.beginPath()
+
+    // 根据线条样式设置虚线模式
+    const dashPattern: number[] = {
+      0: [],           // 实线
+      1: [4, 4],       // 虚线
+      2: [2, 2],       // 点线
+      3: [2, 2, 4, 2]  // 点虚线
+    }[lineStyle] || [4, 4]
+
+    // 应用透明度
+    const finalColor = opacity < 100 ? hexToRgba(color, opacity) : color
+
+    smcCtx!.setLineDash(dashPattern)
+    smcCtx!.moveTo(x1, y1)
+    smcCtx!.lineTo(x2, y2)
+    smcCtx!.strokeStyle = finalColor
+    smcCtx!.lineWidth = width
+    smcCtx!.stroke()
+    smcCtx!.setLineDash([])
+  }
+
+  // ==================== 1. FVG 区域 (最底层) ====================
+  if (params.show_fvg !== false && smcData.fvg_type) {
+    const fvgCount = params.fvg_count || 5
+    const fvgList: any[] = []
+
+    smcData.fvg_type?.forEach((type: number, index: number) => {
+      if (type === 0) return
+      const top = smcData.fvg_top?.[index]
+      const bottom = smcData.fvg_bottom?.[index]
+      const time = klineData[index]?.time
+      if (top === null || bottom === null || !time) return
+      fvgList.push({ type, top, bottom, time })
+    })
+
+    const recentFVGs = fvgList.slice(-fvgCount)
+
+    recentFVGs.forEach(fvg => {
+      const isBullish = fvg.type > 0
+      const x1 = timeScale.timeToCoordinate(fvg.time)
+      const x2 = timeScale.timeToCoordinate(lastTime)
+      const y1 = candleSeries.priceToCoordinate(fvg.top)
+      const y2 = candleSeries.priceToCoordinate(fvg.bottom)
+
+      if (x1 === null || x2 === null || y1 === null || y2 === null) return
+
+      const height = Math.abs(y2 - y1)
+      if (height < 2) return
+
+      // 填充区域
+      smcCtx!.fillStyle = isBullish ? colors.fvgBullish : colors.fvgBearish
+      smcCtx!.fillRect(x1, Math.min(y1, y2), x2 - x1, height)
+
+      // 绘制上下边框（使用配置的边框样式）
+      const fvgLineStyle = params.fvg_line_style ?? 1
+      const fvgLineWidth = params.fvg_line_width ?? 1
+      const fvgBorderOpacity = params.fvg_border_opacity ?? 100
+      const borderColor = isBullish ? colors.fvgBorderBullish : colors.fvgBorderBearish
+      drawStyledLine(x1, y1, x2, y1, borderColor, fvgLineWidth, fvgLineStyle, fvgBorderOpacity)
+      drawStyledLine(x1, y2, x2, y2, borderColor, fvgLineWidth, fvgLineStyle, fvgBorderOpacity)
+    })
+  }
+
+  // ==================== 2. Order Blocks (中间层) ====================
+  if (params.show_ob !== false && smcData.ob_type) {
+    const obCount = params.ob_count || 5
+    const obList: any[] = []
+
+    smcData.ob_type?.forEach((type: number, index: number) => {
+      if (type === 0) return
+      const top = smcData.ob_top?.[index]
+      const bottom = smcData.ob_bottom?.[index]
+      const time = klineData[index]?.time
+      if (top === null || bottom === null || !time) return
+      obList.push({ type, top, bottom, time })
+    })
+
+    const recentOBs = obList.slice(-obCount)
+
+    recentOBs.forEach(ob => {
+      const isBullish = ob.type > 0
+      const x1 = timeScale.timeToCoordinate(ob.time)
+      const x2 = timeScale.timeToCoordinate(lastTime)
+      const y1 = candleSeries.priceToCoordinate(ob.top)
+      const y2 = candleSeries.priceToCoordinate(ob.bottom)
+
+      if (x1 === null || x2 === null || y1 === null || y2 === null) return
+
+      const height = Math.abs(y2 - y1)
+      if (height < 3) return
+
+      // 填充区域
+      smcCtx!.fillStyle = isBullish ? colors.obBullish : colors.obBearish
+      smcCtx!.fillRect(x1, Math.min(y1, y2), x2 - x1, height)
+
+      // 实线边框 (右侧)
+      const obLineStyle = params.ob_line_style ?? 0
+      const obLineWidth = params.ob_border_width ?? 2
+      const obBorderOpacity = params.ob_border_opacity ?? 100
+      const borderColor = isBullish ? colors.obBorderBullish : colors.obBorderBearish
+      const finalBorderColor = obBorderOpacity < 100 ? hexToRgba(borderColor, obBorderOpacity) : borderColor
+
+      smcCtx!.strokeStyle = finalBorderColor
+      smcCtx!.lineWidth = obLineWidth
+
+      // 根据线条样式设置虚线模式
+      const obDashPattern: number[] = {
+        0: [],           // 实线
+        1: [4, 4],       // 虚线
+        2: [2, 2],       // 点线
+        3: [2, 2, 4, 2]  // 点虚线
+      }[obLineStyle] || []
+      smcCtx!.setLineDash(obDashPattern)
+      smcCtx!.strokeRect(x1, Math.min(y1, y2), x2 - x1, height)
+      smcCtx!.setLineDash([])
+
+      // 左侧小标签
+      const labelY = (y1 + y2) / 2
+      smcCtx!.fillStyle = finalBorderColor
+      smcCtx!.font = 'bold 9px sans-serif'
+      smcCtx!.textAlign = 'right'
+      smcCtx!.fillText(isBullish ? 'OB+' : 'OB-', x1 - 4, labelY + 3)
+    })
+  }
+
+  // ==================== 3. 摆动点 (HH/HL/LL/LH) ====================
+  if (params.show_swing_points !== false) {
+    // 收集所有摆动点
+    const swingPoints: any[] = []
+
+    smcData.swing_highs?.forEach((price: number | null, index: number) => {
+      if (price === null || !klineData[index]) return
+      const label = smcData.swing_labels?.[index] || 'HH'
+      swingPoints.push({ index, price, label, type: 'high' })
+    })
+
+    smcData.swing_lows?.forEach((price: number | null, index: number) => {
+      if (price === null || !klineData[index]) return
+      const label = smcData.swing_labels?.[index] || 'LL'
+      swingPoints.push({ index, price, label, type: 'low' })
+    })
+
+    // 绘制每个摆动点
+    swingPoints.forEach(sp => {
+      const time = klineData[sp.index].time
+      const x = timeScale.timeToCoordinate(time)
+      const y = candleSeries.priceToCoordinate(sp.price)
+
+      if (x === null || y === null) return
+
+      const isHigh = sp.type === 'high'
+      const color = isHigh ? colors.swingHigh : colors.swingLow
+
+      // 小圆点 (中心)
+      smcCtx!.beginPath()
+      smcCtx!.arc(x, y, 3, 0, Math.PI * 2)
+      smcCtx!.fillStyle = color
+      smcCtx!.fill()
+
+      // 标签背景 (圆角矩形)
+      const label = sp.label
+      smcCtx!.font = 'bold 10px sans-serif'
+      const textWidth = smcCtx!.measureText(label).width
+      const padding = 4
+      const boxWidth = textWidth + padding * 2
+      const boxHeight = 14
+
+      const boxX = x - boxWidth / 2
+      const boxY = isHigh ? y - boxHeight - 8 : y + 8
+
+      // 绘制标签背景
+      smcCtx!.fillStyle = 'rgba(19, 23, 34, 0.85)'
+      drawRoundedRect(boxX, boxY, boxWidth, boxHeight, 3)
+      smcCtx!.fill()
+
+      // 绘制标签文字
+      smcCtx!.fillStyle = color
+      smcCtx!.textAlign = 'center'
+      smcCtx!.textBaseline = 'middle'
+      smcCtx!.fillText(label, x, boxY + boxHeight / 2)
+    })
+  }
+
+  // 绘制参考线（最近 N 根K线的最高/最低）- 独立于摆动点显示
+  console.log('[SMC Canvas] ====== 参考线检查 ======')
+  console.log('[SMC Canvas] smcData 所有键:', Object.keys(smcData))
+  console.log('[SMC Canvas] 参考线参数:', {
+    show_reference: params.show_reference,
+    reference_high: smcData.reference_high,
+    reference_low: smcData.reference_low
+  })
+  if (params.show_reference !== false && smcData.reference_high !== undefined) {
+    console.log('[SMC Canvas] 参考线条件满足，开始绘制')
+    const lastBarIndex = klineData.length - 1
+    const lastBarTime = klineData[lastBarIndex]?.time
+    const x2 = lastBarTime ? timeScale.timeToCoordinate(lastBarTime) : null
+
+    if (x2 !== null) {
+      const refLineColor = params.reference_color || '#FFD700'
+      const refLineStyle = params.reference_line_style ?? 2
+      const refLineWidth = params.reference_line_width ?? 1
+      const refLineOpacity = params.reference_opacity ?? 80
+
+      // 绘制最高点参考线
+      const highIndex = smcData.reference_high_index
+      const lowIndex = smcData.reference_low_index
+      console.log('[SMC Canvas] 索引检查:', {
+        highIndex,
+        lowIndex,
+        klineDataLength: klineData.length,
+        highIndexValid: highIndex !== undefined && highIndex >= 0 && highIndex < klineData.length,
+        lowIndexValid: lowIndex !== undefined && lowIndex >= 0 && lowIndex < klineData.length
+      })
+
+      // 使用有效索引绘制
+      const validHighIndex = (highIndex !== undefined && highIndex >= 0 && highIndex < klineData.length) ? highIndex : null
+      const validLowIndex = (lowIndex !== undefined && lowIndex >= 0 && lowIndex < klineData.length) ? lowIndex : null
+
+      if (validHighIndex !== null) {
+        const highTime = klineData[validHighIndex]?.time
+        if (highTime) {
+          const x1 = timeScale.timeToCoordinate(highTime)
+          const y = candleSeries.priceToCoordinate(smcData.reference_high)
+          console.log('[SMC Canvas] 最高点坐标:', { x1, y, x2 })
+          if (x1 !== null && y !== null) {
+            drawStyledLine(x1, y, x2, y, refLineColor, refLineWidth, refLineStyle, refLineOpacity)
+            console.log('[SMC Canvas] 最高点线已绘制')
+          }
+        } else {
+          console.log('[SMC Canvas] 最高点无时间数据')
+        }
+      } else {
+        console.log('[SMC Canvas] 最高点索引无效')
+      }
+
+      // 绘制最低点参考线
+      if (validLowIndex !== null) {
+        const lowTime = klineData[validLowIndex]?.time
+        if (lowTime) {
+          const x1 = timeScale.timeToCoordinate(lowTime)
+          const y = candleSeries.priceToCoordinate(smcData.reference_low)
+          console.log('[SMC Canvas] 最低点坐标:', { x1, y, x2 })
+          if (x1 !== null && y !== null) {
+            drawStyledLine(x1, y, x2, y, refLineColor, refLineWidth, refLineStyle, refLineOpacity)
+            console.log('[SMC Canvas] 最低点线已绘制')
+          }
+        } else {
+          console.log('[SMC Canvas] 最低点无时间数据')
+        }
+      } else {
+        console.log('[SMC Canvas] 最低点索引无效')
+      }
+    }
+  } else {
+    console.log('[SMC Canvas] 参考线未绘制:', {
+      show_reference: params.show_reference,
+      has_reference_high: smcData.reference_high !== undefined,
+      reference_high_value: smcData.reference_high
+    })
+  }
+
+  // ==================== 4. BMS (Break of Market Structure) ====================
+  console.log('[SMC Canvas] BMS 数据:', {
+    bms: smcData.bms?.slice(-10),
+    bms_levels: smcData.bms_levels?.slice(-10),
+    bms_end_index: smcData.bms_end_index?.slice(-10)
+  })
+
+  if (params.show_bms !== false && smcData.bms) {
+    const bmsCount = params.bms_count || 5
+    const bmsList: any[] = []
+
+    smcData.bms?.forEach((type: number, index: number) => {
+      if (type === 0) return
+      const level = smcData.bms_levels?.[index]
+      const endIndex = smcData.bms_end_index?.[index]
+      if (level === null || level === undefined || endIndex === undefined) {
+        console.log(`[SMC Canvas] BMS ${index} 数据不完整:`, { type, level, endIndex })
+        return
+      }
+
+      bmsList.push({
+        index,     // 被突破的摆动点索引（起点）
+        endIndex,  // 突破发生的 K 线索引（终点）
+        level,     // 被突破的摆动点价格
+        isBullish: type > 0
+      })
+    })
+
+    console.log(`[SMC Canvas] 找到 ${bmsList.length} 个 BMS:`, bmsList)
+
+    const recentBMS = bmsList.slice(-bmsCount)
+
+    recentBMS.forEach((bms, i) => {
+      // 起点：被突破的摆动点
+      const startTime = klineData[bms.index]?.time
+      // 终点：突破发生的 K 线
+      const endTime = klineData[bms.endIndex]?.time
+      if (!startTime || !endTime) return
+
+      const x1 = timeScale.timeToCoordinate(startTime)
+      const x2 = timeScale.timeToCoordinate(endTime)
+      const y = candleSeries.priceToCoordinate(bms.level)
+
+      if (x1 === null || x2 === null || y === null) return
+
+      const color = colors.bms
+      const label = 'BMS'
+
+      // 水平线从被突破点画到突破发生的 K 线
+      const bmsLineStyle = params.bms_line_style ?? 1
+      const bmsOpacity = params.bms_opacity ?? 100
+      drawStyledLine(x1, y, x2, y, color, params.bms_line_width || 1, bmsLineStyle, bmsOpacity)
+
+      // 小方块标记在起点（被突破点）
+      const boxSize = params.bms_box_size || 8
+      smcCtx!.fillStyle = color
+      smcCtx!.fillRect(x1 - boxSize/2, y - boxSize/2, boxSize, boxSize)
+
+      // 白色边框
+      smcCtx!.strokeStyle = '#FFFFFF'
+      smcCtx!.lineWidth = 1
+      smcCtx!.strokeRect(x1 - boxSize/2, y - boxSize/2, boxSize, boxSize)
+
+      // 标签
+      smcCtx!.fillStyle = color
+      smcCtx!.font = 'bold 9px sans-serif'
+      smcCtx!.textAlign = 'left'
+      smcCtx!.textBaseline = 'middle'
+      smcCtx!.fillText(label, x1 + boxSize/2 + 4, y)
+    })
+  }
+
+  // ==================== 5. CHoCH (Change of Character) ====================
+  if (params.show_choch !== false && smcData.choch) {
+    const chochCount = params.choch_count || 5
+    const chochList: any[] = []
+
+    smcData.choch?.forEach((type: number, index: number) => {
+      if (type === 0) return
+      const level = smcData.choch_levels?.[index]
+      const endIndex = smcData.choch_end_index?.[index]
+      if (level === null || level === undefined || endIndex === undefined) return
+
+      chochList.push({
+        index,     // 被突破的摆动点索引（起点）
+        endIndex,  // 突破发生的 K 线索引（终点）
+        level,     // 被突破的摆动点价格
+        isBullish: type > 0
+      })
+    })
+
+    const recentChoCH = chochList.slice(-chochCount)
+
+    recentChoCH.forEach(choch => {
+      // 起点：被突破的摆动点
+      const startTime = klineData[choch.index]?.time
+      // 终点：突破发生的 K 线
+      const endTime = klineData[choch.endIndex]?.time
+      if (!startTime || !endTime) return
+
+      const x1 = timeScale.timeToCoordinate(startTime)
+      const x2 = timeScale.timeToCoordinate(endTime)
+      const y = candleSeries.priceToCoordinate(choch.level)
+
+      if (x1 === null || x2 === null || y === null) return
+
+      const color = colors.choch
+      const label = 'CHoCH'
+
+      // 水平线从被突破点画到突破发生的 K 线
+      const chochLineStyle = params.choch_line_style ?? 1
+      const chochOpacity = params.choch_opacity ?? 100
+      drawStyledLine(x1, y, x2, y, color, params.choch_line_width || 1, chochLineStyle, chochOpacity)
+
+      // 菱形标记在起点（被突破点）
+      const size = params.choch_diamond_size || 6
+      smcCtx!.beginPath()
+      smcCtx!.moveTo(x1, y - size)
+      smcCtx!.lineTo(x1 + size, y)
+      smcCtx!.lineTo(x1, y + size)
+      smcCtx!.lineTo(x1 - size, y)
+      smcCtx!.closePath()
+      smcCtx!.fillStyle = color
+      smcCtx!.fill()
+
+      // 白色边框
+      smcCtx!.strokeStyle = '#FFFFFF'
+      smcCtx!.lineWidth = 1
+      smcCtx!.stroke()
+
+      // 标签
+      smcCtx!.fillStyle = color
+      smcCtx!.font = 'bold 9px sans-serif'
+      smcCtx!.textAlign = 'left'
+      smcCtx!.textBaseline = 'middle'
+      smcCtx!.fillText(label, x1 + size + 4, y)
+    })
+  }
+}
+
+/**
+ * 更新 SMC 指标显示
+ * SMC 渲染规则：
+ * 1. 使用 Canvas 叠加层绘制矩形区域
+ * 2. 摆动点/BOS/CHoCH 仍然用 LineSeries
+ */
+const updateSMCIndicator = (smcData: any, klineData: any[]) => {
+  console.log('[SMC] updateSMCIndicator 调用', {
+    hasChart: !!chart,
+    smcDataKeys: smcData ? Object.keys(smcData) : null,
+    klineCount: klineData.length
+  })
+  if (!chart || !smcData) return
+
+  console.log('[SMC] 开始渲染')
+
+  // 缓存数据用于 Canvas 重绘（同时缓存 K 线数据！）
+  smcDataRef.value = smcData
+  chartDataRef.value = klineData  // 关键：缓存 K 线数据
+
+  // 清除旧的 SMC series
+  clearSMCSeries()
+
+  // 创建 Canvas（如果还没有）
+  if (!smcCanvas) {
+    createSMCCanvas()
+  }
+
+  // 绘制 Canvas
+  drawSMCCanvas()
+
+  const customParams = indicatorParams.value['SMC'] || {}
+  const showSwingPoints = customParams.show_swing_points !== false
+  const showBMS = customParams.show_bms !== false
+  const showCHoCH = customParams.show_choch !== false
+
+  // 构建 K线数据索引映射
+  const klineDataByTime = new Map<number, any>()
+  klineData.forEach((bar: any) => {
+    klineDataByTime.set(bar.time, bar)
+  })
+
+  // 所有 SMC 元素都通过 Canvas 绘制
+  // 只需要保存数据并触发重绘
+  smcSeriesRef.value = []  // 不再使用 LineSeries
+
+  // 触发 Canvas 重绘
+  requestAnimationFrame(drawSMCCanvas)
+
+  console.log(`[SMC] 渲染完成 (Canvas模式)`)
+}
+
+/**
+ * 清除 SMC Canvas 和 series
+ */
+const clearSMCSeries = () => {
+  // 清除所有 LineSeries
+  smcSeriesRef.value.forEach(series => {
+    try {
+      series?.setData([])
+    } catch (e) {
+      // 忽略错误
+    }
+  })
+  smcSeriesRef.value = []
+
+  // 清除 Canvas
+  if (smcCtx && smcCanvas) {
+    smcCtx.clearRect(0, 0, smcCanvas.width, smcCanvas.height)
+  }
 }
 
 /**
@@ -1396,8 +2422,18 @@ const openIndicatorSettings = (indicatorId: string) => {
  */
 const handleSettingsConfirm = (params: Record<string, any>) => {
   console.log('[指标设置] 确认参数:', settingsIndicatorId.value, params)
+  const indicatorId = settingsIndicatorId.value
+  const config = getIndicatorConfig(indicatorId)
+
   // 保存参数
-  indicatorParams.value[settingsIndicatorId.value] = params
+  indicatorParams.value[indicatorId] = params
+
+  // 如果是叠加指标（MA/BOLL），需要清除并重新初始化 series
+  if (config && config.type === 'overlay') {
+    console.log(`[指标设置] ${indicatorId} 是叠加指标，清除并重新初始化`)
+    clearOverlayIndicator(indicatorId)
+  }
+
   // 重新加载数据
   loadKlineData()
 }
@@ -1936,6 +2972,52 @@ const loadKlineData = async () => {
     const allIndicators = [...activeIndicators.value, ...overlayIndicators.value]
     const indicatorsToFetch = allIndicators.length > 0 ? allIndicators : undefined
     console.log('[指标] 请求指标:', allIndicators)
+    console.log('[SMC] overlayIndicators 包含 SMC:', overlayIndicators.value.includes('SMC'))
+
+    // 准备指标参数配置
+    const indicatorParamsConfig: Record<string, any> = {}
+
+    // 遍历所有启用的指标，构建参数配置
+    for (const indId of allIndicators) {
+      const indParams = indicatorParams.value[indId] || {}
+
+      // SKDJ 参数映射
+      if (indId === 'SKDJ') {
+        indicatorParamsConfig['SKDJ'] = {
+          fastk_period: indParams.fastk_period ?? 9,
+          slowk_period: indParams.slowk_period ?? 3,
+          slowd_period: indParams.slowd_period ?? 3
+        }
+      }
+      // KDJ 参数映射
+      else if (indId === 'KDJ') {
+        indicatorParamsConfig['KDJ'] = {
+          fastk_period: indParams.kPeriod ?? 9,
+          slowk_period: indParams.dPeriod ?? 3,
+          slowd_period: indParams.jPeriod ?? 3
+        }
+      }
+      // MACD 参数映射
+      else if (indId === 'MACD') {
+        indicatorParamsConfig['MACD'] = {
+          fast_period: indParams.fast ?? 12,
+          slow_period: indParams.slow ?? 26,
+          signal_period: indParams.signal ?? 9
+        }
+      }
+      // SMC 参数映射
+      else if (indId === 'SMC') {
+        indicatorParamsConfig['SMC'] = {
+          swing_length: indParams.swing_length ?? 5,
+          close_break: indParams.close_break ?? true,
+          show_ob: indParams.show_ob ?? true,
+          show_fvg: indParams.show_fvg ?? true,
+          reference_period: indParams.reference_period ?? 34
+        }
+      }
+    }
+
+    console.log('[指标] 传递参数配置:', indicatorParamsConfig)
 
     // 第一步：优先只加载K线数据（最核心的）- 同时请求指标
     const klineRes = await fetchKline(
@@ -1943,14 +3025,54 @@ const loadKlineData = async () => {
       currentTimeframe.value,
       800,
       adjustType.value,
-      indicatorsToFetch
+      indicatorsToFetch,
+      indicatorParamsConfig
     )
 
     // 保存指标数据
     if (klineRes.indicators) {
-      indicatorDataCache.value = klineRes.indicators
-      console.log('[指标] 收到指标数据:', Object.keys(klineRes.indicators))
-      console.log('[指标] MA数据:', klineRes.indicators['MA'])
+      // 转换扁平结构为嵌套结构（兼容后端返回的扁平格式）
+      const indicators = klineRes.indicators
+      const nestedIndicators: Record<string, any> = {}
+
+      // 定义需要嵌套的指标组
+      const indicatorGroups: Record<string, string[]> = {
+        'SKDJ': ['sk', 'sd'],  // 通达信SKDJ没有SJ
+        'KDJ': ['k', 'd', 'j'],
+        'MACD': ['macd', 'signal', 'histogram'],
+        'BOLL': ['upper', 'middle', 'lower']
+      }
+
+      // 检查是否为扁平结构（包含sk/sd/sj等键）
+      const isFlatStructure = Object.keys(indicators).some(key =>
+        ['sk', 'sd', 'sj', 'k', 'd', 'j'].includes(key.toLowerCase())
+      )
+
+      if (isFlatStructure) {
+        // 扁平结构，需要转换为嵌套结构
+        for (const [indicatorName, keys] of Object.entries(indicatorGroups)) {
+          // 检查是否所有需要的键都存在
+          if (keys.every(key => key in indicators)) {
+            // 创建嵌套结构
+            nestedIndicators[indicatorName] = {}
+            keys.forEach(key => {
+              nestedIndicators[indicatorName][key] = indicators[key]
+            })
+            // 从原始数据中移除已处理的键
+            keys.forEach(key => delete indicators[key])
+          }
+        }
+        // 合并剩余的指标（MA、RSI等已经是正确格式的）
+        Object.assign(nestedIndicators, indicators)
+        indicatorDataCache.value = nestedIndicators
+      } else {
+        // 已经是嵌套结构，直接使用
+        indicatorDataCache.value = indicators
+      }
+
+      console.log('[指标] 收到指标数据:', Object.keys(indicatorDataCache.value))
+      console.log('[指标] MA数据:', indicatorDataCache.value['MA'])
+      console.log('[指标] SKDJ数据:', indicatorDataCache.value['SKDJ'])
     }
 
     // 处理K线数据
@@ -2018,6 +3140,11 @@ const loadKlineData = async () => {
       overlayIndicators.value.forEach(indicatorId => {
         const config = getIndicatorConfig(indicatorId)
         if (!config || config.type !== 'overlay') return
+
+        // 保存指标数据到缓存
+        if (klineRes.indicators?.[indicatorId]) {
+          indicatorDataCache.value[indicatorId] = klineRes.indicators[indicatorId]
+        }
 
         // 初始化并更新数据
         initOverlayIndicator(indicatorId)
@@ -2204,6 +3331,7 @@ watch(klineBars, (bars) => {
 
   // 更新图表
   candleSeries.setData(chartData)
+  chartDataRef.value = chartData  // 缓存 K 线数据用于 SMC Canvas 重绘
 
   // 成交量
   const volumeData = chartData.map(d => ({
@@ -3761,5 +4889,27 @@ onBeforeUnmount(() => {
 
 .label-menu-btn.confirm:hover {
   background: #1976D2;
+}
+
+/* 修改 lightweight-charts 窗口分割线颜色 - 使用全局样式 */
+</style>
+
+<style>
+/* 修改 lightweight-charts 窗口分割线颜色 - 非scoped */
+.pane {
+  border-top: 1px solid rgba(42, 46, 57, 0.6) !important;
+}
+
+.pane:first-child {
+  border-top: none !important;
+}
+
+/* 针对不同可能的类名 */
+[class*="pane"] {
+  border-top: 1px solid rgba(42, 46, 57, 0.6) !important;
+}
+
+[class*="pane"]:first-child {
+  border-top: none !important;
 }
 </style>

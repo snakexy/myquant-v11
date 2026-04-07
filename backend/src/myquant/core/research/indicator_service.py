@@ -458,6 +458,60 @@ class IndicatorService:
         atr = talib.ATR(high, low, close, timeperiod=period)
         return pd.Series(atr, index=close.index)
 
+    # ==================== WR威廉指标 ====================
+
+    def calculate_wr(
+        self,
+        high: pd.Series,
+        low: pd.Series,
+        close: pd.Series,
+        period: int = 14
+    ) -> pd.Series:
+        """
+        计算WR（威廉指标）
+
+        Args:
+            high: 最高价序列
+            low: 最低价序列
+            close: 收盘价序列
+            period: 周期
+
+        Returns:
+            WR值序列（0-100，超买>80，超卖<20）
+        """
+        if not self.available:
+            # 简化实现，返回 0-100
+            hh = high.rolling(window=period).max()
+            ll = low.rolling(window=period).min()
+            wr = 100 * (hh - close) / (hh - ll)
+            return wr
+
+        wr = talib.WILLR(high, low, close, timeperiod=period)
+        # talib.WILLR 返回 -100 到 0，转换为 0 到 100
+        wr = 100 + pd.Series(wr, index=close.index)
+        return wr
+
+    # ==================== BIAS乖离率 ====================
+
+    def calculate_bias(
+        self,
+        close: pd.Series,
+        period: int = 6
+    ) -> pd.Series:
+        """
+        计算BIAS（乖离率）
+
+        Args:
+            close: 收盘价序列
+            period: 周期
+
+        Returns:
+            BIAS值序列（百分比）
+        """
+        ma = close.rolling(window=period).mean()
+        bias = (close - ma) / ma * 100
+        return bias
+
     # ==================== 批量计算 ====================
 
     def calculate_all_indicators(

@@ -1,0 +1,1048 @@
+@use './variables.scss' as *;
+@use './components.scss' as *;
+
+// 全局Tab样式 - 与因子分析页面一致的tab效果
+.el-tabs__item {
+  transition: none !important;
+  color: var(--text-primary) !important;
+}
+
+.el-tabs__item:hover {
+  color: var(--text-primary) !important;
+}
+
+.el-tabs__item.is-active {
+  color: var(--accent-blue) !important;
+  &:hover {
+    color: var(--accent-blue) !important;
+  }
+}
+
+// 强制覆盖所有可能的hover场景
+div.el-tabs .el-tabs__item:hover,
+.el-tabs__header .el-tabs__item:hover,
+.el-tabs--top .el-tabs__item:hover {
+  color: var(--text-primary) !important;
+}
+
+// 全局重置样式
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  font-family: var(--font-family-primary);
+  color: var(--text-primary);
+  background-color: var(--bg-deep);
+}
+
+// 滚动条样式
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-surface);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--primary-color);
+}
+
+// 玻璃拟态效果类
+.glass-effect {
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-md);
+}
+
+// 数据流动画效果
+.data-flow {
+  position: relative;
+  overflow: hidden;
+  
+  &::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      var(--data-process) 10%,
+      transparent 20%,
+      var(--data-output) 30%,
+      transparent 40%
+    );
+    animation: dataFlow 2s linear infinite;
+  }
+}
+
+@keyframes dataFlow {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(200%);
+  }
+}
+
+// 霓虹光效
+.neon-glow {
+  text-shadow: 
+    0 0 10px var(--primary-color),
+    0 0 20px var(--primary-color),
+    0 0 30px var(--primary-color);
+  color: var(--primary-color);
+}
+
+// ================================
+// 统一按钮设计系统
+// ================================
+
+// 基础按钮类
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1;
+  text-decoration: none;
+  cursor: pointer;
+  transition: all var(--transition-normal);
+  user-select: none;
+  outline: none;
+  white-space: nowrap;
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none !important;
+  }
+
+  // 按钮尺寸变体
+  &.btn-xs {
+    padding: 4px 8px;
+    font-size: 11px;
+    border-radius: 12px;
+  }
+
+  &.btn-sm {
+    padding: 6px 12px;
+    font-size: 12px;
+    border-radius: 14px;
+  }
+
+  &.btn-md {
+    padding: 8px 16px;
+    font-size: 14px;
+    border-radius: 16px;
+  }
+
+  &.btn-lg {
+    padding: 12px 24px;
+    font-size: 16px;
+    border-radius: 20px;
+  }
+
+  &.btn-xl {
+    padding: 16px 32px;
+    font-size: 18px;
+    border-radius: 24px;
+  }
+
+  // 全宽按钮
+  &.btn-block {
+    width: 100%;
+  }
+
+  // 圆形按钮
+  &.btn-circle {
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    border-radius: 50%;
+
+    &.btn-xs { width: 24px; height: 24px; }
+    &.btn-sm { width: 32px; height: 32px; }
+    &.btn-lg { width: 48px; height: 48px; }
+    &.btn-xl { width: 56px; height: 56px; }
+  }
+}
+
+// 主要按钮样式变体
+.btn-primary {
+  background: linear-gradient(135deg, var(--accent-blue), #1565c0);
+  border-color: rgba(41, 98, 255, 0.3);
+  color: white;
+  backdrop-filter: blur(10px);
+
+  &:hover:not(:disabled) {
+    background: linear-gradient(135deg, rgba(41, 98, 255, 0.9), rgba(41, 98, 255, 0.7));
+    border-color: rgba(41, 98, 255, 0.5);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(41, 98, 255, 0.2);
+  }
+
+  &:active:not(:disabled) {
+    transform: translateY(0);
+    box-shadow: 0 2px 8px rgba(41, 98, 255, 0.3);
+  }
+}
+
+.btn-secondary {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.1);
+  color: white;
+  backdrop-filter: blur(10px);
+
+  &:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.1);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(255, 255, 255, 0.1);
+  }
+}
+
+.btn-success {
+  background: linear-gradient(135deg, rgba(34, 197, 94, 0.8), rgba(34, 197, 94, 0.6));
+  border-color: rgba(34, 197, 94, 0.4);
+  color: white;
+  backdrop-filter: blur(10px);
+
+  &:hover:not(:disabled) {
+    background: linear-gradient(135deg, rgba(34, 197, 94, 0.9), rgba(34, 197, 94, 0.7));
+    border-color: rgba(34, 197, 94, 0.6);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(34, 197, 94, 0.2);
+  }
+}
+
+.btn-warning {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.8), rgba(245, 158, 11, 0.6));
+  border-color: rgba(245, 158, 11, 0.4);
+  color: white;
+  backdrop-filter: blur(10px);
+
+  &:hover:not(:disabled) {
+    background: linear-gradient(135deg, rgba(245, 158, 11, 0.9), rgba(245, 158, 11, 0.7));
+    border-color: rgba(245, 158, 11, 0.6);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(245, 158, 11, 0.2);
+  }
+}
+
+.btn-danger {
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.8), rgba(239, 68, 68, 0.6));
+  border-color: rgba(239, 68, 68, 0.4);
+  color: white;
+  backdrop-filter: blur(10px);
+
+  &:hover:not(:disabled) {
+    background: linear-gradient(135deg, rgba(239, 68, 68, 0.9), rgba(239, 68, 68, 0.7));
+    border-color: rgba(239, 68, 68, 0.6);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(239, 68, 68, 0.2);
+  }
+}
+
+// 节点专用按钮（椭圆形，玻璃效果）
+.btn-node {
+  background: linear-gradient(135deg, rgba(41, 98, 255, 0.2), rgba(41, 98, 255, 0.1));
+  border: 1px solid rgba(41, 98, 255, 0.3);
+  color: white;
+  backdrop-filter: blur(10px);
+  border-radius: 20px;
+
+  &:hover:not(:disabled) {
+    background: linear-gradient(135deg, rgba(41, 98, 255, 0.3), rgba(41, 98, 255, 0.2));
+    border-color: rgba(41, 98, 255, 0.5);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(41, 98, 255, 0.2);
+  }
+
+  &:disabled {
+    opacity: 0.6;
+    background: rgba(41, 98, 255, 0.1);
+  }
+}
+
+// 透明按钮（幽灵按钮）
+.btn-ghost {
+  background: transparent;
+  border-color: rgba(255, 255, 255, 0.1);
+  color: white;
+
+  &:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.1);
+  }
+}
+
+// 链接样式按钮
+.btn-link {
+  background: transparent;
+  border: none;
+  color: var(--primary-color);
+  padding: 0;
+  text-decoration: underline;
+
+  &:hover:not(:disabled) {
+    color: var(--secondary-color);
+    text-decoration: none;
+  }
+}
+
+// 加载状态
+.btn.loading {
+  position: relative;
+  color: transparent !important;
+
+  &::after {
+    content: '';
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    border: 2px solid currentColor;
+    border-radius: 50%;
+    border-top-color: transparent;
+    animation: spin 0.8s linear infinite;
+  }
+}
+
+// 按钮组
+.btn-group {
+  display: inline-flex;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+
+  .btn {
+    border-radius: 0;
+    border-right-width: 0;
+
+    &:first-child {
+      border-top-left-radius: inherit;
+      border-bottom-left-radius: inherit;
+    }
+
+    &:last-child {
+      border-top-right-radius: inherit;
+      border-bottom-right-radius: inherit;
+      border-right-width: 1px;
+    }
+
+    &:hover {
+      z-index: 1;
+    }
+  }
+}
+
+// 特殊动画
+.btn-glow {
+  &:hover:not(:disabled) {
+    box-shadow:
+      0 0 20px rgba(41, 98, 255, 0.3),
+      0 4px 12px rgba(41, 98, 255, 0.2);
+  }
+}
+
+.btn-pulse {
+  animation: pulse 2s infinite;
+
+  &:hover:not(:disabled) {
+    animation-play-state: paused;
+  }
+}
+
+@keyframes pulse {
+  0% { box-shadow: 0 0 0 0 rgba(41, 98, 255, 0.4); }
+  70% { box-shadow: 0 0 0 10px rgba(41, 98, 255, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(41, 98, 255, 0); }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+// 兼容性类（保持向后兼容）
+.tech-button {
+  @extend .btn;
+  @extend .btn-primary;
+  @extend .btn-md;
+}
+
+// 卡片样式
+.tech-card {
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-lg);
+  transition: all var(--transition-normal);
+  
+  &:hover {
+    transform: translateY(-4px);
+    box-shadow: var(--shadow-lg);
+    border-color: var(--primary-color);
+  }
+}
+
+// 响应式工具类
+.hidden-mobile {
+  @media (max-width: 768px) {
+    display: none;
+  }
+}
+
+.visible-mobile {
+  @media (max-width: 768px) {
+    display: block;
+  }
+}
+
+.hidden-tablet {
+  @media (max-width: 1024px) {
+    display: none;
+  }
+}
+
+.visible-tablet {
+  @media (max-width: 1024px) {
+    display: block;
+  }
+}
+
+// ========================================
+// 这个部分必须在所有其他样式之后加载，以确保优先级最高
+// 强制覆盖所有 Element Plus 组件的白色背景
+
+// 1. 强制全局 color-scheme 为 dark
+:root,
+html,
+body {
+  color-scheme: dark !important;
+}
+
+// 1.5 覆盖 Element Plus CSS 变量
+:root,
+html,
+body {
+  --el-input-bg-color: rgba(102, 126, 234, 0.08) !important;
+  --el-input-border-color: rgba(255, 255, 255, 0.15) !important;
+  --el-input-text-color: rgba(255, 255, 255, 0.9) !important;
+  --el-input-placeholder-color: rgba(255, 255, 255, 0.4) !important;
+  --el-input-focus-border-color: #2962ff !important;
+  --el-input-hover-border-color: rgba(255, 255, 255, 0.2) !important;
+  --el-input-clear-hover-color: rgba(255, 255, 255, 0.9) !important;
+  --el-bg-color: #1e222d !important;
+  // 统一背景变量 - 与工作流一致
+  --bg-deep: #0a0a0f;
+  --bg-primary: #131722;
+  --bg-secondary: #1e222d;
+  --bg-tertiary: #2a2e39;
+  --bg-elevated: #252530;
+  --bg-hover: rgba(255, 255, 255, 0.05);
+  --text-primary: #d1d4dc;
+  --text-secondary: #cbd5e1;
+  --accent-blue: #2962ff;
+  --accent-green: #26a69a;
+  --accent-red: #ef5350;
+  --accent-orange: #ff9800;
+  --border-color: #2a2e39;
+  // 覆盖日期选择器范围背景 - 用蓝色覆盖默认白色
+  --el-datepicker-inrange-bg-color: rgba(41, 98, 255, 0.15);
+  --el-border-color-extra-light: rgba(41, 98, 255, 0.15);
+}
+
+// 禁用卡片outline，避免悬停时出现灰色边框
+.card, [class*="card"] {
+  outline: none !important;
+}
+
+// 强制禁用基础卡片hover边框变色和浮起效果（但保留 .card-interactive 的悬停效果）
+* {
+  box-sizing: border-box;
+}
+.card:not(.card-interactive):hover {
+  border-color: var(--border-color, #2a2e39) !important;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+// 覆盖Element Plus el-card的hover效果
+.el-card {
+  transition: none;
+  &:hover {
+    transform: none !important;
+    box-shadow: none !important;
+  }
+}
+
+// 只对基础卡片禁用悬停效果，保留可交互卡片的悬停效果
+.card-interactive {
+  transition: all var(--transition-base);
+}
+
+// 2. 通用输入框样式覆盖 - 统一为灰色
+body .el-input__wrapper,
+html .el-input__wrapper,
+body div.el-input__wrapper,
+html div.el-input__wrapper,
+body span.el-input__wrapper,
+html span.el-input__wrapper,
+.el-input__wrapper,
+.el-input__wrapper.el-input__wrapper,
+.el-input__wrapper.el-input__wrapper.el-input__wrapper {
+  background-color: rgba(102, 126, 234, 0.08) !important;
+  box-shadow: none !important;
+  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+  color-scheme: dark !important;
+}
+
+body .el-input__wrapper:hover,
+html .el-input__wrapper:hover,
+.el-input__wrapper:hover {
+  background-color: rgba(102, 126, 234, 0.08) !important;
+  border-color: rgba(255, 255, 255, 0.2) !important;
+}
+
+body .el-input__wrapper.is-focus,
+html .el-input__wrapper.is-focus,
+.el-input__wrapper.is-focus {
+  background-color: rgba(102, 126, 234, 0.08) !important;
+  border-color: #2962ff !important;
+}
+
+// 3. 输入框内部文本样式
+body .el-input__inner,
+html .el-input__inner,
+.el-input__inner {
+  color: rgba(255, 255, 255, 0.9) !important;
+  background-color: transparent !important;
+  color-scheme: dark !important;
+}
+
+body .el-input__inner::placeholder,
+html .el-input__inner::placeholder,
+.el-input__inner::placeholder {
+  color: rgba(255, 255, 255, 0.1) !important;
+}
+
+// 4. el-select 特定样式 - 统一边框颜色
+// 使用多种选择器确保覆盖所有情况
+body .el-select .el-input__wrapper,
+html .el-select .el-input__wrapper,
+.el-select .el-input__wrapper,
+div.el-select .el-input__wrapper {
+  background-color: rgba(102, 126, 234, 0.08) !important;
+  box-shadow: none !important;
+  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+  color-scheme: dark !important;
+}
+
+body .el-select .el-input__wrapper:hover,
+html .el-select .el-input__wrapper:hover,
+.el-select .el-input__wrapper:hover {
+  border-color: rgba(255, 255, 255, 0.2) !important;
+}
+
+body .el-select .el-input__wrapper.is-focus,
+html .el-select .el-input__wrapper.is-focus,
+.el-select .el-input__wrapper.is-focus {
+  border-color: #2962ff !important;
+}
+
+// el-select small 尺寸
+body .el-select--small .el-input__wrapper,
+html .el-select--small .el-input__wrapper,
+.el-select--small .el-input__wrapper,
+.el-select--small.el-input__wrapper {
+  background-color: rgba(102, 126, 234, 0.08) !important;
+  box-shadow: none !important;
+  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+  color-scheme: dark !important;
+}
+
+body .el-select--small .el-input__wrapper:hover,
+html .el-select--small .el-input__wrapper:hover,
+.el-select--small .el-input__wrapper:hover {
+  border-color: rgba(255, 255, 255, 0.2) !important;
+}
+
+body .el-select--small .el-input__wrapper.is-focus,
+html .el-select--small .el-input__wrapper.is-focus,
+.el-select--small .el-input__wrapper.is-focus {
+  border-color: #2962ff !important;
+}
+
+// 多选标签样式（周期选择器选中后）
+.el-tag {
+  background-color: rgba(255, 255, 255,0.1) !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+  color: #ffffff !important;
+}
+
+.el-tag .el-tag__close {
+  color: rgba(255, 255, 255, 0.7) !important;
+}
+
+.el-tag .el-tag__close:hover {
+  background-color: rgba(255, 255, 255, 0.1) !important;
+  color: #ffffff !important;
+}
+
+// ========================================
+// 5. el-date-editor 日期选择器样式
+// ========================================
+
+// 日期选择器输入框基础样式
+body .el-date-editor .el-input__wrapper,
+html .el-date-editor .el-input__wrapper,
+.el-date-editor .el-input__wrapper {
+  background-color: rgba(102, 126, 234, 0.08) !important;
+  box-shadow: none !important;
+  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+  color-scheme: dark !important;
+}
+
+// 日期选择器 hover 状态
+body .el-date-editor .el-input__wrapper:hover,
+html .el-date-editor .el-input__wrapper:hover,
+.el-date-editor .el-input__wrapper:hover {
+  border-color: rgba(255, 255, 255, 0.2) !important;
+}
+
+// 日期选择器 focus 状态
+body .el-date-editor .el-input__wrapper.is-focus,
+html .el-date-editor .el-input__wrapper.is-focus,
+.el-date-editor .el-input__wrapper.is-focus {
+  border-color: #2962ff !important;
+}
+
+// 日期选择器 small 尺寸
+body .el-date-editor--small .el-input__wrapper,
+html .el-date-editor--small .el-input__wrapper,
+.el-date-editor--small .el-input__wrapper {
+  background-color: rgba(102, 126, 234, 0.08) !important;
+  box-shadow: none !important;
+  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+  color-scheme: dark !important;
+}
+
+body .el-date-editor--small .el-input__wrapper:hover,
+html .el-date-editor--small .el-input__wrapper:hover,
+.el-date-editor--small .el-input__wrapper:hover {
+  border-color: rgba(255, 255, 255, 0.2) !important;
+}
+
+body .el-date-editor--small .el-input__wrapper.is-focus,
+html .el-date-editor--small .el-input__wrapper.is-focus,
+.el-date-editor--small .el-input__wrapper.is-focus {
+  border-color: #2962ff !important;
+}
+
+// 6. 下拉框弹出层样式 (通过 Teleport 渲染到 body)
+// 使用 el-popper base class 来覆盖所有弹窗组件
+.el-popper,
+.el-popper.is-light,
+.el-popper.is-dark,
+.el-select-dropdown,
+.el-select-dropdown.el-popper,
+div.el-select-dropdown,
+body > .el-select-dropdown,
+body > .el-popper,
+body > div.el-popper {
+  background-color: rgba(102, 126, 234, 0.08) !important;
+  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+  color-scheme: dark !important;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4) !important;
+}
+
+// 移除 popper 默认的浅色边框
+.el-popper.is-light .el-popper__arrow::before,
+.el-popper .el-popper__arrow::before {
+  background-color: rgba(102, 126, 234, 0.08) !important;
+  border-color: rgba(255, 255, 255, 0.15) !important;
+}
+
+// 关键：设置默认背景透明，防止白色闪烁
+.el-select-dropdown__item {
+  color: rgba(255, 255, 255, 0.85) !important;
+  background-color: transparent !important;
+}
+
+// 悬停样式 - 包含 .hover 类（Element Plus 使用 JS 添加的类）
+.el-select-dropdown__item:hover,
+.el-select-dropdown__item.hover {
+  background-color: rgba(255, 255, 255, 0.1) !important;
+  color: #ffffff !important;
+}
+
+// 下拉框选中项
+.el-select-dropdown__item.is-selected,
+.el-select-dropdown__item.is-selected:hover,
+body .el-select-dropdown__item.is-selected,
+html .el-select-dropdown__item.is-selected {
+  background-color: rgba(255, 255, 255, 0.15) !important;
+  color: #ffffff !important;
+}
+
+// 修复：确保非悬停、非选中状态背景透明
+.el-select-dropdown__item:not(:hover):not(.is-selected) {
+  background-color: transparent !important;
+}
+
+.el-select-dropdown__item.is-disabled {
+  color: rgba(255, 255, 255, 0.1) !important;
+}
+
+// 复选框颜色 - 勾改成白色
+.el-checkbox__inner {
+  background-color: transparent !important;
+  border-color: rgba(255, 255, 255, 0.3) !important;
+}
+
+.el-checkbox__input.is-checked .el-checkbox__inner {
+  background-color: #2962ff !important;
+  border-color: #2962ff !important;
+}
+
+// 复选框勾选后的对勾 - 白色加粗
+.el-checkbox__inner::after {
+  border-color: #ffffff !important;
+  border-width: 2px !important;
+}
+
+// 7. 日期选择器弹出层样式
+body > .el-picker-dropdown,
+div.el-picker-dropdown,
+.el-picker-dropdown {
+  background-color: rgba(102, 126, 234, 0.08) !important;
+  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+  backdrop-filter: blur(20px) !important;
+  color-scheme: dark !important;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4) !important;
+}
+
+// ========================================
+// 6. el-picker-panel 日期选择器面板样式
+// ========================================
+
+.el-picker-panel {
+  background-color: rgba(30, 30, 50, 0.85) !important;
+  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+  color: rgba(255, 255, 255, 0.85) !important;
+  color-scheme: dark !important;
+}
+
+// ========================================
+// 7. 日期表格样式 (el-date-table)
+// ========================================
+
+// 日期表格 - 注意：不要设置透明背景，否则会覆盖选中效果
+
+// 日期选择器头部
+.el-date-picker__header-label {
+  color: rgba(255, 255, 255, 0.9) !important;
+}
+
+.el-date-picker__header-label:hover {
+  color: rgba(255, 255, 255, 0.1) !important;
+}
+
+// 日期表格
+.el-date-table td .cell,
+.el-month-table td .cell {
+  color: rgba(255, 255, 255, 0.85) !important;
+}
+
+.el-date-table td .cell:hover,
+.el-month-table td .cell:hover {
+  background-color: rgba(255, 255, 255,0.15) !important;
+  color: #ffffff !important;
+}
+
+.el-date-table td.current .cell,
+.el-month-table td.current .cell {
+  background-color: #2962ff !important;
+  color: #ffffff !important;
+}
+
+.el-date-table td.today .cell,
+.el-month-table td.today .cell {
+  color: #2962ff !important;
+}
+
+// 7.5 el-input-number 计数器/调节框样式 - 最强覆盖
+.el-input-number {
+  width: 120px;
+}
+
+// 强制覆盖所有可能的样式
+div.el-input-number .el-input__wrapper,
+.el-input-number .el-input__wrapper,
+.el-input-number .el-input__wrapper:hover,
+.el-input-number .el-input__wrapper:focus,
+.el-input-number .el-input__wrapper.is-focus,
+.el-input-number .el-input__wrapper:focus-within,
+.el-input-number .el-input__wrapper:active,
+html body .el-input-number .el-input__wrapper,
+#app .el-input-number .el-input__wrapper {
+  background-color: rgba(102, 126, 234, 0.08) !important;
+  background: rgba(102, 126, 234, 0.08) !important;
+  box-shadow: none !important;
+  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+  border-color: rgba(255, 255, 255, 0.15) !important;
+}
+
+div.el-input-number .el-input__wrapper:hover,
+.el-input-number .el-input__wrapper:hover {
+  border-color: rgba(255, 255, 255, 0.2) !important;
+}
+
+div.el-input-number .el-input__wrapper.is-focus,
+.el-input-number .el-input__wrapper.is-focus {
+  border-color: #2962ff !important;
+}
+
+// 计数器内部输入框
+.el-input-number .el-input__inner,
+div.el-input-number .el-input__inner {
+  color: #f8fafc !important;
+}
+
+// 计数器按钮 - 最高优先级
+div.el-input-number .el-input-number__decrease,
+div.el-input-number .el-input-number__increase,
+.el-input-number .el-input-number__decrease,
+.el-input-number .el-input-number__increase,
+html body .el-input-number__decrease,
+html body .el-input-number__increase {
+  background: transparent !important;
+  border: none !important;
+  color: rgba(255, 255, 255, 0.7) !important;
+}
+
+div.el-input-number .el-input-number__decrease:hover,
+div.el-input-number .el-input-number__increase:hover,
+.el-input-number .el-input-number__decrease:hover,
+.el-input-number .el-input-number__increase:hover,
+html body .el-input-number__decrease:hover,
+html body .el-input-number__increase:hover {
+  color: #2962ff !important;
+}
+
+// 计数器 - small 尺寸
+.el-input-number--small {
+  width: 100px;
+
+  .el-input-number__decrease,
+  .el-input-number__increase {
+    width: 20px;
+  }
+}
+
+// 计数器 - large 尺寸
+.el-input-number--large {
+  width: 150px;
+}
+
+// 8. el-dialog 对话框样式
+.el-dialog {
+  background-color: rgba(102, 126, 234, 0.08) !important;
+  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+  backdrop-filter: blur(20px) !important;
+  color-scheme: dark !important;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5) !important;
+}
+
+.el-dialog__header {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.15) !important;
+  padding: 20px 24px !important;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.1) 0%, rgba(41, 98, 255, 0.05) 100%) !important;
+}
+
+.el-dialog__title {
+  color: rgba(255, 255, 255, 0.95) !important;
+  font-weight: 600;
+  font-size: 18px;
+}
+
+.el-dialog__body {
+  color: rgba(255, 255, 255, 0.85) !important;
+  padding: 24px !important;
+  background-color: transparent !important;
+}
+
+.el-dialog__footer {
+  border-top: 1px solid rgba(255, 255, 255, 0.15) !important;
+  padding: 16px 24px !important;
+  background: rgba(255, 255, 255, 0.03) !important;
+}
+
+// 9. el-popover 弹出框样式
+.el-popover {
+  background-color: rgba(102, 126, 234, 0.08) !important;
+  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+  backdrop-filter: blur(20px) !important;
+  color: rgba(255, 255, 255, 0.85) !important;
+  color-scheme: dark !important;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4) !important;
+}
+
+// 10. el-dropdown 下拉菜单样式
+.el-dropdown-menu {
+  background-color: rgba(102, 126, 234, 0.08) !important;
+  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+  backdrop-filter: blur(20px) !important;
+  color-scheme: dark !important;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4) !important;
+}
+
+.el-dropdown-menu__item {
+  color: rgba(255, 255, 255, 0.85) !important;
+}
+
+.el-dropdown-menu__item:hover {
+  background-color: rgba(255, 255, 255, 0.15) !important;
+  color: #ffffff !important;
+}
+
+.el-dropdown-menu__item.is-disabled {
+  color: rgba(255, 255, 255, 0.3) !important;
+}
+
+// 11. el-autocomplete 自动完成样式
+.el-autocomplete-suggestion {
+  background-color: rgba(102, 126, 234, 0.08) !important;
+  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+  backdrop-filter: blur(20px) !important;
+  color-scheme: dark !important;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4) !important;
+}
+
+.el-autocomplete-suggestion__item {
+  color: rgba(255, 255, 255, 0.85) !important;
+}
+
+.el-autocomplete-suggestion__item:hover {
+  background-color: rgba(255, 255, 255,0.15) !important;
+}
+
+.el-autocomplete-suggestion__item.highlighted {
+  background-color: rgba(255, 255, 255,0.25) !important;
+  color: #ffffff !important;
+}
+
+// 12. 覆盖任何可能的内联样式设置统一背景色
+body .el-input__wrapper[style*="background"],
+html .el-input__wrapper[style*="background"],
+.el-input__wrapper[style*="background"] {
+  background-color: rgba(102, 126, 234, 0.08) !important;
+}
+
+// ========================================
+// 8. 针对内联样式的覆盖（处理Element Plus动态样式）
+// ========================================
+
+body .el-select .el-input__wrapper[style*="background"],
+html .el-select .el-input__wrapper[style*="background"],
+.el-select .el-input__wrapper[style*="background"] {
+  background-color: rgba(102, 126, 234, 0.08) !important;
+}
+
+body .el-date-editor .el-input__wrapper[style*="background"],
+html .el-date-editor .el-input__wrapper[style*="background"],
+.el-date-editor .el-input__wrapper[style*="background"] {
+  background-color: rgba(102, 126, 234, 0.08) !important;
+}
+
+// 14. 特定下拉框的自定义深色样式（用于"全部"下拉框）
+.dark-select-dropdown {
+  background-color: rgba(102, 126, 234, 0.08) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  backdrop-filter: blur(20px) !important;
+  color-scheme: dark !important;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4) !important;
+}
+
+.dark-select-dropdown .el-select-dropdown__item {
+  color: rgba(255, 255, 255, 0.85) !important;
+}
+
+.dark-select-dropdown .el-select-dropdown__item:hover {
+  background-color: rgba(255, 255, 255,0.15) !important;
+  color: #ffffff !important;
+}
+
+.dark-select-dropdown .el-select-dropdown__item.is-selected {
+  background-color: rgba(255, 255, 255,0.25) !important;
+  color: #ffffff !important;
+}
+
+// 15. 滚动条样式覆盖
+.el-select-dropdown__wrap,
+.el-picker-panel__content,
+.el-autocomplete-suggestion__wrap {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.1) rgba(255, 255, 255, 0.05);
+}
+
+.el-select-dropdown__wrap::-webkit-scrollbar,
+.el-picker-panel__content::-webkit-scrollbar,
+.el-autocomplete-suggestion__wrap::-webkit-scrollbar {
+  width: 6px;
+}
+
+.el-select-dropdown__wrap::-webkit-scrollbar-track,
+.el-picker-panel__content::-webkit-scrollbar-track,
+.el-autocomplete-suggestion__wrap::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 3px;
+}
+
+.el-select-dropdown__wrap::-webkit-scrollbar-thumb,
+.el-picker-panel__content::-webkit-scrollbar-thumb,
+.el-autocomplete-suggestion__wrap::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+
+.el-select-dropdown__wrap::-webkit-scrollbar-thumb:hover,
+.el-picker-panel__content::-webkit-scrollbar-thumb:hover,
+.el-autocomplete-suggestion__wrap::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255,0.5);
+}
+
+// 强制覆盖所有可能的白边
+.el-input__wrapper,
+.el-select .el-input__wrapper,
+.el-date-editor .el-input__wrapper,
+.el-select-dropdown,
+.el-picker-panel,
+.el-picker-panel__sidebar {
+  border-color: rgba(255, 255, 255, 0.1) !important;
+}

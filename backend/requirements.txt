@@ -28,6 +28,9 @@ pytz>=2024.1
 xtquant>=250516.1.1
 easyquotation>=0.7.5
 
+# SMC (Smart Money Concepts) indicators
+smartmoneyconcepts>=0.1.0
+
 # qlib: optional, install separately
 # pip install pyqlib
 

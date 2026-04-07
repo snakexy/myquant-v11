@@ -1,0 +1,1317 @@
+// ======================
+// 通用组件样式
+// ======================
+
+// ----------------------
+// 通用按钮样式
+// ----------------------
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-sm);
+  padding: 10px 20px;
+  border-radius: var(--border-radius-base);
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  font-family: var(--font-family-primary);
+  cursor: pointer;
+  transition: all var(--transition-fast) cubic-bezier(0.4, 0, 0.2, 1);
+  border: none;
+  outline: none;
+  position: relative;
+  overflow: hidden;
+  text-decoration: none;
+  user-select: none;
+
+  // 禁用状态
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    pointer-events: none;
+  }
+
+  // 激活状态
+  &:active:not(:disabled) {
+    transform: scale(0.98);
+  }
+
+  // 加载状态
+  &.loading {
+    pointer-events: none;
+
+    &::after {
+      content: '';
+      position: absolute;
+      width: 16px;
+      height: 16px;
+      border: 2px solid transparent;
+      border-top-color: currentColor;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+  }
+}
+
+// 主要按钮
+.btn-primary {
+  background: linear-gradient(135deg, var(--primary) 0%, var(--primary-hover) 100%);
+  color: white;
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+
+  &:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(37, 99, 235, 0.4);
+    filter: brightness(1.1);
+  }
+}
+
+// 次要按钮
+.btn-secondary {
+  background: var(--glass-bg);
+  color: var(--text-primary);
+  border: 1px solid var(--glass-border);
+
+  &:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.2);
+    transform: translateY(-1px);
+  }
+}
+
+// 成功按钮（股市红）
+.btn-success {
+  background: var(--market-rise);
+  color: white;
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+
+  &:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(239, 68, 68, 0.4);
+    filter: brightness(1.1);
+  }
+}
+
+// 失败按钮（股市绿）
+.btn-danger {
+  background: var(--market-fall);
+  color: white;
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+
+  &:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(16, 185, 129, 0.4);
+    filter: brightness(1.1);
+  }
+}
+
+// 警告按钮
+.btn-warning {
+  background: var(--warning);
+  color: white;
+  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3);
+
+  &:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(245, 158, 11, 0.4);
+    filter: brightness(1.1);
+  }
+}
+
+// 危险按钮（股市绿）
+.btn-danger {
+  background: var(--market-fall);
+  color: white;
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+
+  &:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(16, 185, 129, 0.4);
+    filter: brightness(1.1);
+  }
+}
+
+// 按钮尺寸变体
+.btn-sm {
+  padding: 6px 12px;
+  font-size: 12px;
+}
+
+.btn-lg {
+  padding: 14px 28px;
+  font-size: 16px;
+}
+
+// 按钮形状变体
+.btn-round {
+  border-radius: 50px;
+}
+
+.btn-icon {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: 50%;
+}
+
+.btn-icon-sm {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+}
+
+.btn-square {
+  border-radius: 0;
+}
+
+// 幽灵按钮
+.btn-ghost {
+  background: transparent;
+  color: var(--text-primary);
+
+  &:hover:not(:disabled) {
+    background: var(--glass-bg);
+  }
+}
+
+// 按钮组
+.btn-group {
+  display: inline-flex;
+
+  .btn {
+    border-radius: 0;
+
+    &:first-child {
+      border-top-left-radius: var(--border-radius-base);
+      border-bottom-left-radius: var(--border-radius-base);
+    }
+
+    &:last-child {
+      border-top-right-radius: var(--border-radius-base);
+      border-bottom-right-radius: var(--border-radius-base);
+    }
+  }
+}
+
+// ----------------------
+// 指标展示组件
+// ----------------------
+.metric {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+
+  .metric-label {
+    font-size: var(--font-size-xs);
+    color: var(--text-secondary);
+    font-weight: 400;
+  }
+
+  .metric-value {
+    font-size: var(--font-size-base);
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  // 市场涨跌
+  &.market-rise .metric-value {
+    color: var(--market-rise);
+  }
+
+  &.market-fall .metric-value {
+    color: var(--market-fall);
+  }
+
+  &.market-neutral .metric-value {
+    color: var(--market-neutral);
+  }
+
+  // 风险等级
+  &.risk-low .metric-value {
+    color: var(--risk-low);
+  }
+
+  &.risk-medium .metric-value {
+    color: var(--risk-medium);
+  }
+
+  &.risk-high .metric-value {
+    color: var(--risk-high);
+  }
+
+  // 可行性
+  &.feasibility-high .metric-value {
+    color: var(--feasibility-high);
+  }
+
+  &.feasibility-medium .metric-value {
+    color: var(--feasibility-medium);
+  }
+
+  &.feasibility-low .metric-value {
+    color: var(--feasibility-low);
+  }
+
+  // 评级
+  &.rating-excellent .metric-value {
+    color: var(--rating-excellent);
+  }
+
+  &.rating-good .metric-value {
+    color: var(--rating-good);
+  }
+
+  &.rating-average .metric-value {
+    color: var(--rating-average);
+  }
+
+  &.rating-poor .metric-value {
+    color: var(--rating-poor);
+  }
+
+  &.rating-bad .metric-value {
+    color: var(--rating-bad);
+  }
+}
+
+// 水平指标
+.metric-horizontal {
+  flex-direction: row;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+
+  .metric-label {
+    min-width: 80px;
+    text-align: left;
+  }
+
+  .metric-value {
+    text-align: right;
+  }
+}
+
+// 带趋势箭头的指标
+.metric-trend {
+  position: relative;
+  padding-right: 20px;
+
+  &::after {
+    content: '';
+    position: absolute;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 0;
+    height: 0;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+  }
+
+  &.trend-up::after {
+    border-bottom: 8px solid currentColor;
+    color: var(--market-rise);
+  }
+
+  &.trend-down::after {
+    border-top: 8px solid currentColor;
+    color: var(--market-fall);
+  }
+
+  &.trend-neutral::after {
+    border-top: 2px solid currentColor;
+    border-bottom: 2px solid currentColor;
+    height: 8px;
+    color: var(--market-neutral);
+  }
+}
+
+// ----------------------
+// 卡片组件
+// ----------------------
+.card {
+  background: var(--bg-surface);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--border-radius-xl);
+  padding: var(--spacing-lg);
+  backdrop-filter: blur(var(--glass-blur));
+  transition: all var(--transition-normal);
+
+  &:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-lg);
+    background: rgba(255, 255, 255, 0.06);
+  }
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--spacing-md);
+
+  h3 {
+    margin: 0;
+    font-size: var(--font-size-lg);
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+}
+
+.card-body {
+  flex: 1;
+}
+
+.card-footer {
+  margin-top: var(--spacing-md);
+  padding-top: var(--spacing-md);
+  border-top: 1px solid var(--divider-color);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+// ----------------------
+// 进度条组件
+// ----------------------
+.progress {
+  width: 100%;
+  height: 8px;
+  background: var(--glass-bg);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+
+  .progress-bar {
+    height: 100%;
+    background: linear-gradient(90deg, var(--primary) 0%, var(--secondary) 100%);
+    transition: width var(--transition-normal);
+    border-radius: var(--radius-lg);
+  }
+
+  // 进度条颜色变体
+  &.success .progress-bar {
+    background: var(--market-rise);
+  }
+
+  &.warning .progress-bar {
+    background: var(--warning);
+  }
+
+  &.danger .progress-bar {
+    background: var(--market-fall);
+  }
+}
+
+// ----------------------
+// 标签组件
+// ----------------------
+.tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 12px;
+  border-radius: var(--radius-xl);
+  font-size: var(--font-size-xs);
+  font-weight: 500;
+  gap: 4px;
+
+  // 默认样式
+  background: var(--glass-bg);
+  color: var(--text-secondary);
+
+  // 颜色变体
+  &.primary {
+    background: rgba(37, 99, 235, 0.1);
+    color: var(--primary);
+  }
+
+  &.success {
+    background: rgba(239, 68, 68, 0.1);
+    color: var(--market-rise);
+  }
+
+  &.warning {
+    background: rgba(245, 158, 11, 0.1);
+    color: var(--warning);
+  }
+
+  &.danger {
+    background: rgba(16, 185, 129, 0.1);
+    color: var(--market-fall);
+  }
+}
+
+// ----------------------
+// 动画关键帧
+// ----------------------
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+@keyframes bounce {
+  0%, 20%, 53%, 80%, 100% {
+    animation-timing-function: cubic-bezier(0.215, 0.610, 0.355, 1.000);
+    transform: translate3d(0, 0, 0);
+  }
+  40%, 43% {
+    animation-timing-function: cubic-bezier(0.755, 0.050, 0.855, 0.060);
+    transform: translate3d(0, -10px, 0);
+  }
+  70% {
+    animation-timing-function: cubic-bezier(0.755, 0.050, 0.855, 0.060);
+    transform: translate3d(0, -5px, 0);
+  }
+  90% {
+    transform: translate3d(0, -2px, 0);
+  }
+}
+
+// ----------------------
+// 过渡动画类
+// ----------------------
+.expand-enter-active,
+.expand-leave-active {
+  transition: all var(--transition-normal) cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+}
+
+.expand-enter-from,
+.expand-leave-to {
+  opacity: 0;
+  max-height: 0;
+  transform: translateY(-8px);
+}
+
+.expand-enter-to,
+.expand-leave-from {
+  opacity: 1;
+  max-height: 800px;
+  transform: translateY(0);
+}
+
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity var(--transition-normal);
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+.slide-up-enter-active,
+.slide-up-leave-active {
+  transition: all var(--transition-normal);
+}
+
+.slide-up-enter-from {
+  opacity: 0;
+  transform: translateY(20px);
+}
+
+.slide-up-leave-to {
+  opacity: 0;
+  transform: translateY(-20px);
+}
+
+// 统一滑杆组件样式
+.uni-slider {
+  width: 100%;
+  margin: 8px 0;
+
+  // 滑杆容器
+  .slider-container {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  // 滑杆轨道
+  .slider-track {
+    flex: 1;
+    height: 6px;
+    background: var(--border-color);
+    border-radius: 3px;
+    position: relative;
+    cursor: pointer;
+    transition: all 0.3s ease;
+
+    &:hover {
+      background: var(--border-light);
+    }
+
+    // 已选择的进度条
+    .slider-fill {
+      position: absolute;
+      left: 0;
+      top: 0;
+      height: 100%;
+      background: linear-gradient(90deg, var(--primary-color), var(--primary-hover));
+      border-radius: 3px;
+      transition: all 0.3s ease;
+    }
+
+    // 刻度标记
+    .slider-marks {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 100%;
+      display: flex;
+      justify-content: space-between;
+      pointer-events: none;
+
+      .slider-mark {
+        width: 2px;
+        height: 10px;
+        background: var(--text-disabled);
+        position: absolute;
+        top: -2px;
+
+        &.active {
+          background: var(--primary-color);
+        }
+      }
+    }
+  }
+
+  // 滑杆按钮
+  .slider-thumb {
+    position: absolute;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 20px;
+    height: 20px;
+    background: var(--bg-white);
+    border: 3px solid var(--primary-color);
+    border-radius: 50%;
+    cursor: grab;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    transition: all 0.3s ease;
+    z-index: 2;
+
+    &:hover {
+      transform: translate(-50%, -50%) scale(1.2);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+    }
+
+    &:active {
+      cursor: grabbing;
+      transform: translate(-50%, -50%) scale(1.1);
+    }
+
+    // 激活状态
+    &.active {
+      border-color: var(--primary-hover);
+      box-shadow: 0 0 0 8px rgba(var(--primary-rgb), 0.1);
+    }
+  }
+
+  // 数值显示
+  .slider-value {
+    min-width: 60px;
+    padding: 4px 8px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-sm);
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    color: var(--primary-color);
+    text-align: center;
+    transition: all 0.3s ease;
+
+    &:focus-within {
+      border-color: var(--primary-color);
+      box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.1);
+    }
+
+    input {
+      width: 100%;
+      background: transparent;
+      border: none;
+      outline: none;
+      text-align: center;
+      color: inherit;
+      font: inherit;
+    }
+  }
+
+  // 标签
+  .slider-label {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+    font-size: var(--font-size-sm);
+
+    .label-title {
+      font-weight: 500;
+      color: var(--text-primary);
+    }
+
+    .label-unit {
+      color: var(--text-regular);
+      font-size: var(--font-size-xs);
+    }
+  }
+
+  // 提示信息
+  .slider-tooltip {
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    margin-bottom: 8px;
+    padding: 4px 8px;
+    background: var(--text-primary);
+    color: var(--bg-white);
+    font-size: var(--font-size-xs);
+    border-radius: var(--border-radius-sm);
+    white-space: nowrap;
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.3s ease;
+    z-index: 10;
+
+    &::after {
+      content: '';
+      position: absolute;
+      top: 100%;
+      left: 50%;
+      transform: translateX(-50%);
+      border: 4px solid transparent;
+      border-top-color: var(--text-primary);
+    }
+
+    &.visible {
+      opacity: 1;
+      visibility: visible;
+    }
+  }
+
+  // 禁用状态
+  &.disabled {
+    opacity: 0.6;
+    pointer-events: none;
+
+    .slider-track {
+      cursor: not-allowed;
+    }
+
+    .slider-thumb {
+      background: var(--bg-disabled);
+      border-color: var(--border-light);
+      cursor: not-allowed;
+    }
+  }
+
+  // 尺寸变体
+  &.small {
+    .slider-track {
+      height: 4px;
+    }
+
+    .slider-thumb {
+      width: 16px;
+      height: 16px;
+    }
+
+    .slider-value {
+      min-width: 50px;
+      font-size: var(--font-size-xs);
+    }
+  }
+
+  &.large {
+    .slider-track {
+      height: 8px;
+    }
+
+    .slider-thumb {
+      width: 24px;
+      height: 24px;
+    }
+
+    .slider-value {
+      min-width: 70px;
+      font-size: var(--font-size-base);
+    }
+  }
+
+  // 颜色变体
+  &.success {
+    .slider-fill {
+      background: linear-gradient(90deg, var(--success-color), var(--success-hover));
+    }
+
+    .slider-thumb {
+      border-color: var(--success-color);
+
+      &.active {
+        border-color: var(--success-hover);
+        box-shadow: 0 0 0 8px rgba(16, 185, 129, 0.1);
+      }
+    }
+
+    .slider-value {
+      color: var(--success-color);
+    }
+  }
+
+  &.warning {
+    .slider-fill {
+      background: linear-gradient(90deg, var(--warning-color), var(--warning-hover));
+    }
+
+    .slider-thumb {
+      border-color: var(--warning-color);
+
+      &.active {
+        border-color: var(--warning-hover);
+        box-shadow: 0 0 0 8px rgba(245, 158, 11, 0.1);
+      }
+    }
+
+    .slider-value {
+      color: var(--warning-color);
+    }
+  }
+
+  &.danger {
+    .slider-fill {
+      background: linear-gradient(90deg, var(--danger-color), var(--danger-hover));
+    }
+
+    .slider-thumb {
+      border-color: var(--danger-color);
+
+      &.active {
+        border-color: var(--danger-hover);
+        box-shadow: 0 0 0 8px rgba(239, 68, 68, 0.1);
+      }
+    }
+
+    .slider-value {
+      color: var(--danger-color);
+    }
+  }
+
+  // 市场颜色变体
+  &.market-rise {
+    .slider-fill {
+      background: linear-gradient(90deg, var(--market-rise), #dc2626);
+    }
+
+    .slider-thumb {
+      border-color: var(--market-rise);
+
+      &.active {
+        border-color: #dc2626;
+        box-shadow: 0 0 0 8px rgba(239, 68, 68, 0.1);
+      }
+    }
+
+    .slider-value {
+      color: var(--market-rise);
+    }
+  }
+
+  &.market-fall {
+    .slider-fill {
+      background: linear-gradient(90deg, var(--market-fall), #059669);
+    }
+
+    .slider-thumb {
+      border-color: var(--market-fall);
+
+      &.active {
+        border-color: #059669;
+        box-shadow: 0 0 0 8px rgba(16, 185, 129, 0.1);
+      }
+    }
+
+    .slider-value {
+      color: var(--market-fall);
+    }
+  }
+}
+
+// 原生 input[type="range"] 美化
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 6px;
+  background: var(--border-color);
+  border-radius: 3px;
+  outline: none;
+  transition: all 0.3s ease;
+
+  &::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 20px;
+    height: 20px;
+    background: var(--bg-white);
+    border: 3px solid var(--primary-color);
+    border-radius: 50%;
+    cursor: grab;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    transition: all 0.3s ease;
+
+    &:hover {
+      transform: scale(1.2);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+    }
+
+    &:active {
+      cursor: grabbing;
+      transform: scale(1.1);
+    }
+  }
+
+  &::-moz-range-thumb {
+    width: 20px;
+    height: 20px;
+    background: var(--bg-white);
+    border: 3px solid var(--primary-color);
+    border-radius: 50%;
+    cursor: grab;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    transition: all 0.3s ease;
+
+    &:hover {
+      transform: scale(1.2);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+    }
+
+    &:active {
+      cursor: grabbing;
+      transform: scale(1.1);
+    }
+  }
+
+  &::-webkit-slider-runnable-track {
+    height: 100%;
+    border-radius: 3px;
+  }
+
+  &::-moz-range-track {
+    height: 100%;
+    border-radius: 3px;
+  }
+
+  // 滑杆值显示时
+  &.show-value {
+    margin-bottom: 4px;
+  }
+
+  // 禁用状态
+  &:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+
+    &::-webkit-slider-thumb {
+      background: var(--bg-disabled);
+      border-color: var(--border-light);
+      cursor: not-allowed;
+    }
+
+    &::-moz-range-thumb {
+      background: var(--bg-disabled);
+      border-color: var(--border-light);
+      cursor: not-allowed;
+    }
+  }
+}
+
+// 滑杆组
+.slider-group {
+  .slider-group-title {
+    font-size: var(--font-size-base);
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 16px;
+  }
+
+  .slider-group-content {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+}
+
+// 参数配置滑杆
+.parameter-slider {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px;
+  background: var(--bg-secondary);
+  border-radius: var(--border-radius);
+  transition: all 0.3s ease;
+
+  &:hover {
+    background: var(--bg-hover);
+  }
+
+  .parameter-info {
+    flex: 1;
+
+    .parameter-name {
+      font-size: var(--font-size-sm);
+      font-weight: 500;
+      color: var(--text-primary);
+      margin-bottom: 4px;
+    }
+
+    .parameter-desc {
+      font-size: var(--font-size-xs);
+      color: var(--text-regular);
+    }
+  }
+
+  .parameter-control {
+    flex: 2;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .parameter-value {
+    min-width: 80px;
+    text-align: center;
+    font-weight: 600;
+    color: var(--primary-color);
+  }
+}
+
+// 工具类
+.text-rise { color: var(--market-rise) !important; }
+.text-fall { color: var(--market-fall) !important; }
+.text-neutral { color: var(--market-neutral) !important; }
+
+.bg-rise { background-color: var(--market-rise) !important; }
+.bg-fall { background-color: var(--market-fall) !important; }
+.bg-neutral { background-color: var(--market-neutral) !important; }
+
+/* 统一滑杆样式 */
+
+  /* 统一滑杆样式覆盖 */
+  .parameter-range {
+    /* 使用全局滑杆样式 */
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 6px;
+    background: var(--border-color);
+    border-radius: 3px;
+    outline: none;
+    transition: all 0.3s ease;
+    border: none;
+    padding: 0;
+  }
+
+  .parameter-range::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 20px;
+    height: 20px;
+    background: var(--bg-white);
+    border: 3px solid var(--primary-color);
+    border-radius: 50%;
+    cursor: grab;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    transition: all 0.3s ease;
+  }
+
+  .parameter-range::-webkit-slider-thumb:hover {
+    transform: scale(1.2);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  }
+
+  .parameter-range::-webkit-slider-thumb:active {
+    cursor: grabbing;
+    transform: scale(1.1);
+  }
+
+  .parameter-range::-moz-range-thumb {
+    width: 20px;
+    height: 20px;
+    background: var(--bg-white);
+    border: 3px solid var(--primary-color);
+    border-radius: 50%;
+    cursor: grab;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    transition: all 0.3s ease;
+    border: none;
+  }
+
+  .parameter-range::-moz-range-thumb:hover {
+    transform: scale(1.2);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  }
+
+  .parameter-range::-moz-range-thumb:active {
+    cursor: grabbing;
+    transform: scale(1.1);
+  }
+
+  .parameter-range::-webkit-slider-runnable-track {
+    height: 100%;
+    border-radius: 3px;
+  }
+
+  .parameter-range::-moz-range-track {
+    height: 100%;
+    border-radius: 3px;
+  }
+
+  .range-input-group {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 4px 0;
+  }
+
+  .range-value {
+    min-width: 60px;
+    padding: 4px 8px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-sm);
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    color: var(--primary-color);
+    text-align: center;
+    transition: all 0.3s ease;
+  }
+
+  /* 参数配置滑杆样式增强 */
+  .parameter-slider {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 12px;
+    background: var(--bg-secondary);
+    border-radius: var(--border-radius);
+    transition: all 0.3s ease;
+  }
+
+  .parameter-slider:hover {
+    background: var(--bg-hover);
+  }
+
+  .parameter-slider .parameter-info {
+    flex: 1;
+  }
+
+  .parameter-slider .parameter-name {
+    font-size: var(--font-size-sm);
+    font-weight: 500;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+  }
+
+  .parameter-slider .parameter-desc {
+    font-size: var(--font-size-xs);
+    color: var(--text-regular);
+  }
+
+  .parameter-slider .parameter-control {
+    flex: 2;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+// ----------------------
+// 通用数据表格样式
+// ----------------------
+.data-table,
+table.data-table {
+  width: 100% !important;
+  border-collapse: collapse !important;
+  margin-bottom: 16px;
+  background: var(--bg-primary) !important;
+  border: none !important;
+}
+
+.data-table thead tr th,
+.data-table th,
+table.data-table thead tr th,
+table.data-table th {
+  background: var(--bg-secondary) !important;
+  padding: 10px 12px;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary) !important;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--border-color) !important;
+}
+
+.data-table tbody tr td,
+.data-table td,
+table.data-table tbody tr td,
+table.data-table td {
+  padding: 12px;
+  border-bottom: 1px solid var(--border-color) !important;
+  border-right: none !important;
+  border-left: none !important;
+  font-size: 13px;
+  color: var(--text-primary) !important;
+  background: transparent !important;
+}
+
+.data-table tbody tr:hover,
+.data-table tr:hover,
+table.data-table tbody tr:hover,
+table.data-table tr:hover {
+  background: var(--bg-secondary) !important;
+}
+
+// ----------------------
+// 通用表格卡片容器样式
+// ----------------------
+.table-card {
+  padding: 16px;
+  background: var(--bg-primary);
+  border-radius: 8px;
+  margin-bottom: 16px;
+
+  .section-title {
+    margin-bottom: 16px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border-color);
+  }
+}
+
+// ----------------------
+// Element Plus 表格样式统一
+// ----------------------
+.el-table {
+  --el-table-bg-color: var(--bg-primary);
+  --el-table-tr-bg-color: var(--bg-primary);
+  --el-table-header-bg-color: var(--bg-secondary);
+  --el-table-row-hover-bg-color: var(--bg-secondary);
+  --el-table-border-color: var(--border-color);
+  --el-table-text-color: var(--text-primary);
+  --el-table-header-text-color: var(--text-secondary);
+
+  width: 100% !important;
+  font-size: 13px;
+  border: none !important;
+
+  // 强制所有行背景透明
+  .el-table__body tr > td.el-table__cell {
+    background: transparent !important;
+  }
+
+  // 去掉斑马纹 - 强制所有行透明背景
+  &.el-table--striped {
+    .el-table__body {
+      tr.el-table__row--striped > td,
+      tr.el-table__row--striped td {
+        background: transparent !important;
+      }
+    }
+  }
+
+  // 去掉竖线
+  .el-table__cell {
+    border-right: none !important;
+    border-left: none !important;
+  }
+
+  // 悬停效果 - 强制所有行
+  .el-table__body tr:hover > td.el-table__cell,
+  .el-table__body tr.el-table__row--striped:hover > td.el-table__cell,
+  &:not(.el-table--striped) .el-table__body tr:hover > td.el-table__cell {
+    background: var(--bg-secondary) !important;
+  }
+
+  .el-table__header-wrapper {
+    th {
+      background: var(--bg-secondary) !important;
+      font-weight: 600;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      text-align: center !important;
+    }
+  }
+
+  .el-table__body-wrapper {
+    td {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border-color) !important;
+      text-align: center !important;
+    }
+  }
+
+  tr {
+    &:hover > td {
+      background: var(--bg-secondary) !important;
+    }
+  }
+}
+
+// ----------------------
+// 因子标签样式 - 选中状态用蓝色，不用红色
+// ----------------------
+// 因子标签 - 左边框彩色指示
+.el-tag.factor-tag {
+  border-left: 3px solid currentColor !important;
+  border-radius: 4px !important;
+}
+
+.el-tag.el-tag--info,
+.el-tag--info {
+  background: var(--bg-tertiary) !important;
+  color: var(--text-secondary) !important;
+  border: 1px solid transparent !important;
+}
+
+.el-tag.el-tag--warning,
+.el-tag--warning {
+  background: rgba(41, 98, 255, 0.15) !important;
+  color: #2962ff !important;
+  border: 1px solid #2962ff !important;
+}
+
+// ----------------------
+// 表格状态标签样式 - A股红涨绿跌
+// ----------------------
+// 通过/成功 - 红色 (A股上涨是红色)
+.el-tag--success,
+.el-tag.success,
+span.el-tag--success,
+span.success {
+  background: rgba(239, 83, 80, 0.15) !important;
+  color: #ef5350 !important;
+  border-color: transparent !important;
+}
+
+// 未通过/失败 - 绿色 (A股下跌是绿色)
+.el-tag--danger,
+.el-tag.danger,
+span.el-tag--danger,
+span.danger {
+  background: rgba(38, 166, 154, 0.15) !important;
+  color: #26a69a !important;
+  border-color: transparent !important;
+}

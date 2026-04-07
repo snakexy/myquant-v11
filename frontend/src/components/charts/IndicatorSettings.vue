@@ -13,32 +13,23 @@
       </div>
 
       <div class="settings-content">
-        <!-- MA特殊处理：均线勾选 -->
+        <!-- MA特殊处理：均线线条设置（带可见性复选框） -->
         <div v-if="indicatorId === 'MA'" class="settings-section">
-          <div class="section-title">显示均线</div>
-          <div class="ma-checkboxes">
-            <label
-              v-for="ma in maLineOptions"
-              :key="ma.key"
-              class="ma-checkbox-item"
-            >
+          <div class="section-title">均线设置</div>
+          <div v-for="line in maLineOptions" :key="line.key" class="line-setting-row">
+            <!-- 可见性复选框 -->
+            <label class="ma-visibility-checkbox">
               <input
                 type="checkbox"
-                :checked="visibleMaLines.includes(ma.key)"
-                @change="toggleMaLine(ma.key)"
+                :checked="visibleMaLines.includes(line.key)"
+                @change="toggleMaLine(line.key)"
               />
-              <span class="ma-label" :style="{ color: ma.color }">{{ ma.label }}</span>
             </label>
-          </div>
-        </div>
-
-        <!-- BOLL线条设置 -->
-        <div v-else-if="indicatorId === 'BOLL'" class="settings-section">
-          <div class="section-title">线条设置</div>
-          <div v-for="line in bollLineOptions" :key="line.key" class="line-setting-row">
+            <!-- 线条名称 -->
             <span class="line-label" :style="{ color: getLineColor(line.key, line.color) }">
               {{ line.label }}
             </span>
+            <!-- 线条控制（颜色、线型、线宽） -->
             <div class="line-controls">
               <input
                 type="color"
@@ -51,10 +42,56 @@
                 @change="setLineStyle(line.key, ($event.target as HTMLSelectElement).value)"
                 class="style-select"
               >
-                <option value="0">实线</option>
-                <option value="1">虚线</option>
-                <option value="2">点线</option>
-                <option value="3">点虚线</option>
+                <option value="0">━━━ 实线</option>
+                <option value="1">--- 虚线</option>
+                <option value="2">··· 点线</option>
+                <option value="3">·-·- 点虚线</option>
+              </select>
+              <input
+                type="number"
+                :value="getLineWidth(line.key, line.lineWidth || 1)"
+                @input="setLineWidth(line.key, ($event.target as HTMLInputElement).value)"
+                min="1"
+                max="5"
+                class="width-input"
+              />
+            </div>
+          </div>
+        </div>
+
+        <!-- BOLL线条设置 -->
+        <div v-else-if="indicatorId === 'BOLL'" class="settings-section">
+          <div class="section-title">线条设置</div>
+          <div v-for="line in bollLineOptions" :key="line.key" class="line-setting-row">
+            <!-- 可见性复选框 -->
+            <label class="ma-visibility-checkbox">
+              <input
+                type="checkbox"
+                :checked="visibleBollLines.includes(line.key)"
+                @change="toggleBollLine(line.key)"
+              />
+            </label>
+            <!-- 线条名称 -->
+            <span class="line-label" :style="{ color: getLineColor(line.key, line.color) }">
+              {{ line.label }}
+            </span>
+            <!-- 线条控制（颜色、线型、线宽） -->
+            <div class="line-controls">
+              <input
+                type="color"
+                :value="getLineColor(line.key, line.color)"
+                @input="setLineColor(line.key, ($event.target as HTMLInputElement).value)"
+                class="color-input"
+              />
+              <select
+                :value="getLineStyle(line.key)"
+                @change="setLineStyle(line.key, ($event.target as HTMLSelectElement).value)"
+                class="style-select"
+              >
+                <option value="0">━━━ 实线</option>
+                <option value="1">--- 虚线</option>
+                <option value="2">··· 点线</option>
+                <option value="3">·-·- 点虚线</option>
               </select>
               <input
                 type="number"
@@ -65,6 +102,127 @@
                 class="width-input"
               />
             </div>
+          </div>
+        </div>
+
+        <!-- SMC指标设置 -->
+        <div v-else-if="indicatorId === 'SMC'" class="settings-section">
+          <div class="section-title">显示选项</div>
+
+          <!-- 摆动点 -->
+          <div class="param-row">
+            <span class="param-label">显示摆动点</span>
+            <input
+              type="checkbox"
+              :checked="smcOptions.show_swing_points"
+              @change="toggleSmcOption('show_swing_points')"
+              class="param-checkbox"
+            />
+          </div>
+
+          <!-- BOS -->
+          <div class="param-row">
+            <span class="param-label">显示 BOS</span>
+            <input
+              type="checkbox"
+              :checked="smcOptions.show_bos"
+              @change="toggleSmcOption('show_bos')"
+              class="param-checkbox"
+            />
+          </div>
+
+          <!-- CHoCH -->
+          <div class="param-row">
+            <span class="param-label">显示 CHoCH</span>
+            <input
+              type="checkbox"
+              :checked="smcOptions.show_choch"
+              @change="toggleSmcOption('show_choch')"
+              class="param-checkbox"
+            />
+          </div>
+
+          <!-- 订单块 -->
+          <div class="param-row">
+            <span class="param-label">显示订单块</span>
+            <input
+              type="checkbox"
+              :checked="smcOptions.show_ob"
+              @change="toggleSmcOption('show_ob')"
+              class="param-checkbox"
+            />
+          </div>
+
+          <!-- FVG -->
+          <div class="param-row">
+            <span class="param-label">显示 FVG</span>
+            <input
+              type="checkbox"
+              :checked="smcOptions.show_fvg"
+              @change="toggleSmcOption('show_fvg')"
+              class="param-checkbox"
+            />
+          </div>
+
+          <div class="section-title" style="margin-top: 16px;">参数设置</div>
+
+          <!-- 摆动检测周期 -->
+          <div class="param-row">
+            <span class="param-label">摆动周期</span>
+            <input
+              type="number"
+              :value="getParamValue('swing_length', 50)"
+              @input="setParamValue('swing_length', ($event.target as HTMLInputElement).value)"
+              min="10"
+              max="200"
+              class="param-input"
+            />
+          </div>
+
+          <div class="section-title" style="margin-top: 16px;">颜色设置</div>
+
+          <!-- 摆动高点颜色 -->
+          <div class="param-row">
+            <span class="param-label">摆动高点</span>
+            <input
+              type="color"
+              :value="getSmcColor('swing_highs_color', '#FF6B6B')"
+              @input="setSmcColor('swing_highs_color', ($event.target as HTMLInputElement).value)"
+              class="color-input"
+            />
+          </div>
+
+          <!-- 摆动低点颜色 -->
+          <div class="param-row">
+            <span class="param-label">摆动低点</span>
+            <input
+              type="color"
+              :value="getSmcColor('swing_lows_color', '#26A69A')"
+              @input="setSmcColor('swing_lows_color', ($event.target as HTMLInputElement).value)"
+              class="color-input"
+            />
+          </div>
+
+          <!-- BOS 颜色 -->
+          <div class="param-row">
+            <span class="param-label">BOS</span>
+            <input
+              type="color"
+              :value="getSmcColor('bos_color', '#FFD700')"
+              @input="setSmcColor('bos_color', ($event.target as HTMLInputElement).value)"
+              class="color-input"
+            />
+          </div>
+
+          <!-- CHoCH 颜色 -->
+          <div class="param-row">
+            <span class="param-label">CHoCH</span>
+            <input
+              type="color"
+              :value="getSmcColor('choch_color', '#9C27B0')"
+              @input="setSmcColor('choch_color', ($event.target as HTMLInputElement).value)"
+              class="color-input"
+            />
           </div>
         </div>
 
@@ -105,10 +263,10 @@
                   @change="setLineStyle(line.key, ($event.target as HTMLSelectElement).value)"
                   class="style-select"
                 >
-                  <option value="0">实线</option>
-                  <option value="1">虚线</option>
-                  <option value="2">点线</option>
-                  <option value="3">点虚线</option>
+                  <option value="0">━━━ 实线</option>
+                  <option value="1">--- 虚线</option>
+                  <option value="2">··· 点线</option>
+                  <option value="3">·-·- 点虚线</option>
                 </select>
                 <input
                   type="number"
@@ -152,6 +310,16 @@ const emit = defineEmits<{
 
 const formValue = ref<Record<string, any>>({})
 const visibleMaLines = ref<string[]>(['ma5', 'ma10', 'ma20', 'ma30', 'ma60'])
+const visibleBollLines = ref<string[]>(['upper', 'middle', 'lower'])
+
+// SMC 指标选项
+const smcOptions = ref({
+  show_swing_points: true,
+  show_bos: true,
+  show_choch: true,
+  show_ob: true,
+  show_fvg: true
+})
 
 // 面板位置
 const panelStyle = {
@@ -260,6 +428,29 @@ function toggleMaLine(key: string) {
   }
 }
 
+function toggleBollLine(key: string) {
+  const index = visibleBollLines.value.indexOf(key)
+  if (index > -1) {
+    visibleBollLines.value.splice(index, 1)
+  } else {
+    visibleBollLines.value.push(key)
+  }
+}
+
+// SMC 指标相关函数
+function toggleSmcOption(option: string) {
+  smcOptions.value[option as keyof typeof smcOptions.value] = !smcOptions.value[option as keyof typeof smcOptions.value]
+  formValue.value[option] = smcOptions.value[option as keyof typeof smcOptions.value]
+}
+
+function getSmcColor(key: string, defaultColor: string): string {
+  return formValue.value[key] || defaultColor
+}
+
+function setSmcColor(key: string, color: string) {
+  formValue.value[key] = color
+}
+
 // 初始化表单
 function initForm() {
   if (!config.value) return
@@ -273,6 +464,20 @@ function initForm() {
   // 初始化MA可见性
   if (props.indicatorId === 'MA') {
     visibleMaLines.value = formValue.value.visibleLines || ['ma5', 'ma10', 'ma20', 'ma30', 'ma60']
+  }
+
+  // 初始化BOLL可见性
+  if (props.indicatorId === 'BOLL') {
+    visibleBollLines.value = formValue.value.visibleLines || ['upper', 'middle', 'lower']
+  }
+
+  // 初始化SMC选项
+  if (props.indicatorId === 'SMC') {
+    smcOptions.value.show_swing_points = formValue.value.show_swing_points !== false
+    smcOptions.value.show_bos = formValue.value.show_bos !== false
+    smcOptions.value.show_choch = formValue.value.show_choch !== false
+    smcOptions.value.show_ob = formValue.value.show_ob !== false
+    smcOptions.value.show_fvg = formValue.value.show_fvg !== false
   }
 
   // 初始化线条设置（使用默认值）
@@ -300,6 +505,14 @@ function handleCancel() {
 function handleReset() {
   formValue.value = {}
   visibleMaLines.value = ['ma5', 'ma10', 'ma20', 'ma30', 'ma60']
+  visibleBollLines.value = ['upper', 'middle', 'lower']
+  smcOptions.value = {
+    show_swing_points: true,
+    show_bos: true,
+    show_choch: true,
+    show_ob: true,
+    show_fvg: true
+  }
   initForm()
 }
 
@@ -309,6 +522,20 @@ function handleConfirm() {
   // MA：保存可见线条
   if (props.indicatorId === 'MA') {
     result.visibleLines = [...visibleMaLines.value]
+  }
+
+  // BOLL：保存可见线条
+  if (props.indicatorId === 'BOLL') {
+    result.visibleLines = [...visibleBollLines.value]
+  }
+
+  // SMC：保存显示选项
+  if (props.indicatorId === 'SMC') {
+    result.show_swing_points = smcOptions.value.show_swing_points
+    result.show_bos = smcOptions.value.show_bos
+    result.show_choch = smcOptions.value.show_choch
+    result.show_ob = smcOptions.value.show_ob
+    result.show_fvg = smcOptions.value.show_fvg
   }
 
   emit('confirm', result)
@@ -386,27 +613,18 @@ function handleConfirm() {
   letter-spacing: 0.5px;
 }
 
-.ma-checkboxes {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.ma-checkbox-item {
+.ma-visibility-checkbox {
   display: flex;
   align-items: center;
-  gap: 8px;
-  cursor: pointer;
+  margin-right: 8px;
+  min-width: 20px;
 }
 
-.ma-checkbox-item input[type="checkbox"] {
+.ma-visibility-checkbox input[type="checkbox"] {
   width: 14px;
   height: 14px;
   cursor: pointer;
-}
-
-.ma-label {
-  font-size: 13px;
+  margin: 0;
 }
 
 .line-setting-row {
@@ -493,6 +711,12 @@ function handleConfirm() {
   font-size: 13px;
   padding: 6px 10px;
   text-align: center;
+}
+
+.param-checkbox {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
 }
 
 .settings-footer {

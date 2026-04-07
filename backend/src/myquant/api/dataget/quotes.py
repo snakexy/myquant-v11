@@ -16,7 +16,7 @@ from myquant.core.market.services.kline import (
     get_intraday_kline_service,
     get_seamless_kline_service,
 )
-from myquant.core.research.indicator_service import get_indicator_service
+from myquant.core.research.indicators import get_indicator_service
 from myquant.core.market.utils.trading_time_detector import TradingTimeDetectorV2
 
 
@@ -161,18 +161,23 @@ def _map_adjust_type(adjust_type: str) -> str:
     }.get(adjust_type, adjust_type)
 
 
-def _calculate_indicators(indicator_service, df: pd.DataFrame, indicator_list: List[str]) -> Dict[str, Any]:
+def _calculate_indicators(indicator_service, df: pd.DataFrame, indicator_list: List[str], indicator_params: Dict[str, Any] = None) -> Dict[str, Any]:
     """计算技术指标
 
     Args:
         indicator_service: 指标服务实例
         df: K线数据 DataFrame
         indicator_list: 要计算的指标列表
+        indicator_params: 指标参数配置
 
     Returns:
         指标数据字典，格式与前端组件兼容
     """
     import numpy as np
+    logger.info(f"[V5] _calculate_indicators 收到指标列表: {indicator_list}")
+
+    if indicator_params is None:
+        indicator_params = {}
 
     result = {}
 
@@ -193,6 +198,7 @@ def _calculate_indicators(indicator_service, df: pd.DataFrame, indicator_list: L
     for indicator in indicator_list:
         try:
             ind_upper = indicator.upper()
+            logger.info(f"[V5] 处理指标: {ind_upper}")
 
             if ind_upper == 'MA':
                 # 计算多条均线（使用calculate_sma，因为它接受Series）
@@ -227,6 +233,28 @@ def _calculate_indicators(indicator_service, df: pd.DataFrame, indicator_list: L
                     'j': clean_values(kdj['j'].tolist())
                 }
 
+            elif ind_upper == 'SKDJ':
+                # SKDJ（慢速随机指标）- 通达信公式：只有SK和SD，没有SJ
+                logger.info(f"[V5] 开始计算 SKDJ 指标")
+                # 获取SKDJ参数
+                skdj_params = indicator_params.get('SKDJ', {}) if isinstance(indicator_params, dict) else {}
+                fastk_period = int(skdj_params.get('fastk_period', 9) or 9)
+                slowk_period = int(skdj_params.get('slowk_period', 3) or 3)
+                slowd_period = int(skdj_params.get('slowd_period', 3) or 3)
+                smooth_period = int(skdj_params.get('smooth_period', 3) or 3)
+                logger.info(f"[V5] SKDJ参数: fastk={fastk_period}, slowk={slowk_period}, slowd={slowd_period}")
+
+                skdj = indicator_service.calculate_skdj(high, low, close,
+                                                           fastk_period=fastk_period,
+                                                           slowk_period=slowk_period,
+                                                           slowd_period=slowd_period,
+                                                           smooth_period=smooth_period)
+                result['SKDJ'] = {
+                    'sk': clean_values(skdj['sk'].tolist()),
+                    'sd': clean_values(skdj['sd'].tolist())
+                }
+                logger.info(f"[V5] SKDJ 指标计算完成，数据点数: {len(skdj['sk'])}")
+
             elif ind_upper == 'RSI':
                 rsi = indicator_service.calculate_rsi(close, period=14)
                 result['RSI'] = {
@@ -241,10 +269,103 @@ def _calculate_indicators(indicator_service, df: pd.DataFrame, indicator_list: L
 
             elif ind_upper == 'OBV':
                 obv = indicator_service.calculate_obv(close, volume)
+                # 计算 MAOBV（OBV 的移动平均）
+                maobv_period = indicator_params.get('maobv_period', 20)
+                maobv = obv.rolling(window=maobv_period).mean()
                 result['OBV'] = {
                     'obv': clean_values(obv.tolist()),
+                    'maobv': clean_values(maobv.tolist()),
                     'volume': clean_values(volume.tolist())
                 }
+
+            elif ind_upper == 'OBV':
+                obv = indicator_service.calculate_obv(close, volume)
+                # 计算 MAOBV（OBV 的移动平均）
+                maobv_period = indicator_params.get('maobv_period', 20) if isinstance(indicator_params, dict) else 20
+                maobv = obv.rolling(window=maobv_period).mean()
+                result['OBV'] = {
+                    'obv': clean_values(obv.tolist()),
+                    'maobv': clean_values(maobv.tolist()),
+                    'volume': clean_values(volume.tolist())
+                }
+
+            elif ind_upper == 'BIAS':
+                # BIAS（乖离率）
+                bias_period = indicator_params.get('period', 6)
+                bias = indicator_service.calculate_bias(close, period=bias_period)
+                result['BIAS'] = {
+                    'bias': clean_values(bias.tolist())
+                }
+
+            elif ind_upper == 'SMC':
+                # SMC (Smart Money Concepts) 指标
+                logger.info(f"[SMC] 开始计算, df 长度: {len(df)}")
+                try:
+                    from myquant.core.research.smc_service import get_smc_service
+                    smc_service = get_smc_service()
+
+                    # 从 indicator_params 获取 SMC 参数
+                    smc_params = indicator_params.get('SMC', {}) if isinstance(indicator_params, dict) else {}
+                    swing_length = int(smc_params.get('swing_length', 5) or 5)
+                    close_break = smc_params.get('close_break', True)
+                    show_ob = smc_params.get('show_ob', True)
+                    show_fvg = smc_params.get('show_fvg', True)
+                    logger.info(f"[SMC] swing_length value: {swing_length}, type: {type(swing_length)}")
+
+                    # 参考线参数（最近N根K线的最高/最低）
+                    reference_period = int(smc_params.get('reference_period', 34) or 34)
+                    logger.info(f"[SMC] reference_period value: {reference_period}, type: {type(reference_period)}")
+
+                    logger.info(f"[SMC] 接收到的参数: {smc_params}, type={type(smc_params)}")
+                    logger.info(f"[SMC] 参数: swing_length={swing_length}, close_break={close_break}, reference_period={reference_period}")
+
+                    smc_result = smc_service.calculate_all(
+                        df,
+                        swing_length=swing_length,
+                        close_break=close_break,
+                        show_ob=show_ob,
+                        show_fvg=show_fvg
+                    )
+
+                    # 计算最近 N 根 K 线的最高/最低点（用于参考线）
+                    if smc_result and reference_period > 0:
+                        recent_n = min(reference_period, len(df))
+                        recent_df = df.tail(recent_n).reset_index(drop=True)
+                        highest_high = recent_df['high'].max()
+                        lowest_low = recent_df['low'].min()
+                        # 获取在 recent_df 中的位置，然后计算在原始 df 中的索引
+                        highest_pos = recent_df['high'].idxmax()
+                        lowest_pos = recent_df['low'].idxmin()
+                        # 计算在原始 df 中的索引（df.tail(recent_n) 的起始索引是 len(df) - recent_n）
+                        start_idx = len(df) - recent_n
+                        highest_idx = start_idx + highest_pos
+                        lowest_idx = start_idx + lowest_pos
+
+                        smc_result['reference_high'] = float(highest_high)
+                        smc_result['reference_low'] = float(lowest_low)
+                        smc_result['reference_high_index'] = int(highest_idx)
+                        smc_result['reference_low_index'] = int(lowest_idx)
+                        smc_result['reference_period'] = reference_period
+                        logger.info(f"[SMC] 参考线已添加: high={highest_high:.2f}@{highest_idx}, low={lowest_low:.2f}@{lowest_idx}")
+                        logger.info(f"[SMC] smc_result keys: {list(smc_result.keys())}")
+                    logger.info(f"[SMC] calculate_all 返回: {smc_result is not None}")
+
+                    if smc_result:
+                        # 为 SMC 添加秒级时间戳（与 K 线时间保持一致的时区处理）
+                        # naive datetime 视为北京时间，转换为 UTC 秒级时间戳
+                        timestamps = []
+                        for t in df['datetime']:
+                            ts = pd.Timestamp(t)
+                            if ts.tz is None:
+                                ts = ts.tz_localize('Asia/Shanghai')
+                            timestamps.append(int(ts.timestamp()))
+                        logger.info(f"[SMC] timestamps 前3个: {timestamps[:3]}")
+                        smc_result['timestamps'] = timestamps
+                        result['SMC'] = smc_result
+                        logger.info(f"[SMC] 成功添加到结果，keys: {list(smc_result.keys())}")
+                        logger.info(f"[SMC] 参考线最终数据: high={smc_result.get('reference_high')}, low={smc_result.get('reference_low')}")
+                except Exception as e:
+                    logger.error(f"[SMC] 计算失败: {e}", exc_info=True)
 
             # 为每个指标添加 datetime
             if ind_upper in result:
@@ -266,6 +387,7 @@ async def get_realtime_kline(
     count: int = Query(100, description="返回数量", ge=1, le=1000),
     adjust_type: str = Query("none", description="复权类型: none/qfq/hfq/qfq_ratio/hfq_ratio"),
     indicators: Optional[str] = Query(None, description="技术指标: macd,kdj,rsi,boll,cci,obv (逗号分隔)"),
+    indicator_params: Optional[str] = Query(None, description="技术指标参数配置（JSON字符串）"),
     after_time: Optional[int] = Query(None, description="增量模式：只返回此时间戳（毫秒）之后的数据")
 ):
     """获取单只股票K线（历史+实时无缝）
@@ -309,16 +431,28 @@ async def get_realtime_kline(
 
         # 计算技术指标（如果请求）
         indicators_data = None
+        logger.info(f"[V5] 指标请求检查: indicators={indicators}, indicator_params type={type(indicator_params)}")
         if indicators:
             try:
                 indicator_list = [ind.strip().upper() for ind in indicators.split(',') if ind.strip()]
                 if indicator_list:
+                    # 解析指标参数
+                    indicator_params_dict = {}
+                    if indicator_params:
+                        try:
+                            import json
+                            indicator_params_dict = json.loads(indicator_params)
+                            logger.info(f"[V5] 指标参数: {indicator_params_dict}")
+                        except Exception as e:
+                            logger.warning(f"[V5] 解析指标参数失败: {e}")
+
                     indicator_service = get_indicator_service()
                     indicators_data = await run_in_threadpool(
                         _calculate_indicators,
                         indicator_service,
                         df,
-                        indicator_list
+                        indicator_list,
+                        indicator_params_dict
                     )
                     logger.info(f"[V5] {symbol} 计算指标: {indicator_list}")
             except Exception as e:
@@ -481,3 +615,4 @@ async def update_subscription(symbols: List[str]):
     except Exception as e:
         logger.error(f"[V5] 更新订阅失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+# Trigger reload

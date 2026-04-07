@@ -113,8 +113,39 @@ class SeamlessKlineService:
                     logger.debug(f"[K线缓存] 命中: {symbol} {period} {adjust_type}, "
                                f"缓存{len(cached_data)}条, 最后时间={cached_last_time}")
 
-                    # 启用增量获取
-                    incremental_fetch = True
+                    # 检查缓存数据量是否足够
+                    if len(cached_data) < count:
+                        logger.info(f"[K线缓存] 缓存数据不足（{len(cached_data)} < {count}），清除缓存重新获取")
+                        self._kline_cache.delete(cache_key)
+                        cached_data = None
+                        cached_last_time = None
+                    # 先检查数据新鲜度和缺口（即使启用增量获取）
+                    elif use_cache:
+                        hotdb_service = get_hotdb_service()
+                        gap_info = hotdb_service._detect_gap(symbol, period)
+
+                        if gap_info['has_gap']:
+                            # 数据有缺口，触发智能更新并禁用增量获取
+                            logger.info(f"[K线缓存] {symbol} {period} 检测到数据缺口: {gap_info['reason']}，触发智能更新")
+                            update_result = hotdb_service.smart_update(symbol, period)
+
+                            if update_result['success'] and update_result['records'] > 0:
+                                # 更新成功，清除缓存以重新获取完整数据
+                                logger.info(f"[K线缓存] 智能更新完成，清除缓存重新获取")
+                                self._kline_cache.delete(cache_key)
+                                cached_data = None
+                                cached_last_time = None
+                                incremental_fetch = False
+                            else:
+                                # 更新失败，记录日志但仍返回缓存（降级处理）
+                                logger.warning(f"[K线缓存] 智能更新失败: {update_result.get('error')}，返回缓存数据")
+                                return cached_data.copy()
+                        else:
+                            # 数据新鲜，启用增量获取
+                            incremental_fetch = True
+                    else:
+                        # 不使用缓存，启用增量获取
+                        incremental_fetch = True
 
         # 增量获取逻辑
         fetch_count = count
@@ -126,29 +157,10 @@ class SeamlessKlineService:
             fetch_count = count + 10 if count < 100 else count
             start_date_for_fetch = cached_last_time
             logger.info(f"[增量获取] {symbol} {period}: 从 {cached_last_time} 开始获取新数据")
-        elif use_cache and cached_data is not None and not cached_data.empty:
-            # 缓存存在但不需要增量（时间戳为空或请求指定了start_date）
-            # 使用 HotDBService 检查数据新鲜度
-            hotdb_service = get_hotdb_service()
-            gap_info = hotdb_service._detect_gap(symbol, period)
-
-            if gap_info['has_gap']:
-                # 数据有缺口，触发智能更新而不是直接返回缓存
-                logger.info(f"[K线缓存] {symbol} {period} 检测到数据缺口: {gap_info['reason']}，触发智能更新")
-                update_result = hotdb_service.smart_update(symbol, period)
-
-                if update_result['success'] and update_result['records'] > 0:
-                    # 更新成功，继续执行从 KlineService 获取（会走 HotDB 新鲜数据）
-                    logger.info(f"[K线缓存] 智能更新完成，重新获取数据")
-                    # 不返回缓存，继续执行下面的 _get_historical_kline
-                else:
-                    # 更新失败，记录日志但仍返回缓存（降级处理）
-                    logger.warning(f"[K线缓存] 智能更新失败: {update_result.get('error')}，返回缓存数据")
-                    return cached_data.copy()
-            else:
-                # 数据新鲜，直接返回缓存
-                logger.debug(f"[K线缓存] 数据新鲜，直接返回缓存数据")
-                return cached_data.copy()
+        elif cached_data is not None and not cached_data.empty:
+            # 缓存存在且没有缺口，直接返回缓存
+            logger.debug(f"[K线缓存] 数据新鲜，直接返回缓存数据")
+            return cached_data.copy()
 
         # 获取历史数据（始终获取不复权原始数据）
         historical = self._get_historical_kline(

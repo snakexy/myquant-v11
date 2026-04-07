@@ -51,6 +51,19 @@ export const INDICATOR_REGISTRY: Record<string, IndicatorConfig> = {
     paneHeight: 120
   },
 
+  // 独立指标 - SKDJ（慢速随机指标，通达信公式：只有SK和SD，没有SJ）
+  SKDJ: {
+    id: 'SKDJ',
+    name: 'SKDJ',
+    type: 'oscillator',
+    defaultParams: { fastk_period: 9, slowk_period: 3, slowd_period: 3 },
+    series: [
+      { key: 'sk', label: 'SK', color: '#FF6B6B', type: 'line', lineWidth: 2 },
+      { key: 'sd', label: 'SD', color: '#26A69A', type: 'line', lineWidth: 2 }
+    ],
+    paneHeight: 120
+  },
+
   // 独立指标 - RSI
   RSI: {
     id: 'RSI',
@@ -80,9 +93,46 @@ export const INDICATOR_REGISTRY: Record<string, IndicatorConfig> = {
     id: 'OBV',
     name: 'OBV',
     type: 'volume',
-    defaultParams: {},
+    defaultParams: { period: 12 },
     series: [
-      { key: 'obv', label: 'OBV', color: '#9C27B0', type: 'line', lineWidth: 2 }
+      { key: 'obv', label: 'OBV', color: '#9C27B0', type: 'line', lineWidth: 2 },
+      { key: 'maobv', label: 'MAOBV', color: '#FFD700', type: 'line', lineWidth: 1 }
+    ],
+    paneHeight: 120
+  },
+
+  // 独立指标 - WR（威廉指标）
+  WR: {
+    id: 'WR',
+    name: 'WR',
+    type: 'oscillator',
+    defaultParams: { period: 14 },
+    series: [
+      { key: 'wr', label: 'WR', color: '#E91E63', type: 'line', lineWidth: 2 }
+    ],
+    paneHeight: 120
+  },
+
+  // 独立指标 - ATR（平均真实波幅）
+  ATR: {
+    id: 'ATR',
+    name: 'ATR',
+    type: 'oscillator',
+    defaultParams: { period: 14 },
+    series: [
+      { key: 'atr', label: 'ATR', color: '#FF9800', type: 'line', lineWidth: 2 }
+    ],
+    paneHeight: 120
+  },
+
+  // 独立指标 - BIAS（乖离率）
+  BIAS: {
+    id: 'BIAS',
+    name: 'BIAS',
+    type: 'oscillator',
+    defaultParams: { period: 6 },
+    series: [
+      { key: 'bias', label: 'BIAS', color: '#00BCD4', type: 'line', lineWidth: 2 }
     ],
     paneHeight: 120
   },
@@ -113,14 +163,59 @@ export const INDICATOR_REGISTRY: Record<string, IndicatorConfig> = {
       { key: 'middle', label: 'MID', color: '#26A69A', type: 'line', lineWidth: 1 },
       { key: 'lower', label: 'LOW', color: '#FF6B6B', type: 'line', lineWidth: 1 }
     ]
+  },
+
+  // 主图叠加 - SMC V2 (Smart Money Concepts)
+  SMC: {
+    id: 'SMC',
+    name: 'SMC V2',
+    type: 'overlay',
+    defaultParams: {
+      swing_length: 5,
+      close_break: true,
+      show_swing_points: true,
+      show_bms: true,
+      show_choch: true,
+      show_ob: true,
+      show_fvg: true,
+      // BMS/CHoCH 显示数量
+      bos_count: 5,
+      choch_count: 5,
+      // OB/FVG 显示数量
+      ob_count: 5,
+      fvg_count: 5,
+      // BMS 线条参数
+      bms_box_size: 8,
+      bms_line_style: 1,
+      bms_line_width: 1,
+      // CHoCH 线条参数
+      choch_diamond_size: 6,
+      choch_line_style: 1,
+      choch_line_width: 1,
+      // 颜色配置 (TradingView V2 风格)
+      swing_high_color: '#00D9FF',  // 亮青色
+      swing_low_color: '#FF61D2',   // 亮粉色
+      bms_color: '#FFD700',         // 金色
+      choch_color: '#9C27B0',       // 紫色
+      ob_bullish: '#00D9FF',        // 青色
+      ob_bearish: '#FF61D2',        // 粉色
+      ob_opacity: 15,
+      fvg_bullish: '#4CAF50',       // 绿色
+      fvg_bearish: '#F44336',       // 红色
+      fvg_opacity: 12,
+    },
+    series: [
+      { key: 'swing_highs', label: 'SwingH', color: '#00D9FF', type: 'line', lineWidth: 2 },
+      { key: 'swing_lows', label: 'SwingL', color: '#FF61D2', type: 'line', lineWidth: 2 }
+    ]
   }
 };
 
 export type IndicatorId = keyof typeof INDICATOR_REGISTRY;
 
-// 获取独立指标列表
+// 获取独立指标列表（包括 oscillator 和 volume 类型）
 export const getOscillatorIndicators = () =>
-  Object.values(INDICATOR_REGISTRY).filter(i => i.type === 'oscillator');
+  Object.values(INDICATOR_REGISTRY).filter(i => i.type === 'oscillator' || i.type === 'volume');
 
 // 获取主图叠加指标列表
 export const getOverlayIndicators = () =>

@@ -13,9 +13,12 @@ import type { IChartApi, IChartSeriesApi, Time } from 'lightweight-charts'
 
 interface Props {
   data?: {
-    k: number[]
-    d: number[]
-    j: number[]
+    k?: number[]      // KDJ的k值
+    d?: number[]      // KDJ的d值
+    j?: number[]      // KDJ的j值
+    sk?: number[]     // SKDJ的sk值
+    sd?: number[]     // SKDJ的sd值
+    sj?: number[]     // SKDJ的sj值
     datetime: string[]
   }
   width: number
@@ -115,28 +118,40 @@ const initChart = () => {
 }
 
 const updateChart = () => {
-  if (!chart || !props.data || !props.data.k) return
+  if (!chart || !props.data) return
 
   const data = props.data
+
+  // 判断是KDJ还是SKDJ数据格式
+  const isSKDJ = data.sk !== undefined
+
+  if (!isSKDJ && !data.k) return
+
   const timeData: Time[] = data.datetime.map((d) => {
     const timestamp = Math.floor(new Date(d).getTime() / 1000)
     return timestamp as Time
   })
 
-  // 过滤 null/NaN 值
-  const kData = data.k
+  // 根据数据格式选择对应的字段
+  const kData = (isSKDJ ? data.sk : data.k)
     .map((val, i) => ({ time: timeData[i], value: val }))
-    
-  const dData = data.d
+
+  const dData = (isSKDJ ? data.sd : data.d)
     .map((val, i) => ({ time: timeData[i], value: val }))
-    
-  const jData = data.j
+
+  const jData = (isSKDJ ? data.sj : data.j)
     .map((val, i) => ({ time: timeData[i], value: val }))
-    
+
 
   kSeries?.setData(kData)
   dSeries?.setData(dData)
-  jSeries?.setData(jData)
+
+  // SKDJ可能没有SJ值，只有KDJ才有J值
+  if (isSKDJ && data.sj) {
+    jSeries?.setData(jData)
+  } else if (!isSKDJ && data.j) {
+    jSeries?.setData(jData)
+  }
 }
 
 const resize = (width: number, height: number) => {
