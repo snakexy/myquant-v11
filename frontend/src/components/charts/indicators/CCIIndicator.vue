@@ -77,6 +77,28 @@ const initChart = () => {
     }
   })
 
+  // +200 警戒线（极端超买）
+  chart.addLineSeries({
+    priceLine: {
+      price: 200,
+      color: 'rgba(255, 77, 77, 0.3)',
+      lineWidth: 1,
+      lineStyle: 2,
+      axisLabelVisible: false
+    }
+  })
+
+  // -200 警戒线（极端超卖）
+  chart.addLineSeries({
+    priceLine: {
+      price: -200,
+      color: 'rgba(77, 255, 77, 0.3)',
+      lineWidth: 1,
+      lineStyle: 2,
+      axisLabelVisible: false
+    }
+  })
+
   // CCI 线
   cciSeries = chart.addLineSeries({
     color: props.color,
